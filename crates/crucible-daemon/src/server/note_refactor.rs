@@ -31,45 +31,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Why one inbound reference was left as it was.
-///
-/// A closed set, because the browser prints a sentence per reason. It was four
-/// string literals spelled in five places, so a fifth reason could reach a
-/// client whose reader has no arm for it. `every_skip_reason_reaches_the_wire`
-/// (`crucible-web`) walks an exhaustive match, so a new variant fails to
-/// compile until somebody decides what the client says about it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum SkipReason {
-    /// The stem is shared by several notes, so no single target is meant.
-    Ambiguous,
-    /// The file bytes no longer match the index; a reindex catches up.
-    StaleSpan,
-    /// A canvas resolves to the target but stores it under another spelling.
-    CanvasNoExactMatch,
-    /// The canvas could not be read.
-    CanvasUnreadable,
-}
-
-/// One inbound reference that was intentionally left untouched.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SkippedRef {
-    pub source_path: String,
-    pub raw_target: String,
-    pub reason: SkipReason,
-}
-
-/// Outcome of a rename/move, returned to the caller for UX ("N links
-/// updated, M ambiguous links skipped").
-#[derive(Debug, serde::Serialize)]
-pub(crate) struct RenameOutcome {
-    pub from: String,
-    pub to: String,
-    pub rewritten_sources: Vec<String>,
-    pub skipped: Vec<SkippedRef>,
-}
+/// The `note.rename`/`fs.move` link-report types are canonical in core,
+/// since the rows in `rpc_methods!` and the RPC client both name them from
+/// there.
+pub use crucible_core::protocol::requests::{NoteRenameReply, SkipReason, SkippedRef};
 
 /// Handle `note.rename` / `note.move` (one operation, two RPC names).
 /// Params: `{ kiln, from_rel, to_rel }`. The kiln must be OPEN (fail-closed,
@@ -122,7 +87,7 @@ pub(crate) async fn rename_note(
     kiln_root: &Path,
     from_rel: &str,
     to_rel: &str,
-) -> Result<RenameOutcome, RenameError> {
+) -> Result<NoteRenameReply, RenameError> {
     let plan = plan_rename(km, kiln_root, from_rel, to_rel).await?;
     apply_rename(km, kiln_root, from_rel, to_rel, plan).await
 }
@@ -345,7 +310,7 @@ pub(crate) async fn apply_rename(
     from_rel: &str,
     to_rel: &str,
     plan: RenamePlan,
-) -> Result<RenameOutcome, RenameError> {
+) -> Result<NoteRenameReply, RenameError> {
     let RenamePlan {
         staged,
         mut skipped,
@@ -427,7 +392,7 @@ pub(crate) async fn apply_rename(
 
     reindex_rename(km, kiln_root, from_rel, to_rel, &rewritten_sources).await;
 
-    Ok(RenameOutcome {
+    Ok(NoteRenameReply {
         from: from_rel.to_string(),
         to: to_rel.to_string(),
         rewritten_sources,

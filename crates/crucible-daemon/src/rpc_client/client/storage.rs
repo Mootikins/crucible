@@ -612,7 +612,7 @@ impl DaemonClient {
         name: String,
         headers: std::collections::HashMap<String, String>,
         body: String,
-    ) -> Result<crate::WebhookReceiveReply> {
+    ) -> Result<crucible_core::protocol::requests::WebhookReceiveReply> {
         self.call(
             RpcMethod::WebhookReceive,
             WebhookReceiveRequest {

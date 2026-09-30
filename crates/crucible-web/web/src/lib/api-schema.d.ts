@@ -2133,19 +2133,28 @@ export interface components {
             options: components["schemas"]["AgentOptionRow"][];
             session_id: string;
         };
-        /** @description One ACP agent profile, with the availability probe's verdict. */
+        /**
+         * @description One ACP agent profile, with the availability probe's verdict: a row of
+         *     `agents.list_profiles`.
+         */
         AgentProfileEntry: {
-            /** @description Whether the probe found the command on PATH and it answered `--version`. */
+            /**
+             * @description Whether the probe found the command on PATH and it answered
+             *     `--version`.
+             */
             available: boolean;
             /**
-             * @description The command that spawns the agent, or an empty string when the profile
-             *     names none. A profile with no command can never spawn, so it is never
-             *     available.
+             * @description The command that spawns the agent, or an empty string when the
+             *     profile names none. A profile with no command can never spawn, so it
+             *     is never available.
              */
             command: string;
             /** @description The profile's description, or an empty string when it declares none. */
             description: string;
-            /** @description Whether the daemon ships this profile, rather than a config declaring it. */
+            /**
+             * @description Whether the daemon ships this profile, rather than a config declaring
+             *     it.
+             */
             is_builtin: boolean;
             name: string;
         };
@@ -3254,8 +3263,8 @@ export interface components {
          * @description One directory entry in an `fs.list_dir` response.
          *
          *     Wire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are
-         *     byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration
-         *     seam and is always `None`.
+         *     byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1
+         *     decoration seam and is always `None`.
          */
         FsEntry: {
             is_dir: boolean;
@@ -3298,12 +3307,14 @@ export interface components {
             type: "moved";
         };
         /**
-         * @description One directory level, plus whether the cap cut it short.
+         * @description One directory level, plus whether the cap cut it short: what
+         *     `fs.list_dir` answers.
          *
-         *     Both keys are part of the cross-language contract (TypeScript `FsListing`).
-         *     The response used to be a bare array, which had nowhere to say "there is
-         *     more" — so a capped listing would have been indistinguishable from a complete
-         *     one, which is worse than the slow response it replaces.
+         *     Both keys are part of the cross-language contract (TypeScript
+         *     `FsListing`). The response used to be a bare array, which had nowhere to
+         *     say "there is more" — so a capped listing would have been
+         *     indistinguishable from a complete one, which is worse than the slow
+         *     response it replaces.
          */
         FsListing: {
             entries: components["schemas"]["FsEntry"][];
@@ -3324,15 +3335,14 @@ export interface components {
          *
          *     The two link-report keys are absent for a move the link index does not
          *     watch — a directory, an asset, a project file — which is the shape the
-         *     browser already reads. They were written as a `json!` literal beside the
-         *     handler, where nothing held them to the reply the web route promises.
+         *     browser already reads.
          */
         FsMoveReply: {
             /** @description Always true. A move that did not happen is an error, not a `false`. */
             moved: boolean;
             /**
-             * @description Sources whose inbound links were rewritten. Kiln note and canvas moves
-             *     only. Absent, never null, for a move with nothing to report.
+             * @description Sources whose inbound links were rewritten. Kiln note and canvas
+             *     moves only. Absent, never null, for a move with nothing to report.
              */
             rewritten_sources?: string[];
             /**
@@ -3892,7 +3902,10 @@ export interface components {
              */
             start: number;
         };
-        /** @description A single suggestion to convert a plain-text mention into a wikilink. */
+        /**
+         * @description A single suggestion to convert a plain-text mention into a wikilink:
+         *     one row of `suggest_links`.
+         */
         LinkSuggestion: {
             /** @description The text that was found as a mention (preserves original casing) */
             mention: string;
@@ -3958,9 +3971,9 @@ export interface components {
          * @description What `mcp.status` answers: the server is up, or it is not.
          *
          *     Untagged, because the two arms are told apart by `running` and the wire
-         *     has always spelled them that way. The stopped arm carries `running` ALONE:
-         *     a stopped server has no transport, no port and no kiln, and writing those
-         *     keys as null would say it has them and they are empty.
+         *     has always spelled them that way. The stopped arm carries `running`
+         *     ALONE: a stopped server has no transport, no port and no kiln, and
+         *     writing those keys as null would say it has them and they are empty.
          */
         McpStatus: components["schemas"]["McpRunning"] | components["schemas"]["McpStopped"];
         /** @description The stopped arm of [`McpStatus`]. */
@@ -5264,7 +5277,7 @@ export interface components {
              */
             url: string;
         };
-        /** @description Response for the `scm.clone` RPC. */
+        /** @description What `scm.clone` answers. */
         ScmCloneResponse: {
             /** @description Absolute path of the freshly cloned repository. */
             path: string;
@@ -5879,20 +5892,24 @@ export interface components {
             /** @description How many same-named skills this one shadows. */
             shadowed_count: number;
         };
-        /** @description One inbound reference that was intentionally left untouched. */
+        /**
+         * @description One inbound reference that an `fs.move` or a `note.rename` intentionally
+         *     left untouched.
+         */
         SkippedRef: {
             raw_target: string;
             reason: components["schemas"]["SkipReason"];
             source_path: string;
         };
         /**
-         * @description Why one inbound reference was left as it was.
+         * @description Why one inbound reference was left as it was, by an `fs.move` or a
+         *     `note.rename` that rewrote links.
          *
-         *     A closed set, because the browser prints a sentence per reason. It was four
-         *     string literals spelled in five places, so a fifth reason could reach a
-         *     client whose reader has no arm for it. `every_skip_reason_reaches_the_wire`
-         *     (`crucible-web`) walks an exhaustive match, so a new variant fails to
-         *     compile until somebody decides what the client says about it.
+         *     A closed set, because the browser prints a sentence per reason. It was
+         *     four string literals spelled in five places, so a fifth reason could
+         *     reach a client whose reader has no arm for it. A daemon test walks an
+         *     exhaustive match over the two clients, so a new variant fails to compile
+         *     until somebody decides what each says about it.
          * @enum {string}
          */
         SkipReason: "ambiguous" | "stale-span" | "canvas-no-exact-match" | "canvas-unreadable";
@@ -6848,8 +6865,9 @@ export interface components {
          * @description What `webhook.receive` answers.
          *
          *     Acceptance only: the delivery became a `webhook:received` event, and
-         *     whether a plugin was listening is not this answer's business. Every refusal
-         *     is an HTTP error at the ingress route, which never reaches this RPC.
+         *     whether a plugin was listening is not this answer's business. Every
+         *     refusal is an HTTP error at the ingress route, which never reaches this
+         *     RPC.
          */
         WebhookReceiveReply: {
             /** @description Always `ok`. */

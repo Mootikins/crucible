@@ -135,25 +135,28 @@ rpc_methods! {
     Ping = "ping": () => String,
     DaemonCapabilities = "daemon.capabilities": () => crucible_core::protocol::requests::DaemonCapabilities,
     Shutdown = "shutdown": () => serde_json::Value,
-    KilnOpen = "kiln.open": crucible_core::protocol::requests::KilnOpenRequest => serde_json::Value,
-    KilnClose = "kiln.close": crucible_core::protocol::requests::PathRequest => serde_json::Value,
+    KilnOpen = "kiln.open": crucible_core::protocol::requests::KilnOpenRequest => crucible_core::protocol::requests::KilnOpenReply,
+    KilnClose = "kiln.close": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     KilnList = "kiln.list": () => Vec<crucible_core::protocol::requests::KilnRow>,
-    KilnRegister = "kiln.register": crucible_core::protocol::requests::KilnRegisterRequest => serde_json::Value,
+    KilnRegister = "kiln.register": crucible_core::protocol::requests::KilnRegisterRequest => crucible_core::protocol::requests::KilnRegisterReply,
+    // Each row starts from a real record (`crucible_core::Project`, here a
+    // kiln entry) or a hand-built object, then gains two keys the daemon
+    // injects afterward (`origin`, plus `also_registered`/`shadows`). No
+    // single struct names both the "from a record" and the "built by hand"
+    // starting shapes without the Option-per-field merge this pass forbids.
     KilnRegistryList = "kiln.registry_list": () => serde_json::Value,
-    KilnForget = "kiln.forget": crucible_core::protocol::requests::NameRequest => serde_json::Value,
-    LlmRegisterProvider = "llm.register_provider": crucible_core::protocol::requests::LlmRegisterProviderRequest => serde_json::Value,
+    KilnForget = "kiln.forget": crucible_core::protocol::requests::NameRequest => crucible_core::protocol::requests::KilnForgetReply,
+    LlmRegisterProvider = "llm.register_provider": crucible_core::protocol::requests::LlmRegisterProviderRequest => crucible_core::protocol::requests::LlmRegisterProviderReply,
     SearchVectors = "search_vectors": crucible_core::protocol::requests::SearchVectorsRequest => Vec<crucible_core::protocol::requests::VectorHit>,
-    // The wire reply is `crucible_daemon::storage::sqlite::fts::FtsResult`,
-    // a daemon-local type core cannot name.
-    SearchText = "search_text": crucible_core::protocol::requests::SearchTextRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::GrepSearchResponse`, daemon-local.
-    SearchGrep = "search_grep": crucible_core::protocol::requests::GrepSearchRequest => serde_json::Value,
-    // The wire reply is `{"vector": [f32; N]}`; the client picks the one key
-    // by hand, so the object shape as a whole has no named type.
-    EmbedQuery = "embed.query": crucible_core::protocol::requests::EmbedQueryRequest => serde_json::Value,
+    SearchText = "search_text": crucible_core::protocol::requests::SearchTextRequest => Vec<crucible_core::protocol::requests::FtsResult>,
+    SearchGrep = "search_grep": crucible_core::protocol::requests::GrepSearchRequest => crucible_core::protocol::requests::GrepSearchResponse,
+    EmbedQuery = "embed.query": crucible_core::protocol::requests::EmbedQueryRequest => crucible_core::protocol::requests::EmbedQueryReply,
     ListNotes = "list_notes": crucible_core::protocol::requests::ListNotesRequest => Vec<crucible_core::protocol::requests::NoteListRow>,
     GetNoteByName = "get_note_by_name": crucible_core::protocol::requests::NoteRef => Option<crucible_core::protocol::requests::NoteByNameReply>,
-    // Bases: params and reply live in `crucible_daemon::bases`, daemon-local.
+    // Bases: one handler answers six operations from a raw `&Request`
+    // (`crucible_core::bases::handle_inner` merges `req.params` with a resolved
+    // `kiln` key before dispatch), so no single Req/Resp pair names a base
+    // operation without a dispatch-level split this pass does not make.
     BaseList = "base.list": serde_json::Value => serde_json::Value,
     BaseViews = "base.views": serde_json::Value => serde_json::Value,
     BaseQuery = "base.query": serde_json::Value => serde_json::Value,
@@ -162,14 +165,12 @@ rpc_methods! {
     BaseReorderGroups = "base.reorder_groups": serde_json::Value => serde_json::Value,
     GetBacklinks = "get_backlinks": crucible_core::protocol::requests::NoteRef => Option<crucible_core::protocol::requests::GetBacklinksReply>,
     KilnGraph = "kiln.graph": crucible_core::protocol::requests::KilnRef => crucible_core::protocol::requests::KilnGraphReply,
-    NoteUpsert = "note.upsert": crucible_core::protocol::requests::NoteUpsertRequest => serde_json::Value,
+    NoteUpsert = "note.upsert": crucible_core::protocol::requests::NoteUpsertRequest => crucible_core::protocol::requests::NoteUpsertReply,
     NoteGet = "note.get": crucible_core::protocol::requests::NotePathRequest => Option<crucible_core::storage::note_store::NoteRecord>,
-    NoteDelete = "note.delete": crucible_core::protocol::requests::NotePathRequest => serde_json::Value,
+    NoteDelete = "note.delete": crucible_core::protocol::requests::NotePathRequest => crucible_core::protocol::requests::StatusReply,
     NoteList = "note.list": crucible_core::protocol::requests::KilnRef => Vec<crucible_core::storage::note_store::NoteRecord>,
-    ProcessFile = "process_file": crucible_core::protocol::requests::ProcessFileRequest => serde_json::Value,
-    // The wire reply is `{"processed", "skipped", "errors"}`, picked apart by
-    // hand into a tuple; the object as a whole has no named type.
-    ProcessBatch = "process_batch": crucible_core::protocol::requests::ProcessBatchRequest => serde_json::Value,
+    ProcessFile = "process_file": crucible_core::protocol::requests::ProcessFileRequest => crucible_core::protocol::requests::ProcessFileReply,
+    ProcessBatch = "process_batch": crucible_core::protocol::requests::ProcessBatchRequest => crucible_core::protocol::requests::ProcessBatchReply,
     SessionCreate = "session.create": crucible_core::protocol::requests::SessionCreateRequest => crucible_core::session::SessionSummary,
     SessionList = "session.list": crucible_core::protocol::requests::SessionListRequest => crucible_core::protocol::requests::SessionListReply,
     SessionGet = "session.get": crucible_core::protocol::requests::Scoped<()> => crucible_core::session::SessionDetail,
@@ -277,15 +278,17 @@ rpc_methods! {
     UiConfig = "ui.config": serde_json::Value => serde_json::Value,
     UiSetTheme = "ui.set_theme": serde_json::Value => serde_json::Value,
     ProjectRegister = "project.register": crucible_core::protocol::requests::PathRequest => crucible_core::project::Project,
-    ProjectUnregister = "project.unregister": crucible_core::protocol::requests::PathRequest => serde_json::Value,
+    ProjectUnregister = "project.unregister": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     ProjectList = "project.list": () => Vec<crucible_core::project::Project>,
     ProjectGet = "project.get": crucible_core::protocol::requests::PathRequest => Option<crucible_core::project::Project>,
-    ProjectOpenKilns = "project.open_kilns": crucible_core::protocol::requests::PathRequest => serde_json::Value,
+    ProjectOpenKilns = "project.open_kilns": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::ProjectOpenKilnsReply,
+    // Same shape problem as `kiln.registry_list`: each row is a
+    // `crucible_core::Project` OR a hand-built stand-in for an entry with no
+    // record, plus two injected keys (`origin`, `kiln_names`). Typing it
+    // would merge the two starting shapes into one Option-heavy struct.
     ProjectRegistryList = "project.registry_list": () => serde_json::Value,
-    // The wire reply is `crucible_daemon::scm::ScmCloneResponse`, daemon-local.
-    ScmClone = "scm.clone": crucible_core::protocol::requests::ScmCloneRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::server::fs::FsListing`, daemon-local.
-    FsListDir = "fs.list_dir": crucible_core::protocol::requests::FsListDirRequest => serde_json::Value,
+    ScmClone = "scm.clone": crucible_core::protocol::requests::ScmCloneRequest => crucible_core::protocol::requests::ScmCloneResponse,
+    FsListDir = "fs.list_dir": crucible_core::protocol::requests::FsListDirRequest => crucible_core::protocol::requests::FsListing,
     DiffGet = "diff.get": crucible_core::protocol::requests::DiffsetRef => crucible_core::diff::Diffset,
     DiffFile = "diff.file": crucible_core::protocol::requests::DiffFileRequest => crucible_core::diff::DiffFileText,
     DiffComment = "diff.comment": crucible_core::protocol::requests::DiffCommentRequest => crucible_core::protocol::requests::DiffCommentReply,
@@ -298,40 +301,38 @@ rpc_methods! {
     ProposalReject = "proposal.reject": crucible_core::protocol::requests::ProposalRejectRequest => crucible_core::proposal::Proposal,
     ProposalDismiss = "proposal.dismiss": crucible_core::protocol::requests::ProposalIdRequest => crucible_core::proposal::Proposal,
     ProposalResolve = "proposal.resolve": crucible_core::protocol::requests::ProposalResolveRequest => crucible_core::proposal::Proposal,
+    // `file_write::read_for_roots`/`write_for_roots` answer with one of
+    // several mutually exclusive shapes (`ok`, a hash mismatch with the
+    // disk content, a merge result, a batch of per-path failures) chosen at
+    // runtime by which branch of a multi-way retry/merge/restore ran. A
+    // faithful type is a tagged union of at least five variants; this pass
+    // types a reply, not a dispatch-level rewrite of the write path.
     FsRead = "fs.read": crucible_core::file_write::FileReadRequest => serde_json::Value,
     FsWrite = "fs.write": crucible_core::file_write::FileWriteRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::server::fs::FsMoveReply`, daemon-local.
-    FsMove = "fs.move": crucible_core::protocol::requests::FsMoveRequest => serde_json::Value,
-    FsMkdir = "fs.mkdir": crucible_core::protocol::requests::FsPathRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::server::fs::FsTrashReply`, daemon-local.
-    FsTrash = "fs.trash": crucible_core::protocol::requests::FsPathRequest => serde_json::Value,
-    NoteRename = "note.rename": crucible_core::protocol::requests::NoteRenameRequest => serde_json::Value,
-    NoteMove = "note.move": crucible_core::protocol::requests::NoteRenameRequest => serde_json::Value,
-    StorageVerify = "storage.verify": crucible_core::protocol::requests::KilnPathRequest => serde_json::Value,
-    StorageCleanup = "storage.cleanup": crucible_core::protocol::requests::KilnPathRequest => serde_json::Value,
-    StorageBackup = "storage.backup": crucible_core::protocol::requests::StorageBackupRequest => serde_json::Value,
-    StorageRestore = "storage.restore": crucible_core::protocol::requests::StorageRestoreRequest => serde_json::Value,
-    McpStart = "mcp.start": crucible_core::protocol::requests::McpStartRequest => serde_json::Value,
-    McpStop = "mcp.stop": () => serde_json::Value,
-    // The wire reply is `crucible_daemon::mcp_server::McpStatus`, daemon-local.
-    McpStatus = "mcp.status": () => serde_json::Value,
+    FsMove = "fs.move": crucible_core::protocol::requests::FsMoveRequest => crucible_core::protocol::requests::FsMoveReply,
+    FsMkdir = "fs.mkdir": crucible_core::protocol::requests::FsPathRequest => crucible_core::protocol::requests::FsMkdirReply,
+    FsTrash = "fs.trash": crucible_core::protocol::requests::FsPathRequest => crucible_core::protocol::requests::FsTrashReply,
+    NoteRename = "note.rename": crucible_core::protocol::requests::NoteRenameRequest => crucible_core::protocol::requests::NoteRenameReply,
+    NoteMove = "note.move": crucible_core::protocol::requests::NoteRenameRequest => crucible_core::protocol::requests::NoteRenameReply,
+    StorageVerify = "storage.verify": crucible_core::protocol::requests::KilnPathRequest => crucible_core::protocol::requests::NotImplementedReply,
+    StorageCleanup = "storage.cleanup": crucible_core::protocol::requests::KilnPathRequest => crucible_core::protocol::requests::NotImplementedReply,
+    StorageBackup = "storage.backup": crucible_core::protocol::requests::StorageBackupRequest => crucible_core::protocol::requests::NotImplementedReply,
+    StorageRestore = "storage.restore": crucible_core::protocol::requests::StorageRestoreRequest => crucible_core::protocol::requests::NotImplementedReply,
+    McpStart = "mcp.start": crucible_core::protocol::requests::McpStartRequest => crucible_core::protocol::requests::McpStartReply,
+    McpStop = "mcp.stop": () => crucible_core::protocol::requests::McpStopReply,
+    McpStatus = "mcp.status": () => crucible_core::protocol::requests::McpStatus,
     SkillsList = "skills.list": crucible_core::protocol::requests::SkillsListRequest => crucible_core::types::skill::SkillsReply,
     SkillsGet = "skills.get": crucible_core::protocol::requests::SkillsGetRequest => crucible_core::types::skill::SkillDetail,
     SkillsSearch = "skills.search": crucible_core::protocol::requests::SkillsSearchRequest => crucible_core::types::skill::SkillsReply,
-    // The wire reply is `crucible_daemon::server::platform::AgentProfilesReply`, daemon-local.
-    AgentsListProfiles = "agents.list_profiles": () => serde_json::Value,
-    AgentsListCards = "agents.list_cards": crucible_core::protocol::requests::AgentsListCardsRequest => serde_json::Value,
-    AgentsResolveProfile = "agents.resolve_profile": crucible_core::protocol::requests::NameRequest => serde_json::Value,
-    // The wire reply is `{"models": [...]}` picked apart by hand.
-    ModelsList = "models.list": crucible_core::protocol::requests::ListAllModelsRequest => serde_json::Value,
-    // The wire reply is `{"providers": [...]}` picked apart by hand.
-    ProvidersList = "providers.list": crucible_core::protocol::requests::ListProvidersRequest => serde_json::Value,
+    AgentsListProfiles = "agents.list_profiles": () => crucible_core::protocol::requests::AgentProfilesReply,
+    AgentsListCards = "agents.list_cards": crucible_core::protocol::requests::AgentsListCardsRequest => crucible_core::protocol::requests::AgentCardsListReply,
+    AgentsResolveProfile = "agents.resolve_profile": crucible_core::protocol::requests::NameRequest => Option<crucible_core::protocol::requests::AgentProfileResolved>,
+    ModelsList = "models.list": crucible_core::protocol::requests::ListAllModelsRequest => crucible_core::protocol::requests::ModelsListReply,
+    ProvidersList = "providers.list": crucible_core::protocol::requests::ListProvidersRequest => crucible_core::protocol::requests::ProvidersListReply,
     EmbeddingsModels = "embeddings.models": crucible_core::protocol::requests::EmbeddingModelsRequest => crucible_core::protocol::requests::EmbeddingCatalog,
     SubagentCollect = "subagent.collect": crucible_core::protocol::requests::SubagentCollectRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::rpc::dispatch::WebhookReceiveReply`, daemon-local.
-    WebhookReceive = "webhook.receive": crucible_core::protocol::requests::WebhookReceiveRequest => serde_json::Value,
-    // The wire reply is `crucible_daemon::tools::autolink::SuggestLinksReply`, daemon-local.
-    SuggestLinks = "suggest_links": crucible_core::protocol::requests::SuggestLinksRequest => serde_json::Value,
+    WebhookReceive = "webhook.receive": crucible_core::protocol::requests::WebhookReceiveRequest => crucible_core::protocol::requests::WebhookReceiveReply,
+    SuggestLinks = "suggest_links": crucible_core::protocol::requests::SuggestLinksRequest => crucible_core::protocol::requests::SuggestLinksReply,
     WorkflowStart = "workflow.start": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::WorkflowSource> => serde_json::Value,
     WorkflowApproveGate = "workflow.approve_gate": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::GateRef> => serde_json::Value,
     WorkflowStatus = "workflow.status": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,

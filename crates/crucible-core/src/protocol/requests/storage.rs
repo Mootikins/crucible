@@ -665,3 +665,491 @@ pub const GREP_DEFAULT_LIMIT: usize = 100;
 fn default_grep_limit() -> usize {
     GREP_DEFAULT_LIMIT
 }
+
+/// One file a batch or a full-kiln process step failed on: the shape
+/// `kiln.open { process: true }` and `process_batch` both answer for an
+/// unindexed file.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FileProcessError {
+    pub path: String,
+    pub error: String,
+}
+
+/// What `kiln.open` answers.
+///
+/// Untagged: the three arms answer a caller that asked to index the kiln
+/// (`Processed`), one whose indexing failed outright (`ProcessError`), and
+/// one that only opened the kiln (`Opened`). The wire has always told the
+/// three apart by which keys are present, not by a tag field.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum KilnOpenReply {
+    /// The kiln opened and its indexing pass finished.
+    Processed {
+        status: String,
+        discovered: usize,
+        processed: usize,
+        skipped: usize,
+        errors: Vec<FileProcessError>,
+    },
+    /// The kiln opened, but indexing raised an error.
+    ProcessError {
+        status: String,
+        process_error: String,
+    },
+    /// The kiln opened; no indexing was requested.
+    Opened { status: String },
+}
+
+/// A bare status word: what `kiln.close`, `note.delete` and `fs.mkdir`'s
+/// siblings answer when there is nothing else to say. The word itself
+/// varies (`"ok"`, `"not_found"`), so it stays a `String`, not a `bool`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StatusReply {
+    pub status: String,
+}
+
+/// Whether `kiln.register` added a new state entry or found one already
+/// there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum KilnRegisterOutcome {
+    Added,
+    AlreadyPresent,
+}
+
+/// What `kiln.register` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnRegisterReply {
+    pub status: String,
+    pub name: String,
+    pub path: String,
+    pub outcome: KilnRegisterOutcome,
+    pub state_file: String,
+}
+
+/// What `kiln.forget` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnForgetReply {
+    pub status: String,
+    pub name: String,
+    pub state_file: String,
+    /// Always `"next daemon start"`: a removal waits for the boot freeze,
+    /// unlike an add, which takes effect immediately.
+    pub takes_effect: String,
+}
+
+/// What `llm.register_provider` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LlmRegisterProviderReply {
+    pub status: String,
+    pub provider: String,
+    pub model: String,
+    pub state_file: String,
+    /// `"additive"` or `"deferred"` — see `SelectionOutcome` (daemon-local:
+    /// it also carries the apply-now decision, not only the wire word).
+    pub outcome: String,
+    /// Whether the running daemon applied the selection immediately.
+    pub live: bool,
+    /// What the daemon keeps using until the next start, when `live` is
+    /// `false`. `null` — not absent — when nothing was serving, or the
+    /// selection applied: the wire has always written this key.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub still_serving: Option<String>,
+}
+
+/// A full-text search result: the reply shape of `search_text`.
+///
+/// Also the `search_text` wire shape: the daemon serializes it and the
+/// client deserializes it, so the field names are the JSON keys.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FtsResult {
+    /// Path to the note
+    pub path: String,
+    /// Note title
+    pub title: String,
+    /// Snippet of matching content (with highlights). An older daemon may
+    /// omit it.
+    #[serde(default)]
+    pub snippet: String,
+    /// BM25 relevance score (lower is better in FTS5)
+    pub rank: f64,
+}
+
+/// A single content-search hit: one row of `search_grep`.
+///
+/// `match_start`/`match_end` are **character** offsets into `text`
+/// (post-trim), suitable for `<mark>` highlighting in the web UI. Only the
+/// first match on a line is reported. Wire keys (`path`/`rel_path`/`line`/
+/// `text`/`match_start`/`match_end`) are the `search_grep` RPC + `POST
+/// /api/search/grep` contract.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GrepHit {
+    /// Absolute path to the matched file.
+    pub path: String,
+    /// Path relative to the search's `rel_base` (forward-slash separators).
+    pub rel_path: String,
+    /// 1-based line number.
+    pub line: u64,
+    /// The matched line, trimmed of surrounding whitespace and capped at a
+    /// daemon-side length.
+    pub text: String,
+    /// Character offset of the first match's start within `text`.
+    pub match_start: usize,
+    /// Character offset of the first match's end within `text`.
+    pub match_end: usize,
+}
+
+/// Result of a `search_grep` call: the hits plus whether they were capped at
+/// the requested limit. Matches the `POST /api/search/grep` response body.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GrepSearchResponse {
+    pub hits: Vec<GrepHit>,
+    pub truncated: bool,
+}
+
+/// What `embed.query` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EmbedQueryReply {
+    pub vector: Vec<f32>,
+}
+
+/// What `note.upsert` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct NoteUpsertReply {
+    pub status: String,
+    pub events_count: usize,
+}
+
+/// What `process_file` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProcessFileReply {
+    /// `"processed"` or `"skipped"`.
+    pub status: String,
+    pub path: String,
+}
+
+/// What `process_batch` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProcessBatchReply {
+    pub processed: usize,
+    pub skipped: usize,
+    pub errors: Vec<FileProcessError>,
+}
+
+/// One kiln `project.open_kilns` opened.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OpenedKiln {
+    /// `null` — not absent — for a kiln the registry cannot name: the wire
+    /// has always written this key.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub kiln: Option<String>,
+    pub path: String,
+}
+
+/// One kiln `project.open_kilns` left closed because it is lazy.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkippedKiln {
+    /// `null` — not absent — for a kiln the registry cannot name.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub kiln: Option<String>,
+    pub reason: String,
+}
+
+/// One kiln `project.open_kilns` failed to open.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnOpenError {
+    /// `null` — not absent — for a kiln the registry cannot name.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub kiln: Option<String>,
+    pub path: String,
+    pub error: String,
+}
+
+/// What `project.open_kilns` answers.
+///
+/// Untagged: a directory that matches no registered project answers with
+/// `NoMatch` alone — no `project` key, no `errors` key — and a match answers
+/// with `Matched`, which always carries both. The wire has told the two
+/// apart by which keys are present since the method shipped.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ProjectOpenKilnsReply {
+    Matched {
+        matched: bool,
+        project: String,
+        opened: Vec<OpenedKiln>,
+        skipped: Vec<SkippedKiln>,
+        errors: Vec<KilnOpenError>,
+    },
+    /// Tried last, and a newtype around a `deny_unknown_fields` struct:
+    /// `Matched`'s extra keys (`project`, `errors`) would otherwise
+    /// deserialize into this arm too, since a struct silently ignores a
+    /// field it does not name (serde has no per-variant
+    /// `deny_unknown_fields` on an untagged enum, only a container-level
+    /// one, so the closed struct lives apart from the variant).
+    NoMatch(ProjectOpenKilnsNoMatch),
+}
+
+/// The `NoMatch` arm of [`ProjectOpenKilnsReply`], closed so it cannot also
+/// read a `Matched` payload.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProjectOpenKilnsNoMatch {
+    pub matched: bool,
+    pub opened: Vec<OpenedKiln>,
+    pub skipped: Vec<SkippedKiln>,
+}
+
+/// What `scm.clone` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ScmCloneResponse {
+    /// Absolute path of the freshly cloned repository.
+    pub path: String,
+    /// The `Project` registered for the clone.
+    pub project: crate::project::Project,
+}
+
+/// One directory entry in an `fs.list_dir` response.
+///
+/// Wire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are
+/// byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1
+/// decoration seam and is always `None`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsEntry {
+    pub name: String,
+    pub rel_path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    /// Unix epoch seconds, or `null` when the platform cannot report it.
+    /// Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub modified: Option<u64>,
+    /// The git/diff decoration seam. Always `null` today, and deliberately
+    /// open: whatever fills it will not be a string.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub status: Option<serde_json::Value>,
+}
+
+/// One directory level, plus whether the cap cut it short: what
+/// `fs.list_dir` answers.
+///
+/// Both keys are part of the cross-language contract (TypeScript
+/// `FsListing`). The response used to be a bare array, which had nowhere to
+/// say "there is more" — so a capped listing would have been
+/// indistinguishable from a complete one, which is worse than the slow
+/// response it replaces.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsListing {
+    pub entries: Vec<FsEntry>,
+    pub truncated: bool,
+}
+
+/// Why one inbound reference was left as it was, by an `fs.move` or a
+/// `note.rename` that rewrote links.
+///
+/// A closed set, because the browser prints a sentence per reason. It was
+/// four string literals spelled in five places, so a fifth reason could
+/// reach a client whose reader has no arm for it. A daemon test walks an
+/// exhaustive match over the two clients, so a new variant fails to compile
+/// until somebody decides what each says about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum SkipReason {
+    /// The stem is shared by several notes, so no single target is meant.
+    Ambiguous,
+    /// The file bytes no longer match the index; a reindex catches up.
+    StaleSpan,
+    /// A canvas resolves to the target but stores it under another spelling.
+    CanvasNoExactMatch,
+    /// The canvas could not be read.
+    CanvasUnreadable,
+}
+
+/// One inbound reference that an `fs.move` or a `note.rename` intentionally
+/// left untouched.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkippedRef {
+    pub source_path: String,
+    pub raw_target: String,
+    pub reason: SkipReason,
+}
+
+/// What `fs.move` answers.
+///
+/// The two link-report keys are absent for a move the link index does not
+/// watch — a directory, an asset, a project file — which is the shape the
+/// browser already reads.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsMoveReply {
+    /// Always true. A move that did not happen is an error, not a `false`.
+    pub moved: bool,
+    /// Sources whose inbound links were rewritten. Kiln note and canvas
+    /// moves only. Absent, never null, for a move with nothing to report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(nullable = false))]
+    pub rewritten_sources: Option<Vec<String>>,
+    /// Inbound links left as they were, with the reason for each. Absent,
+    /// never null, for a move with nothing to report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(nullable = false))]
+    pub skipped: Option<Vec<SkippedRef>>,
+}
+
+/// What `fs.mkdir` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsMkdirReply {
+    /// Always true. A refusal is an error, not a `false`.
+    pub created: bool,
+}
+
+/// What `fs.trash` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsTrashReply {
+    /// Always true. A refusal is an error, not a `false`.
+    pub trashed: bool,
+    /// Where the entry now sits, RELATIVE to the root it was trashed from.
+    pub trash_path: String,
+}
+
+/// Outcome of a `note.rename` / `note.move`, returned to the caller for UX
+/// ("N links updated, M ambiguous links skipped").
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct NoteRenameReply {
+    pub from: String,
+    pub to: String,
+    pub rewritten_sources: Vec<String>,
+    pub skipped: Vec<SkippedRef>,
+}
+
+/// What `storage.verify`, `storage.cleanup`, `storage.backup` and
+/// `storage.restore` answer today: none of the four is implemented yet.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct NotImplementedReply {
+    pub status: String,
+    pub message: String,
+}
+
+/// What `mcp.start` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpStartReply {
+    pub status: String,
+    pub transport: String,
+    /// The SSE port, or `null` under stdio. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub port: Option<u16>,
+    pub tool_count: usize,
+}
+
+/// What `mcp.stop` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpStopReply {
+    pub status: String,
+}
+
+/// The running arm of [`McpStatus`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpRunning {
+    /// Always `true`.
+    pub running: bool,
+    /// Transport type: `sse` or `stdio`.
+    pub transport: String,
+    /// The SSE port, or `null` under stdio. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub port: Option<u16>,
+    /// The kiln path the server serves.
+    pub kiln_path: String,
+    /// Whether the server task has already finished, which is how a crashed
+    /// server reads while the manager still calls itself running.
+    pub finished: bool,
+}
+
+/// The stopped arm of [`McpStatus`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpStopped {
+    /// Always `false`.
+    pub running: bool,
+}
+
+/// What `mcp.status` answers: the server is up, or it is not.
+///
+/// Untagged, because the two arms are told apart by `running` and the wire
+/// has always spelled them that way. The stopped arm carries `running`
+/// ALONE: a stopped server has no transport, no port and no kiln, and
+/// writing those keys as null would say it has them and they are empty.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum McpStatus {
+    /// A server is serving a kiln. Listed first so a payload that carries
+    /// the running keys never reads as the stopped arm, which ignores them.
+    Running(McpRunning),
+    /// No server is running.
+    Stopped(McpStopped),
+}
+
+/// What `webhook.receive` answers.
+///
+/// Acceptance only: the delivery became a `webhook:received` event, and
+/// whether a plugin was listening is not this answer's business. Every
+/// refusal is an HTTP error at the ingress route, which never reaches this
+/// RPC.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WebhookReceiveReply {
+    /// Always `ok`.
+    pub status: String,
+}
+
+/// A single suggestion to convert a plain-text mention into a wikilink:
+/// one row of `suggest_links`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LinkSuggestion {
+    /// The text that was found as a mention (preserves original casing)
+    pub mention: String,
+    /// The note name to link to
+    pub target: String,
+    /// Byte offset in the text where the mention starts
+    pub offset: usize,
+}
+
+/// What `suggest_links` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SuggestLinksReply {
+    pub suggestions: Vec<LinkSuggestion>,
+}

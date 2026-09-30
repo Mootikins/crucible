@@ -1,7 +1,9 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{ForkPoint, Scoped};
-use crucible_core::protocol::requests::{ListAllModelsRequest, ListProvidersRequest};
+use crucible_core::protocol::requests::{
+    ListAllModelsRequest, ListProvidersRequest, ModelsListReply, ProvidersListReply,
+};
 
 // `session.switch_model` is gone: `session.knob.set` writes the model knob
 // now, and `handle_session_knob_set` in `params.rs` carries the same apply
@@ -92,10 +94,10 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
         .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
 
     match am.list_models("", classification).await {
-        Ok(models) => Response::success(req.id, serde_json::json!({ "models": models })),
+        Ok(models) => reply(req.id, ModelsListReply { models }),
         Err(crate::agent_manager::AgentError::SessionNotFound(_)) => {
             // No session fallback path hit — return empty list
-            Response::success(req.id, serde_json::json!({ "models": [] }))
+            reply(req.id, ModelsListReply { models: Vec::new() })
         }
         Err(e) => internal_error(req.id, e),
     }
@@ -123,7 +125,19 @@ pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) 
     } else {
         am.list_providers_summary(classification).await
     };
-    Response::success(req.id, serde_json::json!({ "providers": providers }))
+    reply(req.id, ProvidersListReply { providers })
+}
+
+/// Answer with `value` as JSON, or report the serialisation failure.
+///
+/// The reply types here hold only strings, numbers, booleans and vectors of
+/// those, so the error arm is unreachable in practice. It exists because an
+/// `expect` here would take the daemon down over a reply nobody can act on.
+fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
+    match serde_json::to_value(value) {
+        Ok(value) => Response::success(id, value),
+        Err(e) => internal_error(id, anyhow::anyhow!(e)),
+    }
 }
 
 /// Fork a session by creating a new session and replaying messages from the parent.

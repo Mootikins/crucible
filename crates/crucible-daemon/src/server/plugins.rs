@@ -3,9 +3,10 @@ use super::*;
 use crate::daemon_plugins::PluginServiceFn;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    NameRequest, PathRequest, PluginOptionCallRequest, PluginOptionsRequest,
-    PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow, ScmCloneRequest, Scoped,
-    SurfaceGetReply, SurfaceListReply, SurfaceRequest,
+    KilnOpenError, NameRequest, OpenedKiln, PathRequest, PluginOptionCallRequest,
+    PluginOptionsRequest, PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow,
+    ProjectOpenKilnsNoMatch, ProjectOpenKilnsReply, ScmCloneRequest, ScmCloneResponse, Scoped,
+    SkippedKiln, StatusReply, SurfaceGetReply, SurfaceListReply, SurfaceRequest,
 };
 
 /// Drain extracted service functions, spawn each, and record the handle
@@ -468,7 +469,12 @@ pub(crate) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectMana
     };
 
     match pm.unregister(Path::new(&params.path)) {
-        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Ok(()) => reply(
+            req.id,
+            StatusReply {
+                status: "ok".to_string(),
+            },
+        ),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
 }
@@ -633,9 +639,13 @@ pub(crate) async fn handle_project_open_kilns(
     };
 
     let Some(project) = pm.get(Path::new(&params.path)) else {
-        return Response::success(
+        return reply(
             req.id,
-            serde_json::json!({ "matched": false, "opened": [], "skipped": [] }),
+            ProjectOpenKilnsReply::NoMatch(ProjectOpenKilnsNoMatch {
+                matched: false,
+                opened: Vec::new(),
+                skipped: Vec::new(),
+            }),
         );
     };
 
@@ -661,37 +671,37 @@ pub(crate) async fn handle_project_open_kilns(
             .and_then(|n| registry.resolve(&n).registered())
             .is_some_and(|entry| entry.lazy());
         if lazy {
-            skipped.push(serde_json::json!({
-                "kiln": name,
-                "reason": "lazy",
-            }));
+            skipped.push(SkippedKiln {
+                kiln: name,
+                reason: "lazy".to_string(),
+            });
             continue;
         }
 
         match km.open(&kiln.path).await {
-            Ok(_) => opened.push(serde_json::json!({
-                "kiln": name,
-                "path": kiln.path.to_string_lossy(),
-            })),
+            Ok(_) => opened.push(OpenedKiln {
+                kiln: name,
+                path: kiln.path.to_string_lossy().into_owned(),
+            }),
             // One unopenable kiln must not stop the others: a project with a
             // stale entry should still get the kilns that are there.
-            Err(e) => errors.push(serde_json::json!({
-                "kiln": name,
-                "path": kiln.path.to_string_lossy(),
-                "error": e.to_string(),
-            })),
+            Err(e) => errors.push(KilnOpenError {
+                kiln: name,
+                path: kiln.path.to_string_lossy().into_owned(),
+                error: e.to_string(),
+            }),
         }
     }
 
-    Response::success(
+    reply(
         req.id,
-        serde_json::json!({
-            "matched": true,
-            "project": project.name,
-            "opened": opened,
-            "skipped": skipped,
-            "errors": errors,
-        }),
+        ProjectOpenKilnsReply::Matched {
+            matched: true,
+            project: project.name,
+            opened,
+            skipped,
+            errors,
+        },
     )
 }
 
@@ -775,7 +785,7 @@ pub(crate) async fn handle_scm_clone(
         Err(e) => return internal_error(req.id, e),
     };
 
-    let response = crate::scm::ScmCloneResponse {
+    let response = ScmCloneResponse {
         path: dest.to_string_lossy().to_string(),
         project,
     };

@@ -4,27 +4,11 @@
 //! wrapped in `[[wikilink]]` syntax, returning suggestions for the caller
 //! to present or apply.
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// A single suggestion to convert a plain-text mention into a wikilink.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct LinkSuggestion {
-    /// The text that was found as a mention (preserves original casing)
-    pub mention: String,
-    /// The note name to link to
-    pub target: String,
-    /// Byte offset in the text where the mention starts
-    pub offset: usize,
-}
-
-/// What `suggest_links` answers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SuggestLinksReply {
-    pub suggestions: Vec<LinkSuggestion>,
-}
+/// The `suggest_links` wire types are canonical in core: the row in
+/// `rpc_methods!` and the RPC client both name them from there.
+pub use crucible_core::protocol::requests::{LinkSuggestion, SuggestLinksReply};
 
 /// Find note names mentioned in text that aren't already wikilinked.
 ///

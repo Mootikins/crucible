@@ -173,3 +173,67 @@ pub struct WorkspaceChoice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
 }
+
+/// What `models.list` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelsListReply {
+    pub models: Vec<String>,
+}
+
+/// What `providers.list` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProvidersListReply {
+    pub providers: Vec<crate::types::ProviderInfo>,
+}
+
+/// One ACP agent profile, with the availability probe's verdict: a row of
+/// `agents.list_profiles`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProfileEntry {
+    pub name: String,
+    /// The profile's description, or an empty string when it declares none.
+    pub description: String,
+    /// The command that spawns the agent, or an empty string when the
+    /// profile names none. A profile with no command can never spawn, so it
+    /// is never available.
+    pub command: String,
+    /// Whether the daemon ships this profile, rather than a config declaring
+    /// it.
+    pub is_builtin: bool,
+    /// Whether the probe found the command on PATH and it answered
+    /// `--version`.
+    pub available: bool,
+}
+
+/// What `agents.list_profiles` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProfilesReply {
+    pub profiles: Vec<AgentProfileEntry>,
+}
+
+/// What `agents.list_cards` answers.
+///
+/// No `ToSchema`: `AgentCard` does not derive it (its fields would need to,
+/// transitively), and no web route publishes this reply's OpenAPI shape
+/// today.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AgentCardsListReply {
+    pub cards: Vec<crate::agent::AgentCard>,
+}
+
+/// What `agents.resolve_profile` answers for a name it knows. `None` when
+/// the daemon has no profile of that name.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProfileResolved {
+    pub name: String,
+    pub description: String,
+    pub command: String,
+    pub is_builtin: bool,
+    pub args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+}

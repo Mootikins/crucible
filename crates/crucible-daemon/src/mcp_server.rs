@@ -17,48 +17,9 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-/// What `mcp.status` answers: the server is up, or it is not.
-///
-/// Untagged, because the two arms are told apart by `running` and the wire
-/// has always spelled them that way. The stopped arm carries `running` ALONE:
-/// a stopped server has no transport, no port and no kiln, and writing those
-/// keys as null would say it has them and they are empty.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub enum McpStatus {
-    /// A server is serving a kiln. Listed first so a payload that carries the
-    /// running keys never reads as the stopped arm, which ignores them.
-    Running(McpRunning),
-    /// No server is running.
-    Stopped(McpStopped),
-}
-
-/// The running arm of [`McpStatus`].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct McpRunning {
-    /// Always `true`.
-    pub running: bool,
-    /// Transport type: `sse` or `stdio`.
-    pub transport: String,
-    /// The SSE port, or `null` under stdio. Always written.
-    #[cfg_attr(feature = "openapi", schema(required = true))]
-    pub port: Option<u16>,
-    /// The kiln path the server serves.
-    pub kiln_path: String,
-    /// Whether the server task has already finished, which is how a crashed
-    /// server reads while the manager still calls itself running.
-    pub finished: bool,
-}
-
-/// The stopped arm of [`McpStatus`].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct McpStopped {
-    /// Always `false`.
-    pub running: bool,
-}
+/// What `mcp.status` answers: canonical in core, since the row in
+/// `rpc_methods!` and the RPC client both name it from there.
+pub use crucible_core::protocol::requests::{McpRunning, McpStatus, McpStopped};
 
 /// State of the MCP server
 enum McpServerState {
@@ -119,7 +80,7 @@ impl McpServerManager {
         no_just: bool,
         plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<crucible_core::protocol::requests::McpStartReply, String> {
         let mut state = self.state.lock().await;
 
         // Check if already running
@@ -214,16 +175,16 @@ impl McpServerManager {
             handle,
         };
 
-        Ok(serde_json::json!({
-            "status": "started",
-            "transport": transport_str,
-            "port": actual_port,
-            "tool_count": tool_count,
-        }))
+        Ok(crucible_core::protocol::requests::McpStartReply {
+            status: "started".to_string(),
+            transport: transport_str,
+            port: actual_port,
+            tool_count,
+        })
     }
 
     /// Stop the running MCP server.
-    pub async fn stop(&self) -> Result<serde_json::Value, String> {
+    pub async fn stop(&self) -> Result<crucible_core::protocol::requests::McpStopReply, String> {
         let mut state = self.state.lock().await;
 
         match std::mem::replace(&mut *state, McpServerState::Stopped) {
@@ -235,9 +196,9 @@ impl McpServerManager {
             } => {
                 handle.abort();
                 info!("MCP server stopped (was {} on port {:?})", transport, port);
-                Ok(serde_json::json!({
-                    "status": "stopped",
-                }))
+                Ok(crucible_core::protocol::requests::McpStopReply {
+                    status: "stopped".to_string(),
+                })
             }
             McpServerState::Stopped => {
                 *state = McpServerState::Stopped;

@@ -8,18 +8,11 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
-/// Response for the `scm.clone` RPC.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ScmCloneResponse {
-    /// Absolute path of the freshly cloned repository.
-    pub path: String,
-    /// The `Project` registered for the clone.
-    pub project: crucible_core::Project,
-}
+/// Response for the `scm.clone` RPC: canonical in core, since the row in
+/// `rpc_methods!` and the RPC client both name it from there.
+pub use crucible_core::protocol::requests::ScmCloneResponse;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScmError {

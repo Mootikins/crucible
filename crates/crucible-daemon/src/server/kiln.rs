@@ -9,11 +9,13 @@ use super::*;
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    BacklinkEntry, EmbedQueryRequest, GetBacklinksReply, KilnGraphLink, KilnGraphNote,
-    KilnGraphReply, KilnOpenRequest, KilnRef, KilnRegisterRequest, KilnRow, ListNotesRequest,
-    NameRequest, NoteByNameReply, NoteListRow, NotePathRequest, NoteRef, NoteUpsertRequest,
-    PathRequest, ProcessBatchRequest, ProcessFileRequest, SearchTextRequest, SearchVectorsRequest,
-    SuggestLinksRequest, VectorHit, WikilinkTarget,
+    BacklinkEntry, EmbedQueryReply, EmbedQueryRequest, FileProcessError, GetBacklinksReply,
+    KilnForgetReply, KilnGraphLink, KilnGraphNote, KilnGraphReply, KilnOpenReply, KilnOpenRequest,
+    KilnRef, KilnRegisterOutcome, KilnRegisterReply, KilnRegisterRequest, KilnRow,
+    ListNotesRequest, NameRequest, NoteByNameReply, NoteListRow, NotePathRequest, NoteRef,
+    NoteUpsertReply, NoteUpsertRequest, PathRequest, ProcessBatchReply, ProcessBatchRequest,
+    ProcessFileReply, ProcessFileRequest, SearchTextRequest, SearchVectorsRequest, StatusReply,
+    SuggestLinksReply, SuggestLinksRequest, VectorHit, WikilinkTarget,
 };
 use crucible_core::storage::Scope;
 
@@ -69,32 +71,53 @@ pub(crate) async fn handle_kiln_open(
                     tracing::debug!("process_complete event had no subscribers");
                 }
 
-                Response::success(
+                reply(
                     req.id,
-                    serde_json::json!({
-                        "status": "ok",
-                        "discovered": discovered,
-                        "processed": processed,
-                        "skipped": skipped,
-                        "errors": errors.iter().map(|(p, e)| {
-                            serde_json::json!({"path": p.to_string_lossy(), "error": e})
-                        }).collect::<Vec<_>>()
-                    }),
+                    KilnOpenReply::Processed {
+                        status: "ok".to_string(),
+                        discovered,
+                        processed,
+                        skipped,
+                        errors: errors
+                            .iter()
+                            .map(|(p, e)| FileProcessError {
+                                path: p.to_string_lossy().into_owned(),
+                                error: e.clone(),
+                            })
+                            .collect(),
+                    },
                 )
             }
             Err(e) => {
                 warn!("Processing failed for kiln {:?}: {}", kiln_path, e);
-                Response::success(
+                reply(
                     req.id,
-                    serde_json::json!({
-                        "status": "ok",
-                        "process_error": e.to_string()
-                    }),
+                    KilnOpenReply::ProcessError {
+                        status: "ok".to_string(),
+                        process_error: e.to_string(),
+                    },
                 )
             }
         }
     } else {
-        Response::success(req.id, serde_json::json!({"status": "ok"}))
+        reply(
+            req.id,
+            KilnOpenReply::Opened {
+                status: "ok".to_string(),
+            },
+        )
+    }
+}
+
+/// Answer with `value` as JSON, or report the serialisation failure.
+///
+/// The reply types here hold only strings, numbers, booleans and vectors of
+/// those, so the error arm is unreachable in practice. It exists because an
+/// `expect` here would take the daemon down over a reply nobody can act on.
+fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
+    match serde_json::to_value(value) {
+        Ok(value) => Response::success(id, value),
+        Err(e) => internal_error(id, anyhow::anyhow!(e)),
     }
 }
 
@@ -105,7 +128,12 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     };
 
     match km.close(Path::new(&params.path)).await {
-        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Ok(()) => reply(
+            req.id,
+            StatusReply {
+                status: "ok".to_string(),
+            },
+        ),
         Err(e) => internal_error(req.id, e),
     }
 }
@@ -322,18 +350,20 @@ pub(crate) async fn handle_kiln_register(
     }
 
     info!(kiln = %name, path = %path.display(), "Kiln registered");
-    Response::success(
+    reply(
         req.id,
-        serde_json::json!({
-            "status": "ok",
-            "name": name.to_string(),
-            "path": path.to_string_lossy(),
-            "outcome": match outcome {
-                crate::kiln_state::RegisterOutcome::Added => "added",
-                crate::kiln_state::RegisterOutcome::AlreadyPresent => "already_present",
+        KilnRegisterReply {
+            status: "ok".to_string(),
+            name: name.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            outcome: match outcome {
+                crate::kiln_state::RegisterOutcome::Added => KilnRegisterOutcome::Added,
+                crate::kiln_state::RegisterOutcome::AlreadyPresent => {
+                    KilnRegisterOutcome::AlreadyPresent
+                }
             },
-            "state_file": state.path().to_string_lossy(),
-        }),
+            state_file: state.path().to_string_lossy().into_owned(),
+        },
     )
 }
 
@@ -531,17 +561,17 @@ pub(crate) async fn handle_kiln_forget(
     match state.forget(&params.name) {
         Ok(_) => {
             info!(kiln = %params.name, "Kiln registration forgotten");
-            Response::success(
+            reply(
                 req.id,
-                serde_json::json!({
-                    "status": "ok",
-                    "name": params.name,
-                    "state_file": state.path().to_string_lossy(),
+                KilnForgetReply {
+                    status: "ok".to_string(),
+                    name: params.name,
+                    state_file: state.path().to_string_lossy().into_owned(),
                     // Said in the reply rather than only in the CLI, because
                     // every client needs to know the running daemon still
                     // answers to the name.
-                    "takes_effect": "next daemon start",
-                }),
+                    takes_effect: "next daemon start".to_string(),
+                },
             )
         }
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
@@ -651,10 +681,7 @@ pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> R
     let fts_query = crate::storage::sqlite::fts::build_match_query(query);
 
     match handle.text.search(&fts_query, limit).await {
-        Ok(results) => match serde_json::to_value(results) {
-            Ok(v) => Response::success(req.id, v),
-            Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
-        },
+        Ok(results) => reply(req.id, results),
         Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
     }
 }
@@ -674,7 +701,7 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
 
     match km.embedding_provider().await {
         Ok(provider) => match provider.embed(text).await {
-            Ok(vector) => Response::success(req.id, serde_json::json!({ "vector": vector })),
+            Ok(vector) => reply(req.id, EmbedQueryReply { vector }),
             Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
         },
         Err(e) => internal_error(req.id, e),
@@ -957,12 +984,12 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
     // announces the events. It used to write only the row, so a note written
     // here was missing from every text search.
     match km.upsert_note_record(Path::new(kiln_path), note).await {
-        Ok(events_count) => Response::success(
+        Ok(events_count) => reply(
             req.id,
-            serde_json::json!({
-                "status": "ok",
-                "events_count": events_count
-            }),
+            NoteUpsertReply {
+                status: "ok".to_string(),
+                events_count,
+            },
         ),
         Err(e) => internal_error(req.id, e),
     }
@@ -1016,14 +1043,26 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     // delete notes it isn't allowed to read.
     match note_store.get(path, &scope).await {
         Ok(Some(_)) => {}
-        Ok(None) => return Response::success(req.id, serde_json::json!({"status": "not_found"})),
+        Ok(None) => {
+            return reply(
+                req.id,
+                StatusReply {
+                    status: "not_found".to_string(),
+                },
+            )
+        }
         Err(e) => return internal_error(req.id, e),
     }
 
     // The manager drops the text row with the note row. The note row alone
     // left the note in every text search.
     match km.delete_note_rows(Path::new(kiln_path), path).await {
-        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Ok(()) => reply(
+            req.id,
+            StatusReply {
+                status: "ok".to_string(),
+            },
+        ),
         Err(e) => internal_error(req.id, e),
     }
 }
@@ -1068,12 +1107,12 @@ pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> 
         .process_file(Path::new(kiln_path), Path::new(file_path))
         .await
     {
-        Ok(processed) => Response::success(
+        Ok(processed) => reply(
             req.id,
-            serde_json::json!({
-                "status": if processed { "processed" } else { "skipped" },
-                "path": file_path
-            }),
+            ProcessFileReply {
+                status: if processed { "processed" } else { "skipped" }.to_string(),
+                path: file_path.to_string(),
+            },
         ),
         Err(e) => internal_error(req.id, e),
     }
@@ -1116,21 +1155,19 @@ pub(crate) async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) ->
         }
     }
 
-    Response::success(
+    reply(
         request_id,
-        serde_json::json!({
-            "processed": processed,
-            "skipped": skipped,
-            "errors": errors
+        ProcessBatchReply {
+            processed,
+            skipped,
+            errors: errors
                 .iter()
-                .map(|(p, err)| {
-                    serde_json::json!({
-                        "path": p.to_string_lossy(),
-                        "error": err
-                    })
+                .map(|(p, err)| FileProcessError {
+                    path: p.to_string_lossy().into_owned(),
+                    error: err.clone(),
                 })
-                .collect::<Vec<_>>()
-        }),
+                .collect(),
+        },
     )
 }
 
@@ -1156,12 +1193,8 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
 
     let note_names: Vec<String> = notes.into_iter().map(|n| n.name).collect();
     let suggestions = crate::tools::autolink::suggest_links(text, &note_names);
-    let reply = crate::tools::autolink::SuggestLinksReply { suggestions };
 
-    match serde_json::to_value(reply) {
-        Ok(v) => Response::success(req.id, v),
-        Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
-    }
+    reply(req.id, SuggestLinksReply { suggestions })
 }
 
 #[cfg(test)]

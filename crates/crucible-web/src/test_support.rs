@@ -1497,9 +1497,11 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         RpcMethod::McpStatus => as_rpc_result(crucible_daemon::McpStatus::Stopped(
             crucible_daemon::McpStopped { running: false },
         )),
-        RpcMethod::WebhookReceive => as_rpc_result(crucible_daemon::WebhookReceiveReply {
-            status: "ok".to_string(),
-        }),
+        RpcMethod::WebhookReceive => {
+            as_rpc_result(crucible_core::protocol::requests::WebhookReceiveReply {
+                status: "ok".to_string(),
+            })
+        }
         // One permission request, in the daemon's own wire shape, so the web
         // route's normalisation is exercised on a real `InteractionRequest`
         // rather than on a shape this file invented.

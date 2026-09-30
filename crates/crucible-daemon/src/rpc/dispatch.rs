@@ -24,7 +24,7 @@ use crucible_core::config::ConfigSource;
 use crucible_core::protocol::requests::{
     ConfigKeyRequest, ConfigLookupRequest, ConfigValuesRequest, LuaEvalRequest, Scoped,
     SessionCreateRequest, SessionSubscribeRequest, SubagentCollectRequest, Title,
-    WebhookReceiveRequest,
+    WebhookReceiveReply, WebhookReceiveRequest,
 };
 use crucible_core::protocol::{RpcMethod, METHODS};
 // The app-config keys that name where the daemon acts, classified once beside
@@ -2026,17 +2026,9 @@ pub struct ConfigSaveReply {
     pub rejected: Vec<String>,
 }
 
-/// What `webhook.receive` answers.
-///
-/// Acceptance only: the delivery became a `webhook:received` event, and
-/// whether a plugin was listening is not this answer's business. Every refusal
-/// is an HTTP error at the ingress route, which never reaches this RPC.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct WebhookReceiveReply {
-    /// Always `ok`.
-    pub status: String,
-}
+// `WebhookReceiveReply` is canonical in core (`crucible_core::protocol::
+// requests::WebhookReceiveReply`), imported above with the other request
+// types this module reads.
 
 /// `config.controls` — the app config's declared control tree, and the leaves
 /// that take no control.

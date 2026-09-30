@@ -17,6 +17,8 @@ mod subscription;
 mod workflow;
 
 #[cfg(test)]
+mod golden_reply_tests;
+#[cfg(test)]
 mod golden_tests;
 
 pub use agent::*;

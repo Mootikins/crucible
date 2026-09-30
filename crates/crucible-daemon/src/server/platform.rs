@@ -10,30 +10,10 @@ use crucible_core::protocol::requests::{
 // route name them from there. Re-exported here so this module's own callers
 // keep their `crate::server::platform::SkillDetail` path.
 pub use crucible_core::types::{SkillDetail, SkillSummary, SkillsReply};
-
-/// One ACP agent profile, with the availability probe's verdict.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AgentProfileEntry {
-    pub name: String,
-    /// The profile's description, or an empty string when it declares none.
-    pub description: String,
-    /// The command that spawns the agent, or an empty string when the profile
-    /// names none. A profile with no command can never spawn, so it is never
-    /// available.
-    pub command: String,
-    /// Whether the daemon ships this profile, rather than a config declaring it.
-    pub is_builtin: bool,
-    /// Whether the probe found the command on PATH and it answered `--version`.
-    pub available: bool,
-}
-
-/// What `agents.list_profiles` answers.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AgentProfilesReply {
-    pub profiles: Vec<AgentProfileEntry>,
-}
+// The `agents.*` reply types are canonical in core for the same reason.
+pub use crucible_core::protocol::requests::{
+    AgentCardsListReply, AgentProfileEntry, AgentProfileResolved, AgentProfilesReply,
+};
 
 /// Answer with `value` as JSON, or report the serialisation failure.
 ///
@@ -95,14 +75,14 @@ pub(crate) async fn handle_mcp_start(
         )
         .await
     {
-        Ok(result) => Response::success(req.id, result),
+        Ok(result) => reply(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
 
 pub(crate) async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
     match mcp_mgr.stop().await {
-        Ok(result) => Response::success(req.id, result),
+        Ok(result) => reply(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
@@ -309,7 +289,7 @@ pub(crate) async fn handle_agents_list_cards(
     })
     .collect();
     cards.sort_by(|a, b| a.name.cmp(&b.name));
-    Response::success(req.id, serde_json::json!({ "cards": cards }))
+    reply(req.id, AgentCardsListReply { cards })
 }
 
 /// A profile with no command can never spawn, so it is never available;
@@ -332,16 +312,16 @@ pub(crate) async fn handle_agents_resolve_profile(
     let profiles = agent_manager.build_available_agents();
 
     match profiles.get(&name) {
-        Some(profile) => Response::success(
+        Some(profile) => reply(
             req.id,
-            serde_json::json!({
-                "name": name,
-                "description": profile.description.clone().unwrap_or_default(),
-                "command": profile.command.clone().unwrap_or_default(),
-                "is_builtin": crate::acp::discovery::is_builtin(&name),
-                "args": profile.args.clone().unwrap_or_default(),
-                "env": profile.env,
-            }),
+            AgentProfileResolved {
+                is_builtin: crate::acp::discovery::is_builtin(&name),
+                name,
+                description: profile.description.clone().unwrap_or_default(),
+                command: profile.command.clone().unwrap_or_default(),
+                args: profile.args.clone().unwrap_or_default(),
+                env: profile.env.clone(),
+            },
         ),
         None => Response::success(req.id, serde_json::Value::Null),
     }

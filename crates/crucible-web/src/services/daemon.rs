@@ -762,7 +762,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Once WebhookReceive =>
         webhook_receive(name: String, headers: std::collections::HashMap<String, String>, body: String)
-        -> crucible_daemon::WebhookReceiveReply = webhook_receive(name, headers, body);
+        -> crucible_core::protocol::requests::WebhookReceiveReply = webhook_receive(name, headers, body);
     }
 
     forward_rpc! {

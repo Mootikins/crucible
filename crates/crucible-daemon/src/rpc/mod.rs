@@ -12,4 +12,4 @@ pub(crate) mod ui;
 pub(crate) mod workflow_handlers;
 
 pub use context::{DeferredShutdown, RpcContext, RpcContextParams};
-pub use dispatch::{ConfigOriginRow, ConfigSaveReply, RpcDispatcher, WebhookReceiveReply};
+pub use dispatch::{ConfigOriginRow, ConfigSaveReply, RpcDispatcher};

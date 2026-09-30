@@ -8,14 +8,14 @@
 #[cfg(feature = "fastembed")]
 use crucible_core::protocol::requests::EmbeddingModelRow;
 use crucible_core::protocol::requests::{
-    EmbeddingCatalog, EmbeddingModelsRequest, LlmRegisterProviderRequest,
+    EmbeddingCatalog, EmbeddingModelsRequest, LlmRegisterProviderReply, LlmRegisterProviderRequest,
 };
 use std::sync::Arc;
 
 #[cfg(feature = "fastembed")]
 use crucible_core::config::EmbeddingProviderConfig;
 use crucible_core::config::{BackendType, LlmProviderConfig};
-use crucible_core::protocol::rpc::{Request, Response, INVALID_PARAMS};
+use crucible_core::protocol::rpc::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use tracing::info;
 
 use crate::llm_state::SelectionOutcome;
@@ -100,22 +100,23 @@ pub(crate) async fn handle_llm_register_provider(
         "LLM provider selection recorded"
     );
 
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "status": "ok",
-            "provider": params.provider,
-            "model": params.model,
-            "state_file": state.path().to_string_lossy(),
-            "outcome": outcome.as_str(),
-            // The single field a client needs to decide what to print.
-            "live": applied,
-            // What the daemon keeps using until the next start, when the
-            // answer is deferred. `null` when it was applied, or when nothing
-            // was serving.
-            "still_serving": if applied { None } else { serving_now },
-        }),
-    )
+    let reply = LlmRegisterProviderReply {
+        status: "ok".to_string(),
+        provider: params.provider,
+        model: params.model,
+        state_file: state.path().to_string_lossy().into_owned(),
+        outcome: outcome.as_str().to_string(),
+        // The single field a client needs to decide what to print.
+        live: applied,
+        // What the daemon keeps using until the next start, when the answer
+        // is deferred. Absent when it was applied, or when nothing was
+        // serving.
+        still_serving: if applied { None } else { serving_now },
+    };
+    match serde_json::to_value(reply) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
 }
 
 /// `embeddings.models`: the local embedding catalog, and what of it is on disk.

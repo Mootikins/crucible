@@ -7,10 +7,10 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use crucible_core::protocol::requests::WebhookReceiveReply;
 use crucible_daemon::webhook::{
     default_secrets_path, Signature, WebhookSecrets, SIGNATURE_HEADERS,
 };
-use crucible_daemon::WebhookReceiveReply;
 use std::collections::HashMap;
 use std::sync::Arc;
 use utoipa_axum::{router::OpenApiRouter, routes};

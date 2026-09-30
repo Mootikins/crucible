@@ -57,27 +57,12 @@ use crucible_core::protocol::requests::{
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// One directory entry in an `fs.list_dir` response.
-///
-/// Wire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are
-/// byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration
-/// seam and is always `None`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FsEntry {
-    pub name: String,
-    pub rel_path: String,
-    pub is_dir: bool,
-    pub size: u64,
-    /// Unix epoch seconds, or `null` when the platform cannot report it.
-    /// Always written.
-    #[cfg_attr(feature = "openapi", schema(required = true))]
-    pub modified: Option<u64>,
-    /// The git/diff decoration seam. Always `null` today, and deliberately
-    /// open: whatever fills it will not be a string.
-    #[cfg_attr(feature = "openapi", schema(required = true))]
-    pub status: Option<serde_json::Value>,
-}
+/// The `fs.list_dir`/`fs.move`/`fs.trash` reply types are canonical in
+/// core, since the rows in `rpc_methods!` and the RPC client both name them
+/// from there.
+pub use crucible_core::protocol::requests::{
+    FsEntry, FsListing, FsMkdirReply, FsMoveReply, FsTrashReply,
+};
 
 /// Hard per-directory cap.
 ///
@@ -92,52 +77,6 @@ pub struct FsEntry {
 /// entries kept are therefore the first N in *readdir* order, sorted afterwards
 /// — not the alphabetically-first N, which would cost the full 14.7 s to find.
 const MAX_DIR_ENTRIES: usize = 1_000;
-
-/// One directory level, plus whether the cap cut it short.
-///
-/// Both keys are part of the cross-language contract (TypeScript `FsListing`).
-/// The response used to be a bare array, which had nowhere to say "there is
-/// more" — so a capped listing would have been indistinguishable from a complete
-/// one, which is worse than the slow response it replaces.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FsListing {
-    pub entries: Vec<FsEntry>,
-    pub truncated: bool,
-}
-
-/// What `fs.move` answers.
-///
-/// The two link-report keys are absent for a move the link index does not
-/// watch — a directory, an asset, a project file — which is the shape the
-/// browser already reads. They were written as a `json!` literal beside the
-/// handler, where nothing held them to the reply the web route promises.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FsMoveReply {
-    /// Always true. A move that did not happen is an error, not a `false`.
-    pub moved: bool,
-    /// Sources whose inbound links were rewritten. Kiln note and canvas moves
-    /// only. Absent, never null, for a move with nothing to report.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "openapi", schema(nullable = false))]
-    pub rewritten_sources: Option<Vec<String>>,
-    /// Inbound links left as they were, with the reason for each. Absent,
-    /// never null, for a move with nothing to report.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "openapi", schema(nullable = false))]
-    pub skipped: Option<Vec<crate::server::note_refactor::SkippedRef>>,
-}
-
-/// What `fs.trash` answers.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FsTrashReply {
-    /// Always true. A refusal is an error, not a `false`.
-    pub trashed: bool,
-    /// Where the entry now sits, RELATIVE to the root it was trashed from.
-    pub trash_path: String,
-}
 
 /// The refusal every `project`-kind root check answers with.
 ///
@@ -545,7 +484,7 @@ pub(crate) async fn handle_fs_mkdir(
     };
 
     match mkdir_within(&base, rel_path) {
-        Ok(()) => Response::success(req.id, serde_json::json!({ "created": true })),
+        Ok(()) => reply(req.id, FsMkdirReply { created: true }),
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }

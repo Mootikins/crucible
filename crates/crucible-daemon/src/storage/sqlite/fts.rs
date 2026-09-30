@@ -36,23 +36,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 );
 "#;
 
-/// A full-text search result.
-///
-/// Also the `search_text` wire shape: the daemon serializes it and the
-/// client deserializes it, so the field names are the JSON keys.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct FtsResult {
-    /// Path to the note
-    pub path: String,
-    /// Note title
-    pub title: String,
-    /// Snippet of matching content (with highlights). An older daemon may
-    /// omit it.
-    #[serde(default)]
-    pub snippet: String,
-    /// BM25 relevance score (lower is better in FTS5)
-    pub rank: f64,
-}
+/// A full-text search result: the `search_text` wire shape. Canonical in
+/// core, since the RPC client and the row in `rpc_methods!` both name it
+/// from there.
+pub use crucible_core::protocol::requests::FtsResult;
 
 /// FTS5 phrase literal that locates the row for `path` through the inverted
 /// index, or `None` when the path cannot be phrase-matched.

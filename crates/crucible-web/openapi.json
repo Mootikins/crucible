@@ -4447,7 +4447,7 @@
       },
       "AgentProfileEntry": {
         "type": "object",
-        "description": "One ACP agent profile, with the availability probe's verdict.",
+        "description": "One ACP agent profile, with the availability probe's verdict: a row of\n`agents.list_profiles`.",
         "required": [
           "name",
           "description",
@@ -4465,15 +4465,15 @@
           },
           "command": {
             "type": "string",
-            "description": "The command that spawns the agent, or an empty string when the profile\nnames none. A profile with no command can never spawn, so it is never\navailable."
+            "description": "The command that spawns the agent, or an empty string when the\nprofile names none. A profile with no command can never spawn, so it\nis never available."
           },
           "is_builtin": {
             "type": "boolean",
-            "description": "Whether the daemon ships this profile, rather than a config declaring it."
+            "description": "Whether the daemon ships this profile, rather than a config declaring\nit."
           },
           "available": {
             "type": "boolean",
-            "description": "Whether the probe found the command on PATH and it answered `--version`."
+            "description": "Whether the probe found the command on PATH and it answered\n`--version`."
           }
         }
       },
@@ -7069,7 +7069,7 @@
       },
       "FsEntry": {
         "type": "object",
-        "description": "One directory entry in an `fs.list_dir` response.\n\nWire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are\nbyte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration\nseam and is always `None`.",
+        "description": "One directory entry in an `fs.list_dir` response.\n\nWire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are\nbyte-identical to the TypeScript `FsEntry`. `status` is a Phase-1\ndecoration seam and is always `None`.",
         "required": [
           "name",
           "rel_path",
@@ -7176,7 +7176,7 @@
       },
       "FsListing": {
         "type": "object",
-        "description": "One directory level, plus whether the cap cut it short.\n\nBoth keys are part of the cross-language contract (TypeScript `FsListing`).\nThe response used to be a bare array, which had nowhere to say \"there is\nmore\" — so a capped listing would have been indistinguishable from a complete\none, which is worse than the slow response it replaces.",
+        "description": "One directory level, plus whether the cap cut it short: what\n`fs.list_dir` answers.\n\nBoth keys are part of the cross-language contract (TypeScript\n`FsListing`). The response used to be a bare array, which had nowhere to\nsay \"there is more\" — so a capped listing would have been\nindistinguishable from a complete one, which is worse than the slow\nresponse it replaces.",
         "required": [
           "entries",
           "truncated"
@@ -7208,7 +7208,7 @@
       },
       "FsMoveReply": {
         "type": "object",
-        "description": "What `fs.move` answers.\n\nThe two link-report keys are absent for a move the link index does not\nwatch — a directory, an asset, a project file — which is the shape the\nbrowser already reads. They were written as a `json!` literal beside the\nhandler, where nothing held them to the reply the web route promises.",
+        "description": "What `fs.move` answers.\n\nThe two link-report keys are absent for a move the link index does not\nwatch — a directory, an asset, a project file — which is the shape the\nbrowser already reads.",
         "required": [
           "moved"
         ],
@@ -7222,7 +7222,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Sources whose inbound links were rewritten. Kiln note and canvas moves\nonly. Absent, never null, for a move with nothing to report."
+            "description": "Sources whose inbound links were rewritten. Kiln note and canvas\nmoves only. Absent, never null, for a move with nothing to report."
           },
           "skipped": {
             "type": "array",
@@ -8697,7 +8697,7 @@
       },
       "LinkSuggestion": {
         "type": "object",
-        "description": "A single suggestion to convert a plain-text mention into a wikilink.",
+        "description": "A single suggestion to convert a plain-text mention into a wikilink:\none row of `suggest_links`.",
         "required": [
           "mention",
           "target",
@@ -8838,14 +8838,14 @@
         "oneOf": [
           {
             "$ref": "#/components/schemas/McpRunning",
-            "description": "A server is serving a kiln. Listed first so a payload that carries the\nrunning keys never reads as the stopped arm, which ignores them."
+            "description": "A server is serving a kiln. Listed first so a payload that carries\nthe running keys never reads as the stopped arm, which ignores them."
           },
           {
             "$ref": "#/components/schemas/McpStopped",
             "description": "No server is running."
           }
         ],
-        "description": "What `mcp.status` answers: the server is up, or it is not.\n\nUntagged, because the two arms are told apart by `running` and the wire\nhas always spelled them that way. The stopped arm carries `running` ALONE:\na stopped server has no transport, no port and no kiln, and writing those\nkeys as null would say it has them and they are empty."
+        "description": "What `mcp.status` answers: the server is up, or it is not.\n\nUntagged, because the two arms are told apart by `running` and the wire\nhas always spelled them that way. The stopped arm carries `running`\nALONE: a stopped server has no transport, no port and no kiln, and\nwriting those keys as null would say it has them and they are empty."
       },
       "McpStopped": {
         "type": "object",
@@ -11546,7 +11546,7 @@
       },
       "ScmCloneResponse": {
         "type": "object",
-        "description": "Response for the `scm.clone` RPC.",
+        "description": "What `scm.clone` answers.",
         "required": [
           "path",
           "project"
@@ -13005,7 +13005,7 @@
       },
       "SkipReason": {
         "type": "string",
-        "description": "Why one inbound reference was left as it was.\n\nA closed set, because the browser prints a sentence per reason. It was four\nstring literals spelled in five places, so a fifth reason could reach a\nclient whose reader has no arm for it. `every_skip_reason_reaches_the_wire`\n(`crucible-web`) walks an exhaustive match, so a new variant fails to\ncompile until somebody decides what the client says about it.",
+        "description": "Why one inbound reference was left as it was, by an `fs.move` or a\n`note.rename` that rewrote links.\n\nA closed set, because the browser prints a sentence per reason. It was\nfour string literals spelled in five places, so a fifth reason could\nreach a client whose reader has no arm for it. A daemon test walks an\nexhaustive match over the two clients, so a new variant fails to compile\nuntil somebody decides what each says about it.",
         "enum": [
           "ambiguous",
           "stale-span",
@@ -13015,7 +13015,7 @@
       },
       "SkippedRef": {
         "type": "object",
-        "description": "One inbound reference that was intentionally left untouched.",
+        "description": "One inbound reference that an `fs.move` or a `note.rename` intentionally\nleft untouched.",
         "required": [
           "source_path",
           "raw_target",
@@ -15111,7 +15111,7 @@
       },
       "WebhookReceiveReply": {
         "type": "object",
-        "description": "What `webhook.receive` answers.\n\nAcceptance only: the delivery became a `webhook:received` event, and\nwhether a plugin was listening is not this answer's business. Every refusal\nis an HTTP error at the ingress route, which never reaches this RPC.",
+        "description": "What `webhook.receive` answers.\n\nAcceptance only: the delivery became a `webhook:received` event, and\nwhether a plugin was listening is not this answer's business. Every\nrefusal is an HTTP error at the ingress route, which never reaches this\nRPC.",
         "required": [
           "status"
         ],
