@@ -2777,9 +2777,17 @@ export interface components {
         ContextLimitSource: "provider_api" | "config" | "default" | "agent" | "unknown";
         /**
          * @description Strategy for managing conversation context when it exceeds the token budget.
+         *
+         *     Serializes lowercase (`"truncate"`/`"summarize"`), matching [`FromStr`] and
+         *     [`Display`](std::fmt::Display) below. Before this type carried
+         *     `#[serde(rename_all)]`, the derive wrote the variant names as-is
+         *     (`"Truncate"`/`"Summarize"`) wherever a `SessionAgent` serialized this
+         *     field — including every session a daemon persisted to disk. The `alias`
+         *     on each variant keeps those old records loading: [`Deserialize`] accepts
+         *     either spelling, and [`Serialize`] only ever writes the new one.
          * @enum {string}
          */
-        ContextStrategy: "Truncate" | "Summarize";
+        ContextStrategy: "truncate" | "summarize";
         /**
          * @description `base.create_entry`: create a note that the base's filters admit.
          *
@@ -3337,10 +3345,7 @@ export interface components {
         FsMoveRequest: {
             /** @description Root-relative POSIX path of the entry to move. */
             from_rel: string;
-            /**
-             * @description `"project"` or `"kiln"`. It selects the allowlist that the daemon
-             *     checks `root` against.
-             */
+            /** @description Selects the allowlist that the daemon checks `root` against. */
             kind: components["schemas"]["FsRootKind"];
             /** @description Absolute path of the root that holds both ends. */
             root: string;
@@ -3349,10 +3354,7 @@ export interface components {
         };
         /** @description Request for `fs.mkdir` and `fs.trash`: one path inside one root. */
         FsPathRequest: {
-            /**
-             * @description `"project"` or `"kiln"`. It selects the allowlist that the daemon
-             *     checks `root` against.
-             */
+            /** @description Selects the allowlist that the daemon checks `root` against. */
             kind: components["schemas"]["FsRootKind"];
             /** @description Root-relative POSIX path of the entry. */
             rel_path: string;
@@ -3363,11 +3365,12 @@ export interface components {
          * @description The two roots that an `fs.*` mutation may name, and the allowlist that
          *     each one selects.
          *
-         *     This type describes the wire. The field that carries it stays a `String`,
-         *     so the daemon refuses an unknown kind in its own sentence. A body
-         *     rejection would say only "unknown variant". A web test walks an
-         *     exhaustive match, so a third kind cannot reach the document without a
-         *     decision about it.
+         *     This type describes the wire, and the field that carries it is this type,
+         *     not a `String`: an unknown kind now fails at deserialize, where the
+         *     document's own error names the bad value, before a handler ever sees the
+         *     request. A web test still walks an exhaustive match over the two
+         *     variants, so a third kind cannot reach the document without a decision
+         *     about it.
          * @enum {string}
          */
         FsRootKind: "project" | "kiln";
@@ -3825,8 +3828,12 @@ export interface components {
         } | {
             /** @enum {string} */
             knob: "context_strategy";
-            /** @description The strategy's string spelling, parsed and validated by the daemon. */
-            value: string;
+            /**
+             * @description The strategy. A closed set, not a `String`: an unknown spelling now
+             *     fails at deserialize, where the wire's own error names the bad value,
+             *     instead of reaching the daemon's own `FromStr` check.
+             */
+            value: components["schemas"]["ContextStrategy"];
         } | {
             /** @enum {string} */
             knob: "precognition";

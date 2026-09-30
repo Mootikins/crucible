@@ -106,7 +106,7 @@ async fn context_strategy_round_trips_its_string_spelling() {
     assert_knob_put_reaches_daemon(json!({"knob": "context_strategy", "value": "truncate"})).await;
     assert_knob_get_returns(
         "context_strategy",
-        json!({"knob": "context_strategy", "value": "recent"}),
+        json!({"knob": "context_strategy", "value": "truncate"}),
     )
     .await;
 }

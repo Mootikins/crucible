@@ -815,7 +815,7 @@ impl DaemonClient {
     pub async fn fs_move(
         &self,
         root: &str,
-        kind: &str,
+        kind: FsRootKind,
         from_rel: &str,
         to_rel: &str,
     ) -> Result<crate::FsMoveReply> {
@@ -823,7 +823,7 @@ impl DaemonClient {
             RpcMethod::FsMove,
             FsMoveRequest {
                 root: root.to_string(),
-                kind: kind.to_string(),
+                kind,
                 from_rel: from_rel.to_string(),
                 to_rel: to_rel.to_string(),
             },
@@ -833,13 +833,13 @@ impl DaemonClient {
 
     /// Create a folder (and missing parents) inside a registered project or
     /// open kiln.
-    pub async fn fs_mkdir(&self, root: &str, kind: &str, rel_path: &str) -> Result<()> {
+    pub async fn fs_mkdir(&self, root: &str, kind: FsRootKind, rel_path: &str) -> Result<()> {
         let _: serde_json::Value = self
             .call(
                 RpcMethod::FsMkdir,
                 FsPathRequest {
                     root: root.to_string(),
-                    kind: kind.to_string(),
+                    kind,
                     rel_path: rel_path.to_string(),
                 },
             )
@@ -852,14 +852,14 @@ impl DaemonClient {
     pub async fn fs_trash(
         &self,
         root: &str,
-        kind: &str,
+        kind: FsRootKind,
         rel_path: &str,
     ) -> Result<crate::FsTrashReply> {
         self.call(
             RpcMethod::FsTrash,
             FsPathRequest {
                 root: root.to_string(),
-                kind: kind.to_string(),
+                kind,
                 rel_path: rel_path.to_string(),
             },
         )

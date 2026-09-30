@@ -588,10 +588,10 @@ impl OilChatApp {
                 );
                 self.send_setting_ack("model", model);
             }
-            SetRpcAction::Knob(crucible_core::types::KnobValue::ContextStrategy(normalized)) => {
+            SetRpcAction::Knob(crucible_core::types::KnobValue::ContextStrategy(strategy)) => {
                 self.runtime_config
-                    .set_str(key, normalized, ModSource::Command);
-                self.send_setting_ack("context_strategy", normalized);
+                    .set_str(key, &strategy.to_string(), ModSource::Command);
+                self.send_setting_ack("context_strategy", strategy);
             }
             SetRpcAction::Knob(crucible_core::types::KnobValue::Precognition(enabled)) => {
                 // Keep the local copy in step: it is what `:set` and the

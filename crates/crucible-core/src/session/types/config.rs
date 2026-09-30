@@ -4,11 +4,21 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Strategy for managing conversation context when it exceeds the token budget.
+///
+/// Serializes lowercase (`"truncate"`/`"summarize"`), matching [`FromStr`] and
+/// [`Display`](std::fmt::Display) below. Before this type carried
+/// `#[serde(rename_all)]`, the derive wrote the variant names as-is
+/// (`"Truncate"`/`"Summarize"`) wherever a `SessionAgent` serialized this
+/// field — including every session a daemon persisted to disk. The `alias`
+/// on each variant keeps those old records loading: [`Deserialize`] accepts
+/// either spelling, and [`Serialize`] only ever writes the new one.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ContextStrategy {
     /// Drop oldest non-system messages until under budget (default)
     #[default]
+    #[serde(alias = "Truncate")]
     Truncate,
     /// Replace the oldest non-system, non-last messages with one recap.
     ///
@@ -20,6 +30,7 @@ pub enum ContextStrategy {
     /// `SlidingWindow` used to sit between this and `Truncate`. It drained
     /// exactly what this drains and left nothing in its place — the same
     /// turns lost, with no marker saying so.
+    #[serde(alias = "Summarize")]
     Summarize,
 }
 

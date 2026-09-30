@@ -276,13 +276,14 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         }};
     }
 
+    use crucible_core::session::ContextStrategy;
     use crucible_core::types::{KnobValue, SessionKnob};
 
     round_trip!(
         "context_strategy",
-        client.session_knob_set(&sid, KnobValue::ContextStrategy("summarize".to_string())),
+        client.session_knob_set(&sid, KnobValue::ContextStrategy(ContextStrategy::Summarize)),
         client.session_knob_get(&sid, SessionKnob::ContextStrategy),
-        KnobValue::ContextStrategy("summarize".to_string())
+        KnobValue::ContextStrategy(ContextStrategy::Summarize)
     );
 
     round_trip!(

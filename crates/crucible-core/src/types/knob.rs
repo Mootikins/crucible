@@ -29,6 +29,7 @@
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]
 
+use crate::session::ContextStrategy;
 use serde::{Deserialize, Serialize};
 
 /// A per-session setting a client can read and write.
@@ -75,8 +76,10 @@ pub enum KnobValue {
     /// The mode id. `None` is the agent's default mode: no mode was ever
     /// set.
     Mode(Option<String>),
-    /// The strategy's string spelling, parsed and validated by the daemon.
-    ContextStrategy(String),
+    /// The strategy. A closed set, not a `String`: an unknown spelling now
+    /// fails at deserialize, where the wire's own error names the bad value,
+    /// instead of reaching the daemon's own `FromStr` check.
+    ContextStrategy(ContextStrategy),
     /// Whether the kiln is searched before the first message.
     Precognition(bool),
     /// Maximum consecutive plugin turns before approval becomes Ask.

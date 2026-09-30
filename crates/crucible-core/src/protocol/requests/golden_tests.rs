@@ -458,7 +458,7 @@ fn fs_methods() {
         "fs.move",
         &[FsMoveRequest {
             root: "/repo".into(),
-            kind: "project".into(),
+            kind: FsRootKind::Project,
             from_rel: "a.md".into(),
             to_rel: "b.md".into(),
         }],
@@ -467,7 +467,7 @@ fn fs_methods() {
         "fs.path",
         &[FsPathRequest {
             root: "/repo".into(),
-            kind: "kiln".into(),
+            kind: FsRootKind::Kiln,
             rel_path: "dir".into(),
         }],
     );

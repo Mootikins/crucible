@@ -172,12 +172,14 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
             value,
         )))),
         "contextstrategy" | "context_strategy" => {
-            // Validate the strategy value
-            match value.to_lowercase().as_str() {
-                strategy @ ("truncate" | "summarize") => Ok(SetEffect::DaemonRpc(
-                    SetRpcAction::Knob(KnobValue::ContextStrategy(strategy.to_string())),
-                )),
-                _ => Err(SetError::InvalidValue {
+            use crucible_core::session::ContextStrategy;
+            use std::str::FromStr;
+
+            match ContextStrategy::from_str(&value) {
+                Ok(strategy) => Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                    KnobValue::ContextStrategy(strategy),
+                ))),
+                Err(_) => Err(SetError::InvalidValue {
                     key,
                     message: format!("unknown strategy '{}'. Valid: truncate, summarize", value),
                 }),

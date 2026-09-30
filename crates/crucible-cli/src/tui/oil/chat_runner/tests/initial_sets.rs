@@ -19,7 +19,9 @@ async fn startup_set_overrides_reach_the_daemon_rpc() {
     let mut runner =
         OilChatRunner::with_terminal(Terminal::with_size(80, 24)).with_initial_sets(vec![
             SetEffect::DaemonRpc(SetRpcAction::Knob(
-                crucible_core::types::KnobValue::ContextStrategy("truncate".into()),
+                crucible_core::types::KnobValue::ContextStrategy(
+                    crucible_core::session::ContextStrategy::Truncate,
+                ),
             )),
             SetEffect::DaemonRpc(SetRpcAction::Knob(crucible_core::types::KnobValue::Model(
                 "gpt-4o".into(),

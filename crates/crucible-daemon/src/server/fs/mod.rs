@@ -51,7 +51,9 @@ use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
-use crucible_core::protocol::requests::{FsListDirRequest, FsMoveRequest, FsPathRequest};
+use crucible_core::protocol::requests::{
+    FsListDirRequest, FsMoveRequest, FsPathRequest, FsRootKind,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -378,7 +380,7 @@ pub(crate) async fn handle_fs_move(
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let kind = params.kind.as_str();
+    let kind = params.kind;
     let from_rel = params.from_rel.as_str();
     let to_rel = params.to_rel.as_str();
 
@@ -395,7 +397,7 @@ pub(crate) async fn handle_fs_move(
     // note. Directories and assets keep the plain rename (folder-level bulk
     // rewrite is Phase 3.1; bare-stem links to children keep resolving via key
     // re-resolution regardless).
-    if kind == "kiln"
+    if kind == FsRootKind::Kiln
         && crucible_core::kiln::is_indexable_file(std::path::Path::new(from_rel))
         && crucible_core::kiln::is_indexable_file(std::path::Path::new(to_rel))
         && base.join(from_rel).is_file()
@@ -418,7 +420,7 @@ pub(crate) async fn handle_fs_move(
 
     match move_within(&base, from_rel, to_rel) {
         Ok((from, to)) => {
-            if kind == "kiln" {
+            if kind == FsRootKind::Kiln {
                 km.folder_moved(&from, &to);
             }
             reply(
@@ -443,25 +445,24 @@ async fn resolve_root(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
     sessions: &Arc<SessionManager>,
-    kind: &str,
+    kind: FsRootKind,
     root: &str,
 ) -> Result<PathBuf, &'static str> {
     match kind {
-        "project" => project_root(pm, sessions, Path::new(root))
+        FsRootKind::Project => project_root(pm, sessions, Path::new(root))
             .await
             .ok_or(ROOT_NOT_ADMITTED),
         // Registered, not merely open, and opened on first use. This asked
         // whether the manager held the directory OPEN, which a restart makes
         // false for every kiln; identity is the registry's answer and the
         // open is a consequence of admitting, not a precondition for it.
-        "kiln" => match Path::new(root).canonicalize() {
+        FsRootKind::Kiln => match Path::new(root).canonicalize() {
             Ok(canon) => match km.admit_kiln_root(&canon).await {
                 Some(_) => Ok(canon),
                 None => Err("root is not a registered kiln"),
             },
             Err(_) => Err("root is not a registered kiln"),
         },
-        _ => Err("kind must be 'project' or 'kiln'"),
     }
 }
 
@@ -535,7 +536,7 @@ pub(crate) async fn handle_fs_mkdir(
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let kind = params.kind.as_str();
+    let kind = params.kind;
     let rel_path = params.rel_path.as_str();
 
     let base = match resolve_root(pm, km, sessions, kind, &params.root).await {
@@ -592,7 +593,7 @@ pub(crate) async fn handle_fs_trash(
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let kind = params.kind.as_str();
+    let kind = params.kind;
     let rel_path = params.rel_path.as_str();
 
     let base = match resolve_root(pm, km, sessions, kind, &params.root).await {
@@ -606,7 +607,7 @@ pub(crate) async fn handle_fs_trash(
         Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
     };
     let mut removed_notes: Vec<PathBuf> = Vec::new();
-    if kind == "kiln" {
+    if kind == FsRootKind::Kiln {
         collect_indexed_files(&source, &mut removed_notes);
     }
 

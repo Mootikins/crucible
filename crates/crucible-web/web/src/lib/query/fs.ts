@@ -74,7 +74,7 @@ export interface DirRequest {
  */
 export interface FsMoveParams {
   readonly root: string;
-  readonly kind: 'project' | 'kiln';
+  readonly kind: Schemas['FsRootKind'];
   readonly fromRel: string;
   readonly toRel: string;
 }
@@ -87,7 +87,7 @@ export interface FsMoveParams {
  */
 export interface FsPathParams {
   readonly root: string;
-  readonly kind: 'project' | 'kiln';
+  readonly kind: Schemas['FsRootKind'];
   readonly relPath: string;
 }
 

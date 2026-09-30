@@ -104,7 +104,7 @@ fn set_contextstrategy_summarize_accepted() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "contextstrategy=summarize"),
-        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == "summarize"
+        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == crucible_core::session::ContextStrategy::Summarize
     ));
 }
 
@@ -113,7 +113,7 @@ fn set_contextstrategy_normalizes_value() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "contextstrategy=SUMMARIZE"),
-        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == "summarize"
+        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == crucible_core::session::ContextStrategy::Summarize
     ));
 }
 

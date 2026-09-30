@@ -50,9 +50,9 @@ at the same time. Each step leaves the tree working.
 | 13. One generic knob | about 11 types, 10 RPC methods, about 90 per-knob functions | M | step 12 |
 | 14. Simpler core APIs and the audit list | about 40 | S each | step 12 |
 | 15. Luau types from the schema | about 8 | M | step 12 |
-| 16. The last TS copies | about 16 | S | step 11 |
+| 16. The last TS copies (done) | about 16 | S | step 11 |
 | 17. One daemon test fixture (done) | 3 test types | S | none |
-| 18. Enums on the wire | about 0, string fields become enums | S | step 12 |
+| 18. Enums on the wire (in part: `FsRootKind` and `ContextStrategy` done; `session_type`/`agent_type`/`recording_mode`/`state` remain) | about 0, string fields become enums | S | step 12 |
 | 19. One RPC route for the web | about 90 types, about 70 TS functions, about 100 routes | L | steps 12 and 13 |
 | 20. Plugin data schemas | 0 core types; plugin data gets checked shapes | M | step 19 |
 | 21. Owner decisions | about 9, see the step | S each | none |
@@ -1014,7 +1014,7 @@ Findings for the measured counts and the drift proof.
 the shared `InProcessDaemon`, and the two plugin-bridge rigs are one `Rig`.
 The other local fixtures build different things, so they stay.
 
-## Step 18. Enums on the wire
+## Step 18. Enums on the wire (in part)
 
 **Change.** Use the existing enums, not strings, for `session_type`,
 `agent_type`, `recording_mode`, `state`, `FsPathRequest.kind` and
@@ -1024,6 +1024,32 @@ unions.
 **Done when.** The generated TS and Luau types hold literal unions for these
 fields, so a misspelled value fails `tsc` or `luau-lsp`. Old stored values
 still load, shown by a fixture captured before the change.
+
+**Outcome (in part).** `FsPathRequest.kind`, `FsMoveRequest.kind` (now
+`FsRootKind`) and `KnobValue::ContextStrategy` (now `ContextStrategy`) are
+done, on the wire and in the generated TS. `ContextStrategy` gained
+`#[serde(rename_all = "snake_case")]` with a `#[serde(alias)]` on each
+variant, because its derive's old output (`"Truncate"`/`"Summarize"`) is
+what every persisted `SessionAgent.context_strategy` actually holds; a
+fixture captured before the change proves those records still load. An
+unknown `FsPathRequest.kind`/`FsMoveRequest.kind` now fails 422 at the
+`Json<T>` extractor, before `resolve_root`'s own message — an accepted,
+tested behavior change (see the Core Domain Types and Web Server pages'
+Findings).
+
+`session_type`, `agent_type` and `recording_mode` on `SessionCreateRequest`,
+and the filter fields `session_type`/`state` on `SessionListRequest` and
+`SessionListPersistedRequest`, are **not done**. The two list/persisted
+filters are documented to tolerate an unknown value ("the daemon ignores a
+type or a state it does not know") so a caller newer than the daemon is not
+refused; an enum field cannot do that without a lossy catch-all variant,
+which is a design decision this step should not make silently. `agent_type`
+has no core enum: `session::types::agent::SessionAgent.agent_type` is a
+`String` compared against `"acp"`/`"internal"` in `types/mode.rs` and in the
+ACP branch of `server/session/create.rs`, and moving the request field alone
+would leave the two sides of one concept typed differently. This is a
+larger, separate change — introduce `AgentType`, retype `SessionAgent`, and
+migrate its call sites — left for a follow-up step.
 
 
 ## Step 19. One RPC route for the web

@@ -1305,8 +1305,10 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
   await setKnob(sessionId, { knob: 'precognition', value: enabled });
 }
 
-/** Get the context-assembly strategy, by its string spelling. */
-export async function getContextStrategy(sessionId: string): Promise<string | null> {
+/** Get the context-assembly strategy. */
+export async function getContextStrategy(
+  sessionId: string,
+): Promise<Schemas['ContextStrategy'] | null> {
   const value = await getKnob(sessionId, 'context_strategy');
   return value.knob === 'context_strategy' ? value.value : null;
 }
@@ -1314,11 +1316,14 @@ export async function getContextStrategy(sessionId: string): Promise<string | nu
 /**
  * Set the context-assembly strategy.
  *
- * No client-side allowlist of names: the daemon parses the string and answers
- * 422 for one it does not know, so a list here would be a second place to update
- * every time the enum grows.
+ * `strategy`'s type is the document's own closed set (`ContextStrategy`), so
+ * a caller cannot build a request naming a spelling the daemon does not
+ * know — `tsc` refuses it here, before a round trip earns a 422.
  */
-export async function setContextStrategy(sessionId: string, strategy: string): Promise<void> {
+export async function setContextStrategy(
+  sessionId: string,
+  strategy: Schemas['ContextStrategy'],
+): Promise<void> {
   await setKnob(sessionId, { knob: 'context_strategy', value: strategy });
 }
 
@@ -1977,7 +1982,7 @@ export type FsMoveOutcome = Schemas['FsMoveReply'];
  */
 export async function fsMove(
   root: string,
-  kind: 'project' | 'kiln',
+  kind: Schemas['FsRootKind'],
   fromRel: string,
   toRel: string,
 ): Promise<FsMoveOutcome> {
@@ -1992,7 +1997,7 @@ export async function fsMove(
 /** Create a folder (and missing parents) inside one root. */
 export async function fsMkdir(
   root: string,
-  kind: 'project' | 'kiln',
+  kind: Schemas['FsRootKind'],
   relPath: string,
 ): Promise<void> {
   expectOk(
@@ -2008,7 +2013,7 @@ export async function fsMkdir(
  */
 export async function fsTrash(
   root: string,
-  kind: 'project' | 'kiln',
+  kind: Schemas['FsRootKind'],
   relPath: string,
 ): Promise<void> {
   expectOk(

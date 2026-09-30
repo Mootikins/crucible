@@ -957,6 +957,41 @@ crate — see [[Agent Manager]] for that hazard.
   closed decision; a resumed transcript still relies on the stored
   `context_injected` line that `inject_context` writes directly, to avoid
   double-persisting the same content.
+- **Step 18 of the Simplification Plan (enums on the wire) is done for
+  `KnobValue::ContextStrategy`, `FsPathRequest.kind` and
+  `FsMoveRequest.kind`.** `types/knob.rs`'s `KnobValue::ContextStrategy` now
+  carries `session::ContextStrategy` instead of `String`; the daemon's
+  `set`/`get` handlers (`server/session/params.rs`) no longer call
+  `.parse()` or `.to_string()` at the boundary. `session/types/config.rs`'s
+  `ContextStrategy` gained `#[serde(rename_all = "snake_case")]`: before
+  this, its derive wrote the bare variant names
+  (`"Truncate"`/`"Summarize"`), which is what every `SessionAgent` a daemon
+  had ever persisted actually held on disk (`context_strategy` field,
+  `#[serde(default)]`). Each variant keeps a `#[serde(alias = "Truncate")]`/
+  `"Summarize"` so those old records still load; a fresh write now uses the
+  lowercase spelling `FromStr`/`Display` already used. Proved by
+  `session/types/tests/context_strategy.rs::old_pascal_case_records_still_load`,
+  against fixtures captured before the change
+  (`crates/crucible-core/tests/fixtures/wire_compat/context_strategy_*_pre_step18.json`).
+  `protocol/requests/storage.rs`'s `FsPathRequest.kind`/`FsMoveRequest.kind`
+  are now `FsRootKind`, not `String` with a `#[schema(value_type = ...)]`
+  override faking the OpenAPI shape; `crucible-daemon`'s `resolve_root`
+  matches the enum directly, with no wildcard arm. **Behavior change,
+  accepted as part of this step:** a request naming an unknown `kind` now
+  fails at JSON deserialize (422, `axum`'s own rejection) instead of
+  reaching `resolve_root`'s custom "kind must be 'project' or 'kiln'"
+  message — proved by
+  `crucible-web/src/routes/fs.rs::tests::an_unknown_root_kind_is_refused_before_the_daemon`.
+  `SessionCreateRequest.session_type`/`recording_mode`/`agent_type`, and the
+  filter fields `SessionListRequest.session_type`/`state` and
+  `SessionListPersistedRequest.session_type`, are **not** part of this
+  step: the list/persisted filters are documented to tolerate an unknown
+  value ("the daemon ignores a type or a state it does not know"), which an
+  enum field cannot do without a lossy fallback variant, and `agent_type`
+  has no core enum yet — `session/types/agent.rs`'s `SessionAgent.agent_type`
+  and its widespread `&str` comparisons (`types/mode.rs::effective_for`,
+  ACP branching in `server/session/create.rs`) would need to move first.
+  Left for a follow-up step.
 None of the above conflicts with `AGENTS.md`'s ownership table: every trait
 in this page is implemented outside `crucible-core`, every closed set with a
 compile-time gate matches the "one exhaustive table" design rule, and the

@@ -877,3 +877,24 @@ page's file set and are not summarized above.
   `crucible-daemon::tools::grep_engine::GrepHit::rel_path` to
   `relative_path`, regenerate, `bun run typecheck`) failed at all five
   `SearchPanel.tsx` readers, then was reverted.
+- **Step 18 of the Simplification Plan (enums on the wire), the web/TS
+  half.** `FsPathRequest.kind`/`FsMoveRequest.kind` moved from `String` to
+  the existing `FsRootKind` enum (see the Core Domain Types page's
+  Findings for the Rust side and the accepted behavior change: an unknown
+  `kind` now fails `axum`'s `Json<T>` extraction with 422 instead of
+  reaching `resolve_root`). `lib/query/fs.ts`'s `FsMoveParams.kind`/
+  `FsPathParams.kind` and `lib/api.ts`'s `fsMove`/`fsMkdir`/`fsTrash`
+  parameters are now `Schemas['FsRootKind']` in place of a hand
+  `'project' | 'kiln'` union — the generated literal union was already
+  `"project" | "kiln"`, so this is a drift tie, not a behavior change.
+  `KnobValue::ContextStrategy` moved from `String` to the existing
+  `ContextStrategy` enum; `lib/api.ts`'s `getContextStrategy`/
+  `setContextStrategy` now read/write `Schemas['ContextStrategy']`
+  (`"truncate" | "summarize"`) instead of a bare `string`, and
+  `AdvancedSessionSettings.tsx`'s `<select>` narrows the DOM's `string`
+  through a type guard (`isContextStrategy`) before it can reach
+  `setKnob`. A drift proof (misspell `"contextstrategy"`'s wire enum value
+  in a scratch TS use) fails `bun run typecheck`; see the Core Domain
+  Types page for the fixture proof that old `"Truncate"`/`"Summarize"`
+  session records still load under the new `#[serde(rename_all =
+  "snake_case")]` spelling.

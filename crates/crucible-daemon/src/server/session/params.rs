@@ -3,8 +3,6 @@ use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{KnobRef, Scoped, UndoCount};
 use crucible_core::types::{AcpKnob, KnobValue, SessionKnob};
 
-use crucible_core::session::ContextStrategy;
-
 // One handler writes every knob and one handler reads every knob: both
 // deserialize `crucible_core::types::KnobValue` (set) or
 // `crucible_core::protocol::requests::KnobRef` (get), from the same wire
@@ -106,11 +104,7 @@ pub(crate) async fn handle_session_knob_set(
                 Err(e) => internal_error(req.id, e),
             }
         }
-        KnobValue::ContextStrategy(strategy_str) => {
-            let strategy = match strategy_str.parse::<ContextStrategy>() {
-                Ok(s) => s,
-                Err(e) => return Response::error(req.id, INVALID_PARAMS, e),
-            };
+        KnobValue::ContextStrategy(strategy) => {
             match am
                 .set_context_strategy(&session_id, strategy, Some(event_tx))
                 .await
@@ -170,7 +164,7 @@ pub(crate) async fn handle_session_knob_get(req: Request, am: &Arc<AgentManager>
         SessionKnob::Mode => am.get_mode(&session_id).map(KnobValue::Mode),
         SessionKnob::ContextStrategy => am
             .get_context_strategy(&session_id)
-            .map(|s| KnobValue::ContextStrategy(s.to_string())),
+            .map(KnobValue::ContextStrategy),
         SessionKnob::Precognition => am
             .get_precognition(&session_id)
             .map(KnobValue::Precognition),

@@ -3,8 +3,8 @@ use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
 use crucible_core::protocol::requests::{
     DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
-    DiffFileRequest, DiffResolveCommentReply, GetBacklinksReply, KilnGraphReply, KilnRow,
-    NoteByNameReply, NoteListRow, SessionCreateRequest, VectorHit,
+    DiffFileRequest, DiffResolveCommentReply, FsRootKind, GetBacklinksReply, KilnGraphReply,
+    KilnRow, NoteByNameReply, NoteListRow, SessionCreateRequest, VectorHit,
 };
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
@@ -737,20 +737,20 @@ impl ReconnectingDaemon {
 
     forward_rpc! {
         Once FsMove =>
-        fs_move(root: &str, kind: &str, from_rel: &str, to_rel: &str)
-        -> crucible_daemon::FsMoveReply = fs_move(&root, &kind, &from_rel, &to_rel);
+        fs_move(root: &str, kind: FsRootKind, from_rel: &str, to_rel: &str)
+        -> crucible_daemon::FsMoveReply = fs_move(&root, kind, &from_rel, &to_rel);
     }
 
     forward_rpc! {
         Once FsMkdir =>
-        fs_mkdir(root: &str, kind: &str, rel_path: &str)
-        -> () = fs_mkdir(&root, &kind, &rel_path);
+        fs_mkdir(root: &str, kind: FsRootKind, rel_path: &str)
+        -> () = fs_mkdir(&root, kind, &rel_path);
     }
 
     forward_rpc! {
         Once FsTrash =>
-        fs_trash(root: &str, kind: &str, rel_path: &str)
-        -> crucible_daemon::FsTrashReply = fs_trash(&root, &kind, &rel_path);
+        fs_trash(root: &str, kind: FsRootKind, rel_path: &str)
+        -> crucible_daemon::FsTrashReply = fs_trash(&root, kind, &rel_path);
     }
 
     forward_rpc! {

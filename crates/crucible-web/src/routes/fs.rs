@@ -85,7 +85,7 @@ async fn move_path(
 ) -> Result<Json<FsMoveReply>, WebError> {
     let outcome = state
         .daemon
-        .fs_move(&body.root, &body.kind, &body.from_rel, &body.to_rel)
+        .fs_move(&body.root, body.kind, &body.from_rel, &body.to_rel)
         .await
         .daemon_err()?;
     Ok(Json(outcome))
@@ -120,7 +120,7 @@ async fn mkdir_path(
 ) -> Result<Json<FsMkdirResponse>, WebError> {
     state
         .daemon
-        .fs_mkdir(&body.root, &body.kind, &body.rel_path)
+        .fs_mkdir(&body.root, body.kind, &body.rel_path)
         .await
         .daemon_err()?;
     Ok(Json(FsMkdirResponse { created: true }))
@@ -146,7 +146,7 @@ async fn trash_path(
 ) -> Result<Json<FsTrashReply>, WebError> {
     let outcome = state
         .daemon
-        .fs_trash(&body.root, &body.kind, &body.rel_path)
+        .fs_trash(&body.root, body.kind, &body.rel_path)
         .await
         .daemon_err()?;
     Ok(Json(outcome))
@@ -327,23 +327,23 @@ mod tests {
         assert!(answered.trash_path.starts_with(".crucible/trash/"));
     }
 
-    /// An unknown kind reaches the daemon rather than a body rejection.
+    /// An unknown kind is refused before a handler runs.
     ///
-    /// The document narrows `kind` to two values; the field stays a `String`
-    /// so that this stays true. Typing the field as the enum would answer
-    /// "unknown variant `folder`" in axum's own plain text, where the daemon
-    /// names the two kinds it admits in the one error envelope every route
-    /// uses. The mock admits every kind, so reaching it reads as a 200.
+    /// `kind` is `FsRootKind`, not a `String` (Simplification Plan step 18):
+    /// a body naming a third kind now fails `axum`'s own `Json<T>` extraction
+    /// with 422, the same status this route answers for every other bad
+    /// body. It used to reach the mock daemon as a plain string and read as
+    /// a 200 — see `git log -p` on this test for the earlier behavior.
     #[tokio::test]
-    async fn an_unknown_root_kind_reaches_the_daemon() {
-        let (status, body) = request_json(
+    async fn an_unknown_root_kind_is_refused_before_the_daemon() {
+        let (status, _) = request_json(
             "POST",
             "/api/fs/mkdir",
             Some(json!({ "root": "/tmp/proj", "kind": "folder", "rel_path": "x" })),
         )
         .await;
 
-        assert_eq!(status, axum::http::StatusCode::OK, "{body}");
+        assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// `FsRootKind`'s wire spelling, as one exhaustive table.

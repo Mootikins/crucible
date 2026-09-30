@@ -341,7 +341,7 @@ fn a_session_detail_writes_back_the_object_session_get_sent() {
             "mode": "edit",
             "system_prompt": "",
             "precognition_enabled": true,
-            "context_strategy": "Truncate"
+            "context_strategy": "truncate"
         }
     });
 

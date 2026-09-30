@@ -399,11 +399,12 @@ pub struct DiffDeleteCommentReply {
 /// The two roots that an `fs.*` mutation may name, and the allowlist that
 /// each one selects.
 ///
-/// This type describes the wire. The field that carries it stays a `String`,
-/// so the daemon refuses an unknown kind in its own sentence. A body
-/// rejection would say only "unknown variant". A web test walks an
-/// exhaustive match, so a third kind cannot reach the document without a
-/// decision about it.
+/// This type describes the wire, and the field that carries it is this type,
+/// not a `String`: an unknown kind now fails at deserialize, where the
+/// document's own error names the bad value, before a handler ever sees the
+/// request. A web test still walks an exhaustive match over the two
+/// variants, so a third kind cannot reach the document without a decision
+/// about it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -420,10 +421,8 @@ pub enum FsRootKind {
 pub struct FsMoveRequest {
     /// Absolute path of the root that holds both ends.
     pub root: String,
-    /// `"project"` or `"kiln"`. It selects the allowlist that the daemon
-    /// checks `root` against.
-    #[cfg_attr(feature = "openapi", schema(value_type = FsRootKind))]
-    pub kind: String,
+    /// Selects the allowlist that the daemon checks `root` against.
+    pub kind: FsRootKind,
     /// Root-relative POSIX path of the entry to move.
     pub from_rel: String,
     /// Root-relative POSIX path that the entry takes.
@@ -436,10 +435,8 @@ pub struct FsMoveRequest {
 pub struct FsPathRequest {
     /// Absolute path of the root that holds the entry.
     pub root: String,
-    /// `"project"` or `"kiln"`. It selects the allowlist that the daemon
-    /// checks `root` against.
-    #[cfg_attr(feature = "openapi", schema(value_type = FsRootKind))]
-    pub kind: String,
+    /// Selects the allowlist that the daemon checks `root` against.
+    pub kind: FsRootKind,
     /// Root-relative POSIX path of the entry.
     pub rel_path: String,
 }

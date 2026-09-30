@@ -812,7 +812,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
                 "model": "ollama:llama3.2",
                 "system_prompt": "",
                 "precognition_enabled": true,
-                "context_strategy": "Truncate"
+                "context_strategy": "truncate"
             }
         }),
         // `server/session/lifecycle.rs:13` and `:33` answer the state change,
@@ -875,7 +875,9 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
                     crucible_core::types::KnobValue::Mode(Some("plan".to_string()))
                 }
                 crucible_core::types::SessionKnob::ContextStrategy => {
-                    crucible_core::types::KnobValue::ContextStrategy("recent".to_string())
+                    crucible_core::types::KnobValue::ContextStrategy(
+                        crucible_core::session::ContextStrategy::Truncate,
+                    )
                 }
                 crucible_core::types::SessionKnob::Precognition => {
                     crucible_core::types::KnobValue::Precognition(true)

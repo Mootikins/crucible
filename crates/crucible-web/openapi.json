@@ -5993,10 +5993,10 @@
       },
       "ContextStrategy": {
         "type": "string",
-        "description": "Strategy for managing conversation context when it exceeds the token budget.",
+        "description": "Strategy for managing conversation context when it exceeds the token budget.\n\nSerializes lowercase (`\"truncate\"`/`\"summarize\"`), matching [`FromStr`] and\n[`Display`](std::fmt::Display) below. Before this type carried\n`#[serde(rename_all)]`, the derive wrote the variant names as-is\n(`\"Truncate\"`/`\"Summarize\"`) wherever a `SessionAgent` serialized this\nfield — including every session a daemon persisted to disk. The `alias`\non each variant keeps those old records loading: [`Deserialize`] accepts\neither spelling, and [`Serialize`] only ever writes the new one.",
         "enum": [
-          "Truncate",
-          "Summarize"
+          "truncate",
+          "summarize"
         ]
       },
       "CreateEntryParams": {
@@ -7249,7 +7249,7 @@
           },
           "kind": {
             "$ref": "#/components/schemas/FsRootKind",
-            "description": "`\"project\"` or `\"kiln\"`. It selects the allowlist that the daemon\nchecks `root` against."
+            "description": "Selects the allowlist that the daemon checks `root` against."
           },
           "from_rel": {
             "type": "string",
@@ -7276,7 +7276,7 @@
           },
           "kind": {
             "$ref": "#/components/schemas/FsRootKind",
-            "description": "`\"project\"` or `\"kiln\"`. It selects the allowlist that the daemon\nchecks `root` against."
+            "description": "Selects the allowlist that the daemon checks `root` against."
           },
           "rel_path": {
             "type": "string",
@@ -7286,7 +7286,7 @@
       },
       "FsRootKind": {
         "type": "string",
-        "description": "The two roots that an `fs.*` mutation may name, and the allowlist that\neach one selects.\n\nThis type describes the wire. The field that carries it stays a `String`,\nso the daemon refuses an unknown kind in its own sentence. A body\nrejection would say only \"unknown variant\". A web test walks an\nexhaustive match, so a third kind cannot reach the document without a\ndecision about it.",
+        "description": "The two roots that an `fs.*` mutation may name, and the allowlist that\neach one selects.\n\nThis type describes the wire, and the field that carries it is this type,\nnot a `String`: an unknown kind now fails at deserialize, where the\ndocument's own error names the bad value, before a handler ever sees the\nrequest. A web test still walks an exhaustive match over the two\nvariants, so a third kind cannot reach the document without a decision\nabout it.",
         "enum": [
           "project",
           "kiln"
@@ -8576,15 +8576,15 @@
           },
           {
             "type": "object",
-            "description": "The strategy's string spelling, parsed and validated by the daemon.",
+            "description": "The strategy. A closed set, not a `String`: an unknown spelling now\nfails at deserialize, where the wire's own error names the bad value,\ninstead of reaching the daemon's own `FromStr` check.",
             "required": [
               "value",
               "knob"
             ],
             "properties": {
               "value": {
-                "type": "string",
-                "description": "The strategy's string spelling, parsed and validated by the daemon."
+                "$ref": "#/components/schemas/ContextStrategy",
+                "description": "The strategy. A closed set, not a `String`: an unknown spelling now\nfails at deserialize, where the wire's own error names the bad value,\ninstead of reaching the daemon's own `FromStr` check."
               },
               "knob": {
                 "type": "string",

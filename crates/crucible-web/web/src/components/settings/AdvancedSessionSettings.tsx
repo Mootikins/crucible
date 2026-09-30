@@ -16,22 +16,29 @@ import { Component, For, createSignal } from 'solid-js';
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useKnob, usePluginApprovals, useSetKnob, useSetPluginApproval, type PluginApproval } from '@/lib/query/session-config';
+import type { components } from '@/lib/api-schema';
+
+type Schemas = components['schemas'];
 
 import { SettingRow, SettingsSectionState } from './primitives';
 
 const inputClass =
   'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring';
 
+/** The document's own closed set for this knob. */
+type ContextStrategy = Schemas['ContextStrategy'];
+
 /**
- * The strategy names offered in the dropdown.
- *
- * A convenience list, NOT a validator: the daemon parses the string and answers
- * 422 for one it does not know, so nothing here rejects a value. A `<select>`
- * that silently dropped an option the daemon accepts would be worse than a text
- * field, which is why the current value is always added to the list if it is not
- * already in it.
+ * The strategy names offered in the dropdown: every name the document
+ * declares, so a variant added there needs no edit here to appear.
  */
-const CONTEXT_STRATEGIES = ['truncate', 'summarize'];
+const CONTEXT_STRATEGIES: ContextStrategy[] = ['truncate', 'summarize'];
+
+/** Whether `value` is one the document declares — the `<select>`'s own
+ * options, guarded once here rather than trusted at each read. */
+function isContextStrategy(value: string): value is ContextStrategy {
+  return (CONTEXT_STRATEGIES as string[]).includes(value);
+}
 
 export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
@@ -71,7 +78,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
           onChange={async (e) => {
             const val = (e.target as HTMLSelectElement).value;
             const id = sessionId();
-            if (!id) return;
+            if (!id || !isContextStrategy(val)) return;
             setWriteError(null);
             try {
               // The hook holds the new value and re-reads it: the daemon may
