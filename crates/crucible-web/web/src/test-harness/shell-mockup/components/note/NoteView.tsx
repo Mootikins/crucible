@@ -24,6 +24,8 @@ export interface NoteViewProps {
   onAsk: () => void;
   /** See `NoteToolbarProps.windowControls`. */
   windowControls?: JSX.Element;
+  /** A bar in place of the toolbar, for example the bar of a hover popup. */
+  bar?: (view: { mode: NoteMode; setMode: (mode: NoteMode) => void }) => JSX.Element;
 }
 
 export const NoteView: Component<NoteViewProps> = (props) => {
@@ -43,14 +45,21 @@ export const NoteView: Component<NoteViewProps> = (props) => {
         if (e.button === 3 || e.button === 4) go(e.button === 3 ? -1 : 1);
       }}
     >
-      <NoteToolbar
-        path={props.path}
-        history={props.history}
-        mode={mode()}
-        onMode={setMode}
-        onAsk={props.onAsk}
-        windowControls={props.windowControls}
-      />
+      <Show
+        when={props.bar}
+        fallback={
+          <NoteToolbar
+            path={props.path}
+            history={props.history}
+            mode={mode()}
+            onMode={setMode}
+            onAsk={props.onAsk}
+            windowControls={props.windowControls}
+          />
+        }
+      >
+        {(bar) => bar()({ mode: mode(), setMode })}
+      </Show>
       <div class="mk-scroll">
         <Show
           when={parsed()}

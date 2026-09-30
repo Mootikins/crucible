@@ -251,5 +251,7 @@ export function hoverEnd() {
       return;
     }
     closeHover();
-  }, 220);
+    // Long enough to move the pointer from the link into the popup, or to
+    // come back after a short slip past its edge.
+  }, 700);
 }

@@ -9,6 +9,13 @@ import type { TweakRowsProps } from './types';
 
 export const VariantRows: Component<TweakRowsProps> = (props) => (
   <>
+    <FieldRow label="Hover popup" hint="Its bar, until you pin it">
+      <Segmented
+        value={props.tweaks.hoverBar}
+        options={[['title', 'Title'], ['none', 'No bar'], ['crumbs', 'Path + menu']]}
+        onChange={(v) => props.onSet('hoverBar', v)}
+      />
+    </FieldRow>
     <FieldRow label="Changes view" hint="A/B variant">
       <Segmented
         value={props.tweaks.changesControls}

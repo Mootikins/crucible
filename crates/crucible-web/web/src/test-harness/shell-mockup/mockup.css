@@ -547,10 +547,36 @@ body { background: var(--mk-nav); }
   .wm-tab[data-active]:not([data-focused]) { background: var(--mk-btn); color: var(--cru-color-body); }
 }
 
-/* A floating window is a MAIN card with the centre's tab system. Its
-   content fills it, so its bars start at the same inset. */
-.wm-floating { --color-shell-bg: transparent; background: var(--mk-main); }
-.wm-floating-body { padding: 0; }
+/* A floating window looks as the centre does, lifted off the page: its frame
+   is the ground (translucent, blurred), its tabs sit on the frame, and its
+   content is the same rounded MAIN card with the same gap around it. A
+   window without a tab bar has the gap on top too. */
+.wm-floating {
+  --color-shell-bg: transparent;
+  padding: 0 var(--mk-gap) var(--mk-gap);
+  border-radius: calc(var(--mk-radius) + var(--mk-gap) / 2);
+  background: color-mix(in oklab, var(--mk-nav-solid) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 18px 48px -18px rgba(0, 0, 0, 0.7);
+}
+.wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-gap); }
+.wm-floating .wm-tabbar { background: transparent; }
+.wm-floating-body { padding: 0; border-radius: var(--mk-radius); background: var(--mk-main-solid); }
+
+/* The bars of a hover popup, until it is pinned (toolbox "Hover popup"). */
+.mk-hoverbar { display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px 0 var(--mk-pad); font-size: 12px; color: var(--cru-color-muted); flex: none; }
+.mk-hovertitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cru-color-ink); font-weight: 600; }
+.mk-hovercorner { position: absolute; top: 4px; right: 6px; z-index: 2; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--mk-main-solid); opacity: 0; transition: opacity 200ms ease-out 900ms; }
+.wm-floating:hover .mk-hovercorner, .mk-hovercorner:focus-within { opacity: 1; transition-delay: 0s; }
+.mk-body:has(> .mk-hovercorner) { position: relative; grid-template-rows: minmax(0, 1fr); }
+.mk-body:has(> .mk-hoverbar) { grid-template-rows: auto minmax(0, 1fr); }
+.mk-hovermenu-anchor { position: relative; }
+.mk-hovermenu { position: absolute; right: 0; top: 30px; z-index: 5; min-width: 180px; padding: 4px; border-radius: 10px; background: var(--mk-nav-solid); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6); display: grid; font-size: 12.5px; }
+.mk-hovermenu button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--cru-color-body); cursor: pointer; }
+.mk-hovermenu button:hover { background: var(--mk-main-solid); color: var(--cru-color-ink); }
+.mk-hovermenu hr { border: 0; height: 1px; background: var(--mk-main-solid); margin: 4px 2px; }
+.mk-hm-check { width: 14px; display: inline-grid; place-items: center; }
 
 /* ------------------------------------------------------ 4. glass material
  * `:root[data-material='glass']`. Every rule here is either a `--cru-*`

@@ -28,6 +28,8 @@ export interface Tweaks {
   plugin: PluginCssId;
   /** A/B variant: the changes view as B, or B with A's controls. */
   changesControls: 'b' | 'ab';
+  /** The bar of a hover popup, until it is pinned. */
+  hoverBar: 'title' | 'none' | 'crumbs';
 }
 
 export type SetTweak = <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void;
