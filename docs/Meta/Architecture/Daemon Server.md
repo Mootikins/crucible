@@ -133,7 +133,8 @@ Directory `crates/crucible-daemon/src/server/` (connection lifecycle and top-lev
 | `crates/crucible-daemon/src/server/note_refactor.rs` | 1128 | `note.rename`/`note.move`: link-rewriting note/canvas rename; its `plan_rename`/`apply_rename` split is what `crates/crucible-daemon/src/bases/write.rs` reuses, and its `reindex_rename` step is what `crates/crucible-daemon/src/proposals/rpc.rs` reuses. |
 | `crates/crucible-daemon/src/server/notifications.rs` | 43 | `notification.list`/`notification.dismiss` handlers over the global ring. |
 | `crates/crucible-daemon/src/server/observe.rs` | 445 | `session.events_after`/`list_persisted`/`render_markdown`/`export_to_file`/`cleanup`. Each reader except `events_after` reads the transcript. |
-| `crates/crucible-daemon/src/server/platform.rs` | 432 | `mcp.*`, `skills.*`, `agents.list_profiles`/`list_cards`/`resolve_profile`; skill/card discovery now takes an explicit `workspace` and every attached kiln. `SkillSummary`/`SkillDetail`/`SkillsReply` are `crucible_core::types`, re-exported here for this module's own callers. |
+| `crates/crucible-daemon/src/server/platform.rs` | 432 | `mcp.*`, `skills.*`, `agents.list_profiles`/`list_cards`/`resolve_profile`; skill/card discovery now takes an explicit `workspace` and every attached kiln. `SkillSummary`/`SkillDetail`/`SkillsReply` are `crucible_core::types`, re-exported here for this module's own callers. `handle_agents_list_profiles` reads/writes `AgentManager::agent_profiles_cache` before probing every profile's binary. |
+| `crates/crucible-daemon/src/server/client_state.rs` | ~140 | `client_state.get`/`client_state.set` — one generic, opaque blob store keyed by `(client, key)`, written with `crucible_core::fs::write_private` under the daemon's data root. Replaces `crucible-web`'s own layout/recents files (step 19 of the Simplification Plan). |
 | `crates/crucible-daemon/src/server/plugin_install.rs` | 379 | `plugin.install`/`plugin.remove`, each holding the plugin-loader task-local marker while its Lua runs. Each reply is a `crucible_core::types::Plugin*` struct literal, not `json!`. |
 | `crates/crucible-daemon/src/server/plugins.rs` | 1507 | Plugin lifecycle/surfaces/publications/options/commands, `project.*`, `scm.clone`, plugin file watcher; `session.status` now answers `AgentManager::status_items`'s typed `StatusDisplayItem` list. Every `plugin.*` reply is a `crucible_core::types::Plugin*` struct literal, built through `typed_success` (`server/core/mod.rs`). `surface.list`/`surface.get` answer `SurfaceListReply`/`SurfaceGetReply` (`crucible_core::protocol::requests`) built with `serde_json::to_value`, not `json!`. |
 | `crates/crucible-daemon/src/server/socket_lock.rs` | 55 | Advisory single-daemon `flock` on `<socket>.lock`. |
@@ -161,11 +162,11 @@ Directory `crates/crucible-daemon/src/server/session/` (session RPC surface):
 |---|---|---|
 | `crates/crucible-daemon/src/server/session/approval.rs` | 75 | `session.set_plugin_approval`/`get_plugin_approval`/`list_plugin_approvals`: per-session, per-plugin approval overrides. |
 | `crates/crucible-daemon/src/server/session/create.rs` | 836 | `session.create`: kiln/workspace/agent admission (SSRF check, then one shared trust gate) before persisting. |
-| `crates/crucible-daemon/src/server/session/lifecycle.rs` | 319 | pause/resume/resume_from_storage/history/end/delete/archive/unarchive/replay/compact, with pause/end/delete/archive funneling through `SessionLifecycle::stop`. |
+| `crates/crucible-daemon/src/server/session/lifecycle.rs` | 319 | pause/resume/resume_from_storage/history/end/delete/archive/unarchive/replay/compact, with pause/end/delete/archive funneling through `SessionLifecycle::stop`. `handle_session_resume` falls back to storage for a session not held in memory OR held but not `Paused` (most commonly `Ended`), and reports which in `SessionTransitionReply::resumed_from_storage` — the one policy every caller of `session.resume` shares. |
 | `crates/crucible-daemon/src/server/session/list.rs` | 772 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
 | `crates/crucible-daemon/src/server/session/messaging.rs` | 597 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. `handle_session_send_message` reads `content` through `AgentManager::slash_route` first — a mode, a plugin command or a skill is routed there, and the reply is a `SendOutcome`, not a bare `message_id`. |
 | `crates/crucible-daemon/src/server/session/mod.rs` | 273 | Module aggregator plus the post-create background `spawn_setup_task` (typed `SetupPayload` events). |
-| `crates/crucible-daemon/src/server/session/models.rs` | 165 | `list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). `switch_model` moved into `params.rs`'s `handle_session_knob_set` (step 13). |
+| `crates/crucible-daemon/src/server/session/models.rs` | 165 | `list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). `switch_model` moved into `params.rs`'s `handle_session_knob_set` (step 13). `handle_providers_list` reads/writes `AgentManager::providers_cache`, keyed by `(kiln_path, include_models)`, before dialing any provider. |
 | `crates/crucible-daemon/src/server/session/modes.rs` | 456 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). `handle_session_commands` answers `session.commands` by calling `AgentManager::session_commands`. |
 | `crates/crucible-daemon/src/server/session/notifications.rs` | 96 | `add_notification`/`list_notifications`/`dismiss_notification`, reading/writing `NotificationHub` directly for a live-or-stored session. |
 | `crates/crucible-daemon/src/server/session/params.rs` | 315 | `session.knob.set`/`session.knob.get`: one handler pair for every `SessionKnob` (model, mode, context strategy, precognition, plugin turn limit — step 13 of the simplification plan). `handle_session_knob_set` deserializes `Scoped<KnobValue>`, refuses a knob `on_acp` marks absent for an ACP session, then dispatches to the knob's own apply logic (the ACP live-handle path for model, the mode alias resolution and deferred-apply-on-busy-turn for mode, the string parse for context strategy). `handle_session_knob_get` deserializes `Scoped<KnobRef>` and answers the same `KnobValue` shape. Also `undo`/`can_undo`/`undo_depth`/`cache_stats`. |
@@ -590,18 +591,28 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   u64>>` (per-`EventBus`-instance, not a process-global — `seed_session`
   continues a resumed session's counter above its highest persisted `seq`,
   and `forget_session` retires it last in teardown so an in-flight task
-  never reuses a duplicate one).
+  never reuses a duplicate one); `AgentManager::model_cache` (per-provider
+  chat models, `MODEL_CACHE_TTL = 300s`); `AgentManager::agent_profiles_cache`
+  and `providers_cache` (`agents.list_profiles`/`providers.list` answers,
+  `CATALOG_CACHE_TTL = 30s`) — moved here from a web-only cache
+  (`crucible-web`'s former `SwrCache`) in step 19 of the Simplification
+  Plan, so a TUI or Lua caller of either RPC method benefits too, not only
+  the browser.
 - **Background tasks** spawned from `Server::run`: model-cache warmer;
-  event-persistence task (drains `Server.journal`, the lossless queue, not
-  the live ring); kiln-index task (`KilnManager::run_index_jobs`, fed by its
-  own lossless job queue — see [[Knowledge Storage and Retrieval]] —
-  replacing a deleted file-reprocess task that read the lossy client bus);
-  archive-sweep task (every 30 minutes, `sweep_and_archive_stale_sessions`,
-  now driven through `SessionLifecycle`, not `AgentManager`); external-change
-  review watch (`crates/crucible-daemon/src/server/external_announce.rs`);
-  MCP reconnect loop; auto-title task; startup kiln-open task. Every
-  background task except the model-cache warmer and the startup kiln-open
-  task holds its own `CancellationToken`; all are cancelled together and
+  catalog-cache warmer (`agents.list_profiles`/`providers.list`, same
+  warm-then-refresh-on-`CATALOG_CACHE_TTL` shape as the model-cache warmer,
+  replacing `crucible-web`'s own startup warm-up); event-persistence task
+  (drains `Server.journal`, the lossless queue, not the live ring);
+  kiln-index task (`KilnManager::run_index_jobs`, fed by its own lossless
+  job queue — see [[Knowledge Storage and Retrieval]] — replacing a deleted
+  file-reprocess task that read the lossy client bus); archive-sweep task
+  (every 30 minutes, `sweep_and_archive_stale_sessions`, now driven through
+  `SessionLifecycle`, not `AgentManager`); external-change review watch
+  (`crates/crucible-daemon/src/server/external_announce.rs`); MCP reconnect
+  loop; auto-title task; startup kiln-open task. Every background task
+  except the model-cache warmer, the catalog-cache warmer and the startup
+  kiln-open task holds its own `CancellationToken`; all are cancelled
+  together and
   joined against one shared `SHUTDOWN_DEADLINE = 2s` (`join_before`,
   `crates/crucible-daemon/src/server/mod.rs`), then aborted and logged if
   still running. The persist task alone gets `STARTED_WRITE_GRACE = 1s` more
@@ -672,6 +683,30 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   read an unresolved bare provider name as `Local`, while `configure_agent`'s
   gate read the same name as `Cloud`, so an agentless create could pass a
   gate the very next `configure_agent` call would refuse.
+- **A decision more than one caller needs is checked once, here, not in a
+  client.** Step 19 of the Simplification Plan moved four such decisions out
+  of `crucible-web`, where only the browser reached them, into the RPC
+  method every caller shares:
+  - `project.register` takes an `untrusted` flag; when set,
+    `crucible_daemon::project_manager::register_untrusted` refuses a
+    credential store or the user's config/state tree
+    (`untrusted_root_refusal`) on top of the floor every caller gets
+    (`forbidden_root_reason`). A local caller (the CLI, the TUI, a Lua
+    script) omits the flag and keeps the floor alone — it already has full
+    filesystem access to whatever it can name, so registering its own
+    dotfiles repo is not a privilege escalation the way an HTTP client's
+    read-scope grant would be.
+  - `fs.write`'s `write_for_roots` refuses a `.canvas` write whose parsed
+    content names a reference outside the resolved root
+    (`canvas_containment_refusal`), checked on the bytes actually written —
+    after the web's own read-redaction restoration, so a historical bad
+    reference cannot ride back to disk unchecked either.
+  - `fs.write`'s existing `MAX_CONTENT_SIZE` and `enclosing_root` containment
+    check were already every caller's gate before this step; the web route
+    that duplicated them locally was deleted, not the daemon's own check.
+  - `session.resume` reports whether it needed a storage reload
+    (`SessionTransitionReply::resumed_from_storage`) instead of a caller
+    guessing that from which of two RPC calls happened to succeed.
 - **Config location keys never travel through `config.set`.**
   `handle_config_set` in `crates/crucible-daemon/src/rpc/dispatch.rs` calls
   `crucible_lua::merge_app_config_tagged` with `ConfigSource::Rpc`, and the

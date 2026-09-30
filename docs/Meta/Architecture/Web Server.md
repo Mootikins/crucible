@@ -28,33 +28,68 @@ under `crates/crucible-web/src/routes/` calls one `state.daemon.*` method
 (`crates/crucible-web/src/services/daemon.rs`) and either returns the
 daemon's own type verbatim or reshapes it through a locally declared,
 `utoipa`-annotated row type via `crates/crucible-web/src/routes/session/mod.rs`'s
-`daemon_shape`. Three files carry real, explicitly justified web-side logic
-instead of pure forwarding:
+`daemon_shape`.
 
-- `crates/crucible-web/src/routes/canvas.rs` enforces `.canvas` reference
-  containment and redaction *within the root the daemon names* (a
-  "three-layer scheme" its own module doc names); it no longer resolves
-  which kiln or project encloses a canvas — that decision is the daemon's
-  `fs.read`/`fs.write` root rule, shared with every other file route (see
-  the "Kiln/canvas file write" flow below).
-- `crates/crucible-web/src/routes/layout.rs` persists the pane layout and
-  recent-files list as an opaque JSON blob — genuinely client-local
-  presentation state (per `AGENTS.md`'s "Display state... stays in the
-  client" rule), kept server-side only because `localStorage` does not
-  survive across ports and debug instances.
-- `crates/crucible-web/src/routes/project.rs` layers an untrusted-caller-only
-  root-safety policy (`untrusted_root_refusal`) on top of the daemon's own
-  floor check, because an HTTP caller is not the same principal as a local
-  `cru` invocation.
+**Step 19's "What the web itself needs" decisions are done.** Four rules and
+two stores that used to live only in this crate — reachable by the browser
+alone, skipped by a raw RPC caller (the TUI, a Lua script) — now live in the
+daemon, so every caller of the RPC method gets them:
+
+- `crates/crucible-web/src/routes/project.rs`'s `register_project` no longer
+  runs `untrusted_root_refusal` itself. `project.register` takes an
+  `untrusted` flag; the web route sets it, and
+  `crucible_daemon::project_manager::register_untrusted` applies the rule
+  (a credential store, the user's config/state tree, on top of the daemon
+  floor every caller gets). The web route keeps only `[web]
+  registration_roots`, an operator setting of the web process, not a daemon
+  concept. Proved through the live RPC method in
+  `crates/crucible-daemon/tests/project_register.rs`.
+- `crates/crucible-web/src/routes/canvas.rs`'s `put_canvas` no longer runs
+  `validate_canvas` itself before writing. The daemon's `fs.write`
+  (`crucible_daemon::file_write::canvas_containment_refusal`) refuses a
+  `.canvas` write whose parsed content names a reference outside the
+  resolved root, checked on the bytes actually written — after
+  `restore_redacted`, closing a gap where a historical bad reference used to
+  ride back to disk unchecked on an unrelated edit. Proved in
+  `crates/crucible-daemon/tests/file_write.rs`'s
+  `fs_write_size_and_containment` module.
+- `crates/crucible-web/src/routes/search.rs`'s `put_note` no longer checks
+  content size or note-name traversal itself: `fs.write`'s own
+  `MAX_CONTENT_SIZE` and `enclosing_root` containment check already covered
+  both, for every caller, before this change — the web's copies were
+  redundant, not a gap the daemon needed to close. Proved in the same
+  `fs_write_size_and_containment` module.
+- `POST /api/session/{id}/resume` no longer runs its own fallback logic
+  (try `session.resume`, on any failure retry `session.resume_from_storage`).
+  `session.resume` decides for itself whether a session needed reloading
+  from storage — not held in memory at all, or held but not `Paused` (most
+  commonly `Ended`) — and reports which in its reply
+  (`SessionTransitionReply::resumed_from_storage`). The route reads that
+  flag and, only when it is set, also reads the full transcript with the
+  read-only `session.history`. Proved in
+  `crates/crucible-daemon/tests/session_resume_from_ended.rs`.
+- The web's own `SwrCache` (formerly `services/catalog.rs`, now deleted) is gone.
+  `AgentManager` caches `agents.list_profiles` and `providers.list` itself
+  (`agent_profiles_cache`, `providers_cache`,
+  `crate::agent_manager::CATALOG_CACHE_TTL`), the same way its existing
+  `model_cache` already worked, and warms both at daemon startup. Every
+  caller of either RPC method shares the cache now.
+- `crates/crucible-web/src/routes/layout.rs`'s pane-layout blob and recents
+  list are no longer read from or written to this process's own disk
+  (`default_layout_path`/`standalone_layout_path`, gone). They persist
+  through the daemon's generic `client_state.get`/`client_state.set`
+  (`crates/crucible-daemon/src/server/client_state.rs`), keyed by
+  `(client, key)` and written with `crucible_core::fs::write_private` under
+  the daemon's data root. `AppState::client_state_id` (`"web"` or, for
+  `--standalone`, `"web-standalone"`) replaces `layout_path` and gives the
+  same cross-instance isolation. Proved in
+  `crates/crucible-daemon/tests/client_state.rs`.
 
 `crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
 filesystem directly (a walk that deliberately bypasses the note index), but
 now resolves its root through the daemon's `fs.read` rather than a local
-walk-up. `put_note` is now a much thinner proxy than it once was: it still
-checks content size and note-name traversal locally, but containment and the
-optimistic-concurrency `base_hash` compare are entirely the daemon's
-`fs.write`'s job. The one shell that the web client has is the PTY terminal
-in `crates/crucible-web/src/routes/terminal.rs`, the browser's terminal
+walk-up. The one shell that the web client has is the PTY terminal in
+`crates/crucible-web/src/routes/terminal.rs`, the browser's terminal
 transport. It starts in the workspace of the session that the client sends,
 which is where the TUI's `!` commands run too.
 
@@ -94,7 +129,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/agents.rs` | 147 | `GET /api/agents`, `GET /api/models` — the session-creation agent picker. |
 | `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
-| `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
+| `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with read-path reference redaction, within the root the daemon's `fs.read` names; the write-path containment check itself is the daemon's `fs.write`. |
 | `crates/crucible-web/src/routes/chat.rs` | 542 | Chat turn intake (with attached diff comments), the session SSE event stream, and pending-interaction routes. |
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
 | `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
@@ -141,7 +176,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | File | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-web/src/services/mod.rs` | 8 | Declares the `services` module tree; imports the `forward_rpc!` macro crate-wide. |
-| `crates/crucible-web/src/services/catalog.rs` | 251 | `SwrCache` — stale-while-revalidate cache for the slow agent-profile and provider calls. |
 | `crates/crucible-web/src/services/daemon.rs` | 1042 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, and the `base.*`/`diff.*`/`proposal`-adjacent forwarders. |
 | `crates/crucible-web/src/services/daemon_config.rs` | 91 | Forwards `config.*` RPCs and redacts credentials at the crate boundary. |
 | `crates/crucible-web/src/services/daemon_event_stream.rs` | 252 | `EventStream`, `Interest` — per-session upstream subscribe/unsubscribe reconciliation and SSE lag-to-`stream_gap` translation. |
@@ -161,10 +195,15 @@ Paths are relative to the repository root. Line counts are as recorded at
 - **`AppState`** (`crates/crucible-web/src/services/daemon.rs`) — the shared
   Axum state every handler extracts. Holds `daemon: Arc<ReconnectingDaemon>`,
   `events: Arc<EventBroker>`, `config: Arc<CliAppConfig>`, an `http_client`,
-  `layout_path`, `remote_shell`, `swr: Arc<SwrCache>`, and `recents_lock`.
-  Built once by `init_daemon` and cloned per request; `build_router` in `crates/crucible-web/src/server.rs`
-  is the only place that mutates it after construction (setting
-  `remote_shell` and, for a standalone instance, `layout_path`). Being an
+  `client_state_id: Arc<str>`, `remote_shell`, and `recents_lock`.
+  `client_state_id` is this process's namespace in the daemon's generic
+  `client_state.get`/`client_state.set` store (`"web"`, or
+  `"web-standalone"` for `--standalone`) — the pane layout and the recents
+  list live there now, not on this process's own disk. Built once by
+  `init_daemon` and cloned per request; `build_router` in
+  `crates/crucible-web/src/server.rs` is the only place that mutates it
+  after construction (setting `remote_shell` and, for a standalone
+  instance, `client_state_id`). Being an
   `Arc` is load-bearing for `daemon`: `ReconnectingDaemon::subscribe_events`
   takes `self: &Arc<Self>` and hands `EventStream` a `Weak` clone so a
   dropped stream can still reach the daemon to release its interest.
@@ -298,17 +337,18 @@ Paths are relative to the repository root. Line counts are as recorded at
    `crucible_daemon::DaemonClient`, builds the `EventBroker` and
    `ReconnectingDaemon`, best-effort registers the configured kiln as a
    project, and returns `AppState`.
-3. For a standalone instance, swaps `state.layout_path` to an isolated path.
-4. Calls `crate::services::catalog::warm(state.clone())` to pre-fill the
-   slow `agents`/`providers` catalog probes.
-5. Resolves the API key (`middleware::auth::resolve_api_key`) and builds
+3. For a standalone instance, swaps `state.client_state_id` to the
+   `"web-standalone"` namespace. The daemon itself warms the slow
+   `agents.list_profiles`/`providers.list` catalog probes at its own
+   startup now, so this step no longer exists here.
+4. Resolves the API key (`middleware::auth::resolve_api_key`) and builds
    `ApiKeyState`.
-6. Calls `build_router`, which composes the CORS allow-list from
+5. Calls `build_router`, which composes the CORS allow-list from
    `HostPolicy`, decides `remote_shell`, builds `ShellGateState`, nests
    `api_router` behind `bearer_auth`, merges `health_routes`/`auth_routes`/
    `static_routes` as public routes, and wraps the whole app in
    `with_security_headers(with_app_wide_layers(...))`.
-7. Binds a `TcpListener` and runs `axum::serve(...)`.
+6. Binds a `TcpListener` and runs `axum::serve(...)`.
 
 ### Request auth flow
 
@@ -529,21 +569,24 @@ which sends the caller's path to the daemon's `fs.read` RPC and reads back
 the resolved root and content, or `None` if absent; `text_of`
 (`crates/crucible-web/src/routes/kiln.rs`) extracts `(text, content_hash)`
 for a text read. `put_canvas` forwards the new content, and the original
-path string unchanged, to `state.daemon.fs_write`; `put_kiln_file`/
-`patch_kiln_file` do the same directly — a comment on `put_kiln_file`
-states "the daemon owns containment, policy, compare, merge and write."
-`check_file_answer` (renamed from `check_write`, and now called by the
-*read* path too) in `crates/crucible-web/src/routes/kiln.rs` translates the
-daemon's JSON reply into a typed 200/409/403 response for all of these
-handlers (`write_response` wraps it for the write routes).
+path string unchanged, to `state.daemon.fs_write`, which is also where the
+canvas-reference containment check now runs
+(`crucible_daemon::file_write::canvas_containment_refusal`) — this route
+only parses the document and restores a redacted reference before sending
+it; `put_kiln_file`/`patch_kiln_file` do the same directly — a comment on
+`put_kiln_file` states "the daemon owns containment, policy, compare, merge
+and write." `check_file_answer` (renamed from `check_write`, and now called
+by the *read* path too) in `crates/crucible-web/src/routes/kiln.rs`
+translates the daemon's JSON reply into a typed 200/409/403 response for all
+of these handlers (`write_response` wraps it for the write routes).
 `crates/crucible-web/src/routes/search.rs`'s `put_note` follows the same
-pattern: it still checks content size and note-name traversal locally, but
-joins the path and calls `state.daemon.fs_write` directly for containment
-and the optimistic-concurrency `base_hash` compare. The daemon decides
-which root — the innermost kiln, else the innermost project or session
-workspace folder — encloses a path, whether that root's policy permits the
-operation, and whether a symlink escapes it; none of these routes resolve
-or check that themselves, matching the containment split described in
+pattern and no longer checks content size or note-name traversal itself
+either: `fs.write`'s own `MAX_CONTENT_SIZE` and `enclosing_root` containment
+check cover both, for every caller. The daemon decides which root — the
+innermost kiln, else the innermost project or session workspace folder —
+encloses a path, whether that root's policy permits the operation, and
+whether a symlink escapes it; none of these routes resolve or check that
+themselves, matching the containment split described in
 [[Knowledge Storage and Retrieval]].
 
 ### Diffset and proposal review
@@ -584,13 +627,14 @@ losing or duplicating the decision.
   (`crates/crucible-web/src/middleware/auth/session.rs`) guards its session
   list with `Arc<Mutex<Vec<Session>>>`, pruning expired sessions lazily on
   every access — no background timer. `AppState.recents_lock` serializes the
-  read-modify-write of the recent-files JSON file
-  (`record_recent` in `crates/crucible-web/src/routes/layout.rs`). `SwrCache`
-  (`crates/crucible-web/src/services/catalog.rs`) guards its entry map with
-  a `tokio::sync::Mutex<HashMap<String, Entry>>`.
-- **Background tasks.** `SwrCache::get_or_fetch` spawns an untracked
-  `tokio::spawn` refresh task on a stale hit, wrapped in `catch_unwind` so a
-  panicking fetch cannot leave the entry stuck `refreshing`.
+  read-modify-write of the recents list
+  (`record_recent` in `crates/crucible-web/src/routes/layout.rs`), which now
+  lives in the daemon's `client_state.get`/`client_state.set` store, not a
+  JSON file this process owns. The agent/provider catalog cache
+  (`agent_profiles_cache`, `providers_cache`) moved into
+  `crucible_daemon::AgentManager` with it — this crate holds no cache of its
+  own for either.
+- **Background tasks.**
   `services/daemon.rs::spawn_event_router` runs the daemon-to-broker event
   pump as a `JoinHandle`; `rewire_events` aborts it and awaits its join
   before it spawns the replacement on a reconnect, so no event of the dead
@@ -607,13 +651,13 @@ losing or duplicating the decision.
   `MAX_TERMINALS` (8) via a process-wide `Semaphore`; a permit is dropped
   only after the child process is killed and reaped, specifically to avoid
   releasing a slot while its process still lives.
-- **Caches.** `SwrCache` holds agent-profile and provider-list answers for
-  `CATALOG_TTL` (30s), serving stale data while a background refresh runs.
+- **Caches.** None in this crate. The agent-profile and provider-list caches
+  live in `crucible_daemon::AgentManager` (`CATALOG_CACHE_TTL`, 30s) — see
+  [[Daemon Server#State, concurrency and lifecycle]].
 - **Startup.** `HostPolicy::from_web_config` performs a synchronous
   `getaddrinfo(AI_CANONNAME)` call to learn this machine's own reachable
-  names, which can block startup briefly on a slow resolver.
-  `catalog::warm` pre-fills the SWR cache so the first browser render is not
-  the one paying the daemon probe latency.
+  names, which can block startup briefly on a slow resolver. The daemon
+  warms its own catalog cache at its startup, not this process's.
 - **Shutdown/cleanup.** `end_session`/`archive_session`/`delete_session`
   call `state.daemon.close_event_streams(session_id)`, which drops the SSE
   registry entry and reconciles away the daemon's `session.subscribe` if no

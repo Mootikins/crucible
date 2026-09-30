@@ -1060,8 +1060,9 @@ the route itself (parts 1-6 of the change below) is not started.**
 **Status: part A done (typed `rpc_methods!` rows); gap 2 done for the
 `session.*`, `lua.*`, `plugin.*`, `surface.*`, `config.*`, `ui.*`,
 `notification.*`, `workflow.*`, `subagent.*`, `daemon.*`, `ping` and
-`shutdown` rows (below); the route itself (parts 1-6 of the change below)
-is not started.**
+`shutdown` rows (below); "What the web itself needs"'s four moved rules and
+two moved stores are done (below); the route itself (parts 1-6 of the
+change below) is not started.**
 
 **Gap 2, done for one row set.** Of the 97 rows in that set, 64 named
 `serde_json::Value` as their reply (plus 2 more — `ui.config` and
@@ -1315,6 +1316,87 @@ route.
 | The catalog cache (`services/catalog.rs`, `SwrCache`) | move to the daemon | The daemon knows when a catalog changes |
 | Layout and recents on the web server's disk | one generic client-state get/set in the daemon | They need no routes of their own |
 | The untrusted-root rule of `project.register`, the reference containment of a canvas write, the name and size checks of a note write, the resume fallback | move to the daemon | A TUI or Lua caller skips them today; AGENTS.md puts a decision in the daemon |
+
+**The last two rows are done.** The four SSE streams, the RPC route and
+the browser/per-caller allow lists (rows 4, and the "Change" list below)
+remain not started.
+
+- **`project.register`'s untrusted-root rule.** `project.register` takes an
+  `untrusted` flag; `crucible_daemon::project_manager::register_untrusted`
+  applies `untrusted_root_refusal` (a credential store, the user's
+  config/state tree) on top of the daemon floor every caller gets. A local
+  caller (the CLI, the TUI, Lua) omits the flag. The web route sets it and
+  keeps only `[web] registration_roots`, an operator setting of the web
+  process, not a daemon concept. Before: a raw `project.register` call with
+  a `.ssh`-holding path succeeded (no `untrusted` field existed).
+  `crates/crucible-daemon/tests/project_register.rs` proves the refusal
+  through the live RPC method, and `crates/crucible-web/src/routes/project.rs`'s
+  `register_refuses_a_directory_that_holds_a_credential_store` proves the
+  web still refuses the same case, through a real daemon rather than the
+  web's own pre-check.
+- **A canvas write's reference containment.** `fs.write`'s
+  `write_for_roots` refuses a `.canvas` write whose parsed content names a
+  reference outside the resolved root
+  (`crucible_daemon::file_write::canvas_containment_refusal`), checked on
+  the bytes actually written — after the web's own read-redaction
+  restoration, closing a gap where a historical bad reference rode back to
+  disk unchecked. Before: only `crates/crucible-web/src/routes/canvas.rs`'s
+  `put_canvas` ran this check, on the client's submission alone, before
+  restoration. `crates/crucible-daemon/tests/file_write.rs`'s
+  `fs_write_size_and_containment` module proves the refusal and the allow
+  case through the live RPC method; `put_canvas_refuses_a_reference_outside_the_root`
+  (already a real-daemon test) proves the web still refuses.
+- **A note write's name and size checks.** These were already `fs.write`'s
+  own gates (`MAX_CONTENT_SIZE`, `enclosing_root`'s containment), shared by
+  every caller, before this step — the web's copies in `put_note` were
+  redundant, not a gap. Deleted, with a test proving the daemon enforces
+  both directly
+  (`fs_write_size_and_containment::fs_write_refuses_content_over_the_size_limit`/
+  `fs_write_refuses_a_path_that_escapes_the_kiln`) and the web still
+  refuses through a real daemon
+  (`put_note_refuses_content_over_the_size_limit`/
+  `put_note_refuses_a_name_that_escapes_the_kiln`).
+- **The resume fallback.** `session.resume` already fell back to storage
+  for a session not held in memory (`NotFound`). It now falls back for one
+  held but not `Paused` too (most commonly `Ended`), and reports which
+  path it took (`SessionTransitionReply::resumed_from_storage`). Before: a
+  raw `session.resume` call against a session `Ended` in this daemon's own
+  memory refused outright; only the web route's own two-call retry
+  revived it. `crates/crucible-daemon/tests/session_resume_from_ended.rs`
+  proves both cases through the live RPC method. The web route now makes
+  one call and reads the flag, instead of guessing from which of two RPC
+  calls succeeded.
+- **The catalog cache.** `crucible-web`'s `SwrCache` (`services/catalog.rs`)
+  is gone. `AgentManager` caches `agents.list_profiles` and
+  `providers.list` itself (`agent_profiles_cache`, `providers_cache`,
+  `CATALOG_CACHE_TTL`), the same shape as its existing `model_cache`, and
+  warms both at daemon startup. Before: a raw RPC caller re-probed every
+  agent binary and provider endpoint on every call; only the browser's
+  cache avoided it.
+  `crates/crucible-daemon/src/server/platform.rs`/`.../server/session/models.rs`
+  each gain a test proving a fresh cache entry is served as-is and an
+  expired one triggers a re-probe, through the handler every RPC caller
+  reaches.
+- **Layout and recents.** `client_state.get`/`client_state.set`
+  (`crates/crucible-daemon/src/server/client_state.rs`) is the one generic,
+  opaque blob store, keyed by `(client, key)` and written with
+  `crucible_core::fs::write_private` under the daemon's data root.
+  `crucible-web`'s `default_layout_path`/`standalone_layout_path` and its
+  own JSON files are gone; `AppState::client_state_id` (`"web"` /
+  `"web-standalone"`) gives the same cross-instance isolation.
+  `crates/crucible-daemon/tests/client_state.rs` proves the store,
+  including the isolation, through the live RPC method.
+
+**Type count.** `rg -c -t rust '^\s*(pub(\([a-z:]+\))? )?(struct|enum)
+[A-Z]' crates/*/src` went from 1839 to 1840 across this pass: new core
+request/reply types (`ProjectRegisterRequest`, `ClientStateKey`,
+`ClientStateSetRequest`, `ClientStateGetReply`) against deleted duplicates
+(`ProviderRow` — a field-for-field copy of
+`crucible_core::types::ProviderInfo` — and `SwrCache`/`Entry`). This pass
+did not target the type-count reduction steps 10-18 measure; it moved
+behavior, and the six items above are "Cheaper to change"/"Same behavior
+on every path" outcomes in the sense "How a step is accepted" defines them,
+not "Gone" ones.
 
 **Change.**
 1. One authenticated route, `POST /api/rpc/{method}`, behind the existing

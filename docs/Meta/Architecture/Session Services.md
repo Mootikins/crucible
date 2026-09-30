@@ -210,7 +210,18 @@ Grouped by directory. Lines are as of `582c5e6c1`.
   (`Pause`/`End`/`Archive`/`AutoArchive`/`Delete`/`Refuse`/`ChildDone`),
   **`Stopped`** (`Paused{previous}`/`Ended`/`Archived`/`Deleted`), and
   **`StopError`** (`TurnRunning`/`Session`) are `SessionLifecycle::stop`'s
-  cause, success and refusal types.
+  cause, success and refusal types. The opposite transition,
+  `session.resume` (`crates/crucible-daemon/src/server/session/lifecycle.rs`'s
+  `handle_session_resume`), decides for itself whether the session needed a
+  storage reload — not held in memory at all, or held but not `Paused`
+  (most commonly `Ended`) — and reports which in
+  `SessionTransitionReply::resumed_from_storage`. Before step 19 of the
+  Simplification Plan, only `crucible-web`'s route made that decision (try
+  the warm path, retry from storage on any failure); a raw RPC caller
+  (`cru`, a Lua script) got the bare refusal for the `Ended`-in-memory case.
+  Now every caller of `session.resume` gets the same fallback, and the web
+  route only decides whether it also needs to re-read the transcript with
+  the read-only `session.history`.
 - **`DaemonSessionBridge`** (`crates/crucible-daemon/src/session_bridge.rs`)
   — implements `crucible_lua::DaemonSessionApi`; holds `ctx: Arc<RpcContext>`,
   `session_manager`, `agent_manager`, `event_tx: crate::EventBus`, a
