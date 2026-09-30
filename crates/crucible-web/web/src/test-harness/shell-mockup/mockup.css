@@ -587,6 +587,16 @@ body { background: var(--mk-nav); }
   .wm-tab[data-active]::after { content: ''; position: absolute; bottom: 0; width: var(--mk-foot); height: var(--mk-foot); pointer-events: none; }
   .wm-tab[data-active]::before { left: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 0 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
   .wm-tab[data-active]::after { right: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 100% 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
+  /* The first tab starts at the pane's left edge, and its label at the bar
+     inset. Selected, it has no left foot, and the pane's top-left corner is
+     square, so the tab and the content share one straight edge. (Each tab
+     sits in a `display: contents` menu trigger, so the first tab is the
+     tab of the strip's first child.) */
+  .wm-tabstrip { padding-inline-start: 0; }
+  .wm-tabstrip > :first-child .wm-tab { padding-left: var(--mk-pad); border-top-left-radius: 0; }
+  .wm-tabstrip > :first-child .wm-tab[data-active]::before { display: none; }
+  .wm-pane:has(> .wm-tabbar .wm-tabstrip > :first-child .wm-tab[data-active]) > .wm-tabbar + *,
+  .wm-floating:has(.wm-tabstrip > :first-child .wm-tab[data-active]) .wm-floating-body { border-top-left-radius: 0; }
 }
 
 /* Flat tabs: the tab bar shares the content's tone, with no line under it.
