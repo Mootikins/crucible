@@ -51,7 +51,7 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
     let (mock, client) = start_mock_daemon().await;
     let router = app(build_state(client), false, Some("secret"));
     for path in [
-        "/api/agents",
+        "/api/rpc/agents.list_profiles",
         "/api/chat/send",
         "/api/config",
         "/api/session/list",
@@ -60,8 +60,8 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
         "/api/fs/move",
         "/api/search/vectors",
         "/api/plugins",
-        "/api/surfaces",
-        "/api/mcp/status",
+        "/api/rpc/surface.list",
+        "/api/rpc/mcp.status",
         "/api/kiln/notes",
         "/api/canvas",
         "/api/layout",

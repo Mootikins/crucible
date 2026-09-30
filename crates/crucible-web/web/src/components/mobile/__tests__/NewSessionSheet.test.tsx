@@ -11,9 +11,9 @@ vi.mock('@/contexts/SessionContext', () => ({
     },
   }),
 }));
-// Neither `listKilns`, `listAgents` nor `listAllModels` is stubbed: the sheet
+// Neither `listKilns` nor `useAgents`/`useAllModels` is stubbed: the sheet
 // reads all three through their query hooks, which run the real functions
-// against the mocked fetch below. The configured kiln, the project roster and
+// (the latter two via `rpc(...)`) against the mocked fetch below. The configured kiln, the project roster and
 // the (empty) provider declarations ride the same fetch — `getTargetProviders`
 // reads publications, so an empty `targets` map is what "no plugin declares
 // an axis" looks like on the wire.
@@ -36,8 +36,8 @@ beforeEach(() => {
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: KILNS }),
-    'GET /api/agents': () => ({ agents: AGENTS }),
-    'GET /api/models': () => ({ models: ['sonnet', 'opus'] }),
+    'POST /api/rpc/agents.list_profiles': () => ({ profiles: AGENTS }),
+    'POST /api/rpc/models.list': () => ({ models: ['sonnet', 'opus'] }),
     'GET /api/config': () => ({ kiln_path: '/kilns/home' }),
     'GET /api/project/list': () => [{ path: '/work/alpha', name: 'alpha', kilns: [] }],
     'GET /api/plugins/publications': () => ({ publications: { targets: {} } }),

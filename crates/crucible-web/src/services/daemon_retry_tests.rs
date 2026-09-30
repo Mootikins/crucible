@@ -165,13 +165,21 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
                     .session_send_message("s", "hello", &[])
                     .await
                     .map(|_| ()),
+                // `diff.resolve_comment` no longer has its own named forwarder
+                // (Simplification Plan step 19: the browser reaches it through
+                // `rpc_forward`, the same generic path every `POST
+                // /api/rpc/{method}` call takes). `rpc_forward` is `Once`
+                // unconditionally, so this proves the browser's own path
+                // never replays an ambiguous write, not just the named
+                // forwarders that still exist.
                 "diff.resolve_comment" => peer
                     .daemon
-                    .diff_resolve_comment(
-                        &crucible_core::diff::DiffsetSource::SessionRecord {
-                            session: crucible_core::session::SessionId::parse("s").unwrap(),
-                        },
-                        "c",
+                    .rpc_forward(
+                        RpcMethod::DiffResolveComment,
+                        json!({
+                            "source": { "kind": "session_record", "session": "s" },
+                            "comment_id": "c",
+                        }),
                     )
                     .await
                     .map(|_| ()),

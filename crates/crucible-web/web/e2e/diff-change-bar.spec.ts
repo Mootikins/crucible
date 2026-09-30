@@ -129,8 +129,9 @@ async function underTheFold(page: Page, key: string): Promise<boolean> {
  * mounts, so the window never shows it.
  */
 async function textArrivesLast(page: Page, path: string): Promise<void> {
-  await page.route('**/api/diff/file**', async (route) => {
-    if (new URL(route.request().url()).searchParams.get('path') === path) {
+  await page.route('**/api/rpc/diff.file', async (route) => {
+    const body = route.request().postDataJSON() as { path: string };
+    if (body.path === path) {
       await new Promise((done) => setTimeout(done, 500));
     }
     await route.fallback();

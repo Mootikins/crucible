@@ -76,8 +76,8 @@ export const MOCK_KILNS = {
 };
 
 /**
- * The files of the mock branch diff. `GET /api/diff` answers them for any
- * root, and `GET /api/diff/file` answers their texts.
+ * The files of the mock branch diff. `diff.get` answers them for any root,
+ * and `diff.file` answers their texts.
  */
 export const MOCK_DIFF_FILES = [
   {

@@ -38,7 +38,6 @@ import {
   reloadPlugin,
   installPlugin,
   removePlugin,
-  getMcpStatus,
   listKilns,
   listDir,
   listNotes,
@@ -950,12 +949,9 @@ describe('plugin endpoints', () => {
 // =============================================================================
 
 describe('MCP / kilns / notes / search', () => {
-  it('getMcpStatus returns the response body', async () => {
-    global.fetch = createMockFetch({
-      'GET /api/mcp/status': { body: { running: true, port: 3847 } },
-    });
-    expect(await getMcpStatus()).toEqual({ running: true, port: 3847 });
-  });
+  // getMcpStatus is gone: `lib/query/mcp.ts` calls `rpc('mcp.status', null)`
+  // directly, tested in `lib/query/__tests__/mcp.test.ts` against
+  // `POST /api/rpc/mcp.status` (Simplification Plan step 19).
 
   // Replaces a DRIFTED mock that asserted a fictional string payload
   // (`{ kilns: ['default','docs'] }`). The real `handle_kiln_list`

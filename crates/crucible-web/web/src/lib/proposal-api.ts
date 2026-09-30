@@ -5,7 +5,7 @@
  * every decision. These calls only name the proposal and, for a decision on
  * some of its files, those files, each with its root.
  */
-import { client, decode } from './api-client';
+import { rpc } from './api-client';
 import type { components } from './api-schema';
 
 type Schemas = components['schemas'];
@@ -99,15 +99,12 @@ export function writePath(write: ProposedWrite): string {
  * superseded. Accept, reject and dismiss take a proposal out.
  */
 export async function listProposals(): Promise<Proposal[]> {
-  return decode(await client.GET('/api/proposals', {}), 'Failed to load the proposals');
+  return rpc('proposal.list', {});
 }
 
 /** One proposal, in any state. */
 export async function getProposal(id: string): Promise<Proposal> {
-  return decode(
-    await client.GET('/api/proposals/{id}', { params: { path: { id } } }),
-    'Failed to load the proposal',
-  );
+  return rpc('proposal.get', { id });
 }
 
 /**
@@ -115,13 +112,7 @@ export async function getProposal(id: string): Promise<Proposal> {
  * moves them into a new proposal, and the reply is that proposal.
  */
 export async function acceptProposal(id: string, files: ProposalFile[] = []): Promise<Proposal> {
-  return decode(
-    await client.POST('/api/proposals/{id}/accept', {
-      params: { path: { id } },
-      body: files.length > 0 ? { files } : {},
-    }),
-    'Failed to accept the proposal',
-  );
+  return rpc('proposal.accept', { id, files });
 }
 
 /**
@@ -133,13 +124,7 @@ export async function rejectProposal(
   options: { files?: ProposalFile[]; reason?: string } = {},
 ): Promise<Proposal> {
   const { files = [], reason } = options;
-  return decode(
-    await client.POST('/api/proposals/{id}/reject', {
-      params: { path: { id } },
-      body: { ...(files.length > 0 ? { files } : {}), ...(reason ? { reason } : {}) },
-    }),
-    'Failed to reject the proposal',
-  );
+  return rpc('proposal.reject', { id, files, reason });
 }
 
 /**
@@ -147,13 +132,7 @@ export async function rejectProposal(
  * proposal when no other file conflicts.
  */
 export async function resolveProposal(id: string, path: string, text: string, root?: string): Promise<Proposal> {
-  return decode(
-    await client.POST('/api/proposals/{id}/resolve', {
-      params: { path: { id } },
-      body: { path, text, ...(root ? { root } : {}) },
-    }),
-    'Failed to accept the resolution',
-  );
+  return rpc('proposal.resolve', { id, path, text, root });
 }
 
 /**
@@ -161,8 +140,5 @@ export async function resolveProposal(id: string, path: string, text: string, ro
  * file, so the history stays.
  */
 export async function dismissProposal(id: string): Promise<Proposal> {
-  return decode(
-    await client.POST('/api/proposals/{id}/dismiss', { params: { path: { id } } }),
-    'Failed to dismiss the proposal',
-  );
+  return rpc('proposal.dismiss', { id });
 }

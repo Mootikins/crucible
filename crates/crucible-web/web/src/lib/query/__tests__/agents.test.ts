@@ -27,9 +27,9 @@ const STORED: AgentProfileEntry[] = [
   },
 ];
 
-/** The envelope `GET /api/agents` answers; `listAgents` unwraps `agents`. */
-function agentsBody(agents: AgentProfileEntry[]): { agents: AgentProfileEntry[] } {
-  return { agents };
+/** The envelope `agents.list_profiles` answers; `useAgents` unwraps `profiles`. */
+function agentsBody(profiles: AgentProfileEntry[]): { profiles: AgentProfileEntry[] } {
+  return { profiles };
 }
 
 let env: TestQueryEnv;
@@ -56,13 +56,13 @@ function inRoot<T>(body: () => T): T {
 
 describe('useAgents', () => {
   it('fetches once for the desktop composer and the phone sheet together', async () => {
-    env = createTestQueryEnv({ 'GET /api/agents': () => agentsBody(PROBED) });
+    env = createTestQueryEnv({ 'POST /api/rpc/agents.list_profiles': () => agentsBody(PROBED) });
 
     const both = inRoot(() => ({ first: useAgents(), second: useAgents() }));
 
     await vi.waitFor(() => expect(both.first.data).toEqual(PROBED));
     expect(both.second.data).toEqual(PROBED);
-    expect(env.fetch.calls('GET /api/agents')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/agents.list_profiles')).toBe(1);
   });
 
   it('paints the stored roster before the probe answers', async () => {
@@ -72,7 +72,7 @@ describe('useAgents', () => {
       release = resolve;
     });
     env = createTestQueryEnv({
-      'GET /api/agents': async () => {
+      'POST /api/rpc/agents.list_profiles': async () => {
         await answered;
         return agentsBody(PROBED);
       },
@@ -86,11 +86,11 @@ describe('useAgents', () => {
 
     release?.();
     await vi.waitFor(() => expect(query.data).toEqual(PROBED));
-    expect(env.fetch.calls('GET /api/agents')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/agents.list_profiles')).toBe(1);
   });
 
   it('writes the probed roster back to storage', async () => {
-    env = createTestQueryEnv({ 'GET /api/agents': () => agentsBody(PROBED) });
+    env = createTestQueryEnv({ 'POST /api/rpc/agents.list_profiles': () => agentsBody(PROBED) });
 
     const query = inRoot(() => useAgents());
 
@@ -100,13 +100,13 @@ describe('useAgents', () => {
 
   it('surfaces a refusal as an error rather than as an empty roster', async () => {
     env = createTestQueryEnv({
-      'GET /api/agents': apiError(500, 'the agent registry is closed'),
+      'POST /api/rpc/agents.list_profiles': apiError(500, 'the agent registry is closed'),
     });
 
     const query = inRoot(() => useAgents());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to list agents');
+    expect(query.error?.message).toContain('RPC `agents.list_profiles` failed');
     expect(query.data).toBeUndefined();
   });
 });

@@ -38,12 +38,15 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/session/s%2Fx/knob', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { knob: 'mode', value: 'plan' }],
     ['/api/session/s%2Fx/kilns/connect', () => api.connectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
     ['/api/session/s%2Fx/kilns/disconnect', () => api.disconnectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
-    ['/api/agents', api.listAgents, { agents: [{ name: 'a' }] }, [{ name: 'a' }]],
-    ['/api/models', api.listAllModels, { models: ['m'] }, ['m']],
+    // agents.list_profiles / models.list: `api.listAgents`/`listAllModels`
+    // are gone; `lib/query/agents.ts`/`models.ts` call `rpc(...)` directly
+    // now (Simplification Plan step 19), covered in their own query tests.
     ['/api/session/s%2Fx/knob/context_strategy', () => api.getContextStrategy('s/x'), { knob: 'context_strategy', value: null }, null],
     ['/api/session/s%2Fx/knob', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { knob: 'context_strategy', value: 'truncate' }],
     ['/api/session/s%2Fx/commands', () => api.listSessionCommands('s/x'), { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
-    ['/api/surfaces', api.getSurfaces, { surfaces: [{ id: 'p' }] }, [{ id: 'p' }]],
+    // surface.list: `api.getSurfaces` is gone; `lib/query/surfaces.ts` calls
+    // `rpc('surface.list', {})` directly (Simplification Plan step 19),
+    // covered in `lib/query/__tests__/surfaces.test.ts`.
     ['/api/notes/resolve?kiln=k&name=a%20b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
     ['/api/backlinks?kiln=k&note=a%20b', () => api.getBacklinks('k', 'a b'), { linked: [] }, { linked: [] }],
     ['/api/scm/clone', () => api.scmClone('owner/repo'), { path: '/repo' }, { path: '/repo' }, { url: 'owner/repo' }],

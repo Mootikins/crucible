@@ -29,6 +29,8 @@ test.describe.configure({ timeout: 180_000 });
 // routes — the method name in the path is still what tells them apart.
 const SKILLS = /^\/api\/rpc\/skills\.list$/;
 const SKILLS_SEARCH = /^\/api\/rpc\/skills\.search$/;
+// Same for `surface.list` (this file's own surfaces-panel spec, below).
+const SURFACE_LIST = /^\/api\/rpc\/surface\.list$/;
 
 test.describe('live C3 entities', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
@@ -132,7 +134,7 @@ test.describe('live C3 entities', () => {
     await appReady(page);
     await apiQuiet(log);
 
-    expect(log.count('GET', '/api/surfaces')).toBe(0);
+    expect(log.count('POST', SURFACE_LIST)).toBe(0);
 
     const groupId = await mountTab(page, 'left', {
       id: 'surfaces-tab',
@@ -142,11 +144,11 @@ test.describe('live C3 entities', () => {
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
-    const initialReads = log.count('GET', '/api/surfaces');
+    const initialReads = log.count('POST', SURFACE_LIST);
     // Opening the stream reconciles the initial snapshot: if a read already
     // started, it is cancelled and replaced. There is no timer or per-pane read.
-    expect(initialReads, describeRequests(log, '/api/surfaces')).toBeGreaterThanOrEqual(1);
-    expect(initialReads, describeRequests(log, '/api/surfaces')).toBeLessThanOrEqual(2);
+    expect(initialReads, describeRequests(log, SURFACE_LIST)).toBeGreaterThanOrEqual(1);
+    expect(initialReads, describeRequests(log, SURFACE_LIST)).toBeLessThanOrEqual(2);
     expect((await sourcesFor(page, 'system')).filter((s) => s.open).length).toBeGreaterThanOrEqual(1);
 
     // Nothing changed on the daemon, so nothing refetches. A panel that polled
@@ -158,7 +160,7 @@ test.describe('live C3 entities', () => {
     // fire at four seconds and still pass, as long as the count it happened
     // to move was not this one.
     await apiQuiet(log, 5000);
-    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(initialReads);
+    expect(log.count('POST', SURFACE_LIST), describeRequests(log, SURFACE_LIST)).toBe(initialReads);
 
     // The panel leaves. The default layout's own file tree still reads the
     // `system` topic (confirmed live: the connection stays open here), so
@@ -181,7 +183,7 @@ test.describe('live C3 entities', () => {
     // topic it wants is already carried (the file tree kept `system` open
     // the whole time here), so a fresh roster read happens on every open,
     // not only on a stream that had to physically reconnect.
-    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(initialReads + 1);
+    expect(log.count('POST', SURFACE_LIST), describeRequests(log, SURFACE_LIST)).toBe(initialReads + 1);
 
     // Whatever the connection did underneath, ONE source is live carrying
     // `system`: the refcount never duplicates it.

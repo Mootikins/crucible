@@ -6,32 +6,10 @@
 //! `skills.get` and `skills.search` through `POST /api/rpc/{method}` now, so
 //! these tests drive that one route instead.
 
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
-use serde_json::{json, Value};
-use tower::ServiceExt;
+use axum::http::StatusCode;
+use serde_json::json;
 
-use super::shared::{build_state, build_test_app, start_mock_daemon};
-
-async fn call_rpc(app: axum::Router, method: &str, body: Value) -> (StatusCode, Value) {
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/api/rpc/{method}"))
-                .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-    (status, json)
-}
+use super::shared::{build_state, build_test_app, call_rpc, start_mock_daemon};
 
 #[tokio::test]
 async fn list_skills_returns_200_with_skills_array() {

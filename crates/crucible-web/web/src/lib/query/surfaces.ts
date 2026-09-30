@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import { getSurfaces } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import type { Surface } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -20,7 +20,10 @@ import { keys } from './keys';
  */
 export function useSurfaces(): UseQueryResult<Surface[], Error> {
   return useQuery(
-    () => ({ queryKey: keys.surfaces(), queryFn: getSurfaces }),
+    () => ({
+      queryKey: keys.surfaces(),
+      queryFn: async () => (await rpc('surface.list', {})).surfaces,
+    }),
     getQueryClient,
   );
 }

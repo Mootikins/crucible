@@ -25,26 +25,26 @@ function inRoot<T>(body: () => T): T {
 
 describe('useMcpStatus', () => {
   it('asks once for two readers of the settings pane', async () => {
-    env = createTestQueryEnv({ 'GET /api/mcp/status': () => STATUS });
+    env = createTestQueryEnv({ 'POST /api/rpc/mcp.status': () => STATUS });
 
     const both = inRoot(() => ({ first: useMcpStatus(), second: useMcpStatus() }));
 
     await vi.waitFor(() => expect(both.first.data).toEqual(STATUS));
     expect(both.second.data).toEqual(STATUS);
-    expect(env.fetch.calls('GET /api/mcp/status')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/mcp.status')).toBe(1);
   });
 
   // The pane draws a refusal and a retry button, so the error has to reach it
   // rather than turn into an empty table of rows.
   it('holds the refusal for the pane to draw', async () => {
     env = createTestQueryEnv({
-      'GET /api/mcp/status': apiError(503, 'the MCP server is not running'),
+      'POST /api/rpc/mcp.status': apiError(503, 'the MCP server is not running'),
     });
 
     const query = inRoot(() => useMcpStatus());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to get MCP status');
+    expect(query.error?.message).toContain('RPC `mcp.status` failed');
     expect(query.data).toBeUndefined();
   });
 });

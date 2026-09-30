@@ -16,7 +16,7 @@ const stops: (() => void)[] = [];
 beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv({
-    'POST /api/proposals/original/accept': () => ({ id: 'split' }),
+    'POST /api/rpc/proposal.accept': () => ({ id: 'split' }),
   });
   env.client.setDefaultOptions({ queries: { gcTime: Infinity, retry: false } });
   installSystemEventRoute();
@@ -89,8 +89,11 @@ describe('proposal reconciliation', () => {
       }
     });
     const request = await env.fetch.sent(0);
-    expect(request.path).toBe('/api/proposals/original/accept');
-    expect(request.body).toEqual({ files: [{ root: '/kiln', path: 'note.md' }] });
+    expect(request.path).toBe('/api/rpc/proposal.accept');
+    expect(request.body).toEqual({
+      id: 'original',
+      files: [{ root: '/kiln', path: 'note.md' }],
+    });
   });
 
   it('shares one refresh among the changes of one microtask, and waits for its refetch', async () => {

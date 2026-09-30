@@ -49,7 +49,7 @@ afterEach(() => {
   env.restore();
 });
 
-/** One declared surface, as `GET /api/surfaces` answers it. */
+/** One declared surface, as `surface.list` answers it. */
 function surface(over: Partial<Surface> = {}): Surface {
   return {
     plugin: 'p',

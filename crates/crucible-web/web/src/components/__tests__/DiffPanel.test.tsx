@@ -71,12 +71,12 @@ function serve(
   extra: Record<string, unknown> = {},
 ): void {
   env = createTestQueryEnv({
-    'GET /api/diff': { body: diffset(files) },
-    'GET /api/diff/file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
-    'GET /api/diff/comments': {
+    'POST /api/rpc/diff.get': { body: diffset(files) },
+    'POST /api/rpc/diff.file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
+    'POST /api/rpc/diff.comments': {
       body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comments },
     },
-    'POST /api/diff/comment': {
+    'POST /api/rpc/diff.comment': {
       body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comment: comment('c-new') },
     },
     ...extra,
@@ -157,9 +157,8 @@ describe('DiffPanel', () => {
     expect(screen.getByTestId('diff-source').textContent).toContain('master');
     // An empty base asks the daemon for the default branch.
     const sent = await env.fetch.sent(0);
-    expect(sent.path).toBe('/api/diff');
-    expect(sent.query.get('root')).toBe('/repo');
-    expect(sent.query.has('base')).toBe(false);
+    expect(sent.path).toBe('/api/rpc/diff.get');
+    expect(sent.body).toEqual({ source });
   });
 
   it('names a renamed file by its old and new path', async () => {
@@ -306,14 +305,14 @@ describe('DiffPanel', () => {
     render(() => <DiffPanel source={source} />);
 
     await waitFor(() => expect(section('src/big.rs')).toBeInTheDocument());
-    expect(env.fetch.calls('GET /api/diff/file')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/diff.file')).toBe(0);
 
     fireEvent.click(toggle('src/big.rs'));
 
     await waitFor(() => expect(section('src/big.rs').querySelector('.cm-editor')).not.toBeNull());
-    expect(env.fetch.calls('GET /api/diff/file')).toBe(1);
-    const [sent] = await sentTo('GET', '/api/diff/file');
-    expect(sent.query.get('path')).toBe('src/big.rs');
+    expect(env.fetch.calls('POST /api/rpc/diff.file')).toBe(1);
+    const [sent] = await sentTo('POST', '/api/rpc/diff.file');
+    expect((sent.body as { path: string }).path).toBe('src/big.rs');
   });
 
   it('a large file starts collapsed', async () => {
@@ -403,13 +402,13 @@ describe('DiffPanel', () => {
       within(section('img.png')).getByText('Binary file. There is no text to show.'),
     ).toBeInTheDocument();
     expect(section('img.png').querySelector('.cm-editor')).toBeNull();
-    expect(env.fetch.calls('GET /api/diff/file')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/diff.file')).toBe(0);
   });
 
   it('two roots with the same path do not collide', async () => {
     const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
     env = createTestQueryEnv({
-      'GET /api/diff': {
+      'POST /api/rpc/diff.get': {
         body: {
           id: 'session-chat-1',
           source: record,
@@ -417,11 +416,11 @@ describe('DiffPanel', () => {
           unreadable_roots: [],
         },
       },
-      'GET /api/diff/file': (request: Request) => {
-        const root = new URL(request.url).searchParams.get('root');
+      'POST /api/rpc/diff.file': async (request: Request) => {
+        const { root } = (await request.clone().json()) as { root: string };
         return { base_text: `${root}\n`, current_text: `${root}\nadded\n` };
       },
-      'GET /api/diff/comments': { body: { diffset: 'session-chat-1', comments: [] } },
+      'POST /api/rpc/diff.comments': { body: { diffset: 'session-chat-1', comments: [] } },
     });
     render(() => <DiffPanel source={record} />);
 
@@ -431,13 +430,13 @@ describe('DiffPanel', () => {
     await waitFor(() => expect(section('a.md', '/one').textContent).toContain('/one'));
     await waitFor(() => expect(section('a.md', '/two').textContent).toContain('/two'));
     expect(section('a.md', '/one').textContent).not.toContain('/two');
-    expect(env.fetch.calls('GET /api/diff/file')).toBe(2);
+    expect(env.fetch.calls('POST /api/rpc/diff.file')).toBe(2);
   });
 
   it('a session record names each root that the daemon cannot read', async () => {
     const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
     env = createTestQueryEnv({
-      'GET /api/diff': {
+      'POST /api/rpc/diff.get': {
         body: {
           id: 'session-chat-1',
           source: record,
@@ -448,8 +447,8 @@ describe('DiffPanel', () => {
           ],
         } satisfies Diffset,
       },
-      'GET /api/diff/file': { body: { base_text: 'a\n', current_text: 'b\n' } },
-      'GET /api/diff/comments': { body: { diffset: 'session-chat-1', comments: [] } },
+      'POST /api/rpc/diff.file': { body: { base_text: 'a\n', current_text: 'b\n' } },
+      'POST /api/rpc/diff.comments': { body: { diffset: 'session-chat-1', comments: [] } },
     });
     render(() => <DiffPanel source={record} />);
 
@@ -520,8 +519,8 @@ describe('DiffPanel', () => {
     fireEvent.input(input, { target: { value: 'this needs a test' } });
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
 
-    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment')).toBe(1));
-    const sent = (await sentTo('POST', '/api/diff/comment'))[0];
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/diff.comment')).toBe(1));
+    const sent = (await sentTo('POST', '/api/rpc/diff.comment'))[0];
     expect(sent.body).toEqual({
       source,
       path: 'src/a.rs',
@@ -641,13 +640,13 @@ describe('DiffPanel', () => {
       { comment: comment('c1', { body: 'fix this', resolved }), outdated: false },
     ];
     env = createTestQueryEnv({
-      'GET /api/diff': { body: diffset([entry('src/a.rs')]) },
-      'GET /api/diff/file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
-      'GET /api/diff/comments': () => ({
+      'POST /api/rpc/diff.get': { body: diffset([entry('src/a.rs')]) },
+      'POST /api/rpc/diff.file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
+      'POST /api/rpc/diff.comments': () => ({
         diffset: 'branch-0123456789abcdef0123456789abcdef',
         comments: listed(),
       }),
-      'POST /api/diff/comment/resolve': () => {
+      'POST /api/rpc/diff.resolve_comment': () => {
         resolved = true;
         return {
           diffset: 'branch-0123456789abcdef0123456789abcdef',
@@ -664,8 +663,8 @@ describe('DiffPanel', () => {
     expect(resolve.textContent).toBe('Resolve');
     fireEvent.click(resolve);
 
-    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment/resolve')).toBe(1));
-    const sent = (await sentTo('POST', '/api/diff/comment/resolve'))[0];
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/diff.resolve_comment')).toBe(1));
+    const sent = (await sentTo('POST', '/api/rpc/diff.resolve_comment'))[0];
     expect(sent.body).toEqual({ source, comment_id: 'c1' });
     await waitFor(() =>
       expect(within(section('src/a.rs')).queryByTestId('diff-comment')).toBeNull(),
@@ -677,7 +676,7 @@ describe('DiffPanel', () => {
     serve([entry('src/a.rs')], [], {
       'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
       // The chip carries the comment as the daemon stored it.
-      'POST /api/diff/comment': {
+      'POST /api/rpc/diff.comment': {
         body: {
           diffset: 'branch-0123456789abcdef0123456789abcdef',
           comment: comment('c-new', { body: 'why this?' }),
@@ -702,7 +701,7 @@ describe('DiffPanel', () => {
     });
     fireEvent.click(within(box).getByTestId('diff-comment-submit'));
 
-    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/diff.comment')).toBe(1));
     // The stored comment becomes a chip of that chat, as a reference.
     await waitFor(() =>
       expect(composerComments.of('s-7')).toEqual([
@@ -764,7 +763,7 @@ describe('DiffPanel', () => {
     fireEvent.click(within(box).getByTestId('diff-comment-submit'));
 
     // The comment is stored: nothing is lost. No chip goes anywhere.
-    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/diff.comment')).toBe(1));
     await waitFor(() =>
       expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull(),
     );
@@ -836,7 +835,7 @@ describe('DiffPanel', () => {
   describe('a proposal', () => {
     const ID = '7a1c2f3e-0000-4000-8000-000000000001';
     const proposalSource: DiffsetSource = { kind: 'proposal', id: ID };
-    const ACCEPT = `/api/proposals/${ID}/accept`;
+    const ACCEPT = '/api/rpc/proposal.accept';
 
     function proposal(state: ProposalState, over: Partial<Proposal> = {}): Proposal {
       return {
@@ -860,19 +859,19 @@ describe('DiffPanel', () => {
       files = [entry('a.md', { root: '/kiln', status: { kind: 'added' } }), entry('b.md', { root: '/kiln' })],
     ): void {
       env = createTestQueryEnv({
-        'GET /api/diff': {
+        'POST /api/rpc/diff.get': {
           body: {
             id: `proposal-${ID}`,
             source: proposalSource,
             files,
           },
         },
-        'GET /api/diff/file': { body: { base_text: null, current_text: 'a\n' } },
-        'GET /api/diff/comments': { body: { diffset: `proposal-${ID}`, comments: [] } },
-        [`GET /api/proposals/${ID}`]: { body: proposal(state) },
+        'POST /api/rpc/diff.file': { body: { base_text: null, current_text: 'a\n' } },
+        'POST /api/rpc/diff.comments': { body: { diffset: `proposal-${ID}`, comments: [] } },
+        'POST /api/rpc/proposal.get': { body: proposal(state) },
         [`POST ${ACCEPT}`]: { body: reply },
-        [`POST /api/proposals/${ID}/reject`]: { body: proposal({ kind: 'rejected' }) },
-        [`POST /api/proposals/${ID}/resolve`]: { body: proposal({ kind: 'accepted' }) },
+        'POST /api/rpc/proposal.reject': { body: proposal({ kind: 'rejected' }) },
+        'POST /api/rpc/proposal.resolve': { body: proposal({ kind: 'accepted' }) },
       });
     }
 
@@ -904,8 +903,8 @@ describe('DiffPanel', () => {
         within(section('a.md', '/kiln')).getByTestId('proposal-reject-file'),
       ).toBeInTheDocument();
       // The files of a proposal load by the proposal id and the root of the file.
-      const [list] = await sentTo('GET', '/api/diff');
-      expect(list.query.get('proposal')).toBe(ID);
+      const [list] = await sentTo('POST', '/api/rpc/diff.get');
+      expect(list.body).toEqual({ source: proposalSource });
     });
 
     it('a decided proposal shows no actions', async () => {
@@ -927,9 +926,9 @@ describe('DiffPanel', () => {
 
       await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
       const [sent] = await sentTo('POST', ACCEPT);
-      expect(sent.body, 'no paths: every file').toEqual({});
+      expect(sent.body, 'no paths: every file').toEqual({ id: ID, files: [] });
       // The pane reads the proposal again, to show the new state.
-      await waitFor(() => expect(env.fetch.calls(`GET /api/proposals/${ID}`)).toBe(2));
+      await waitFor(() => expect(env.fetch.calls('POST /api/rpc/proposal.get')).toBe(2));
     });
 
     it('accept on a file sends its root and path', async () => {
@@ -942,7 +941,7 @@ describe('DiffPanel', () => {
 
       await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
       const [sent] = await sentTo('POST', ACCEPT);
-      expect(sent.body).toEqual({ files: [{ root: '/kiln', path: 'b.md' }] });
+      expect(sent.body).toEqual({ id: ID, files: [{ root: '/kiln', path: 'b.md' }] });
     });
 
     it.each(['accept', 'reject'] as const)('a %s on a duplicate path selects the second kiln', async (kind) => {
@@ -952,10 +951,10 @@ describe('DiffPanel', () => {
       render(() => <DiffPanel source={proposalSource} />);
       const button = await waitFor(() => within(section('a.md', '/second')).getByTestId(`proposal-${kind}-file`));
       fireEvent.click(button);
-      const url = `/api/proposals/${ID}/${kind}`;
+      const url = `/api/rpc/proposal.${kind}`;
       await waitFor(() => expect(env.fetch.calls(`POST ${url}`)).toBe(1));
       const [sent] = await sentTo('POST', url);
-      expect(sent.body).toEqual({ files: [{ root: '/second', path: 'a.md' }] });
+      expect(sent.body).toEqual({ id: ID, files: [{ root: '/second', path: 'a.md' }] });
     });
 
     it('a conflicted proposal shows its regions', async () => {
@@ -989,9 +988,9 @@ describe('DiffPanel', () => {
       await waitFor(() => expect(save).not.toBeDisabled());
       fireEvent.click(save);
 
-      await waitFor(() => expect(env.fetch.calls(`POST /api/proposals/${ID}/resolve`)).toBe(1));
-      const [sent] = await sentTo('POST', `/api/proposals/${ID}/resolve`);
-      expect(sent.body).toEqual({ root: '/second', path: 'a.md', text: 'one\nDISK\n' });
+      await waitFor(() => expect(env.fetch.calls('POST /api/rpc/proposal.resolve')).toBe(1));
+      const [sent] = await sentTo('POST', '/api/rpc/proposal.resolve');
+      expect(sent.body).toEqual({ id: ID, root: '/second', path: 'a.md', text: 'one\nDISK\n' });
     });
   });
 });

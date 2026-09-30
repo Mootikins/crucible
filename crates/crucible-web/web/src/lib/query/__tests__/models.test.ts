@@ -8,7 +8,7 @@ import { useAllModels, useSessionModels, useSwitchModel } from '../models';
 
 const SESSION_MODELS = 'GET /api/session/s-1/models';
 const SWITCH = 'PUT /api/session/s-1/knob';
-const ALL_MODELS = 'GET /api/models';
+const ALL_MODELS = 'POST /api/rpc/models.list';
 const SESSION_LIST = 'GET /api/session/list';
 
 /** The storage key `swrLocal('models')` wrote, which `useAllModels` keeps. */

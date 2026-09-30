@@ -508,7 +508,7 @@ describe('FileViewerPanel — the proposal bar', () => {
     env = served;
     render(() => <FileViewerPanel filePath={FILE_PATH} />);
 
-    await waitFor(() => expect(served.fetch.calls('GET /api/proposals')).toBe(1));
+    await waitFor(() => expect(served.fetch.calls('POST /api/rpc/proposal.list')).toBe(1));
     // One macrotask, so the answer reaches the panel before the check.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId(`proposal-bar-${ID}`)).toBeNull();

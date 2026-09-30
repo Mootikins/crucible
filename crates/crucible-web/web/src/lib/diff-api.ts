@@ -1,61 +1,27 @@
 /**
- * The diffset surface, over the axum bridge.
+ * The diffset surface, over `POST /api/rpc/{method}`.
  *
- * The web server builds each source from the query: `root` for a branch,
- * `session` for a session record, `proposal` for a proposal.
+ * `DiffsetSource` names a branch, a session record or a proposal, the same
+ * tagged union `diff.get`/`diff.file`/`diff.comments` take as their own
+ * `source` field — so a caller here builds the row's params directly, with
+ * no flat-query reshaping in between (Simplification Plan step 19: the
+ * reshaping used to exist only because `GET /api/diff` read a query string,
+ * which `rpc()`'s JSON body does not need).
  */
-import { client, decode } from './api-client';
-import {
-  unreachable,
-  type DiffComment,
-  type DiffFileEntry,
-  type DiffFileText,
-  type Diffset,
-  type DiffsetSource,
-  type ListedComment,
-  type NewDiffComment,
+import { rpc } from './api-client';
+import type {
+  DiffComment,
+  DiffFileEntry,
+  DiffFileText,
+  Diffset,
+  DiffsetSource,
+  ListedComment,
+  NewDiffComment,
 } from './diffset';
-
-/** The branch fields of a query. Absent fields take the daemon's default. */
-function branchQuery(source: Extract<DiffsetSource, { kind: 'branch' }>) {
-  return {
-    root: source.root,
-    ...(source.base ? { base: source.base } : {}),
-    ...(source.head != null ? { head: source.head } : {}),
-  };
-}
-
-/** The session fields of a query. A session record takes no base and no head. */
-function sessionQuery(source: Extract<DiffsetSource, { kind: 'session_record' }>) {
-  return { session: source.session };
-}
-
-/** The proposal fields of a query. A proposal takes no base and no head. */
-function proposalQuery(source: Extract<DiffsetSource, { kind: 'proposal' }>) {
-  return { proposal: source.id };
-}
 
 /** The files of one diffset, with their counts and no text. */
 export async function getDiffset(source: DiffsetSource): Promise<Diffset> {
-  switch (source.kind) {
-    case 'branch':
-      return decode(
-        await client.GET('/api/diff', { params: { query: branchQuery(source) } }),
-        'Failed to load the diff',
-      );
-    case 'session_record':
-      return decode(
-        await client.GET('/api/diff', { params: { query: sessionQuery(source) } }),
-        'Failed to load the diff',
-      );
-    case 'proposal':
-      return decode(
-        await client.GET('/api/diff', { params: { query: proposalQuery(source) } }),
-        'Failed to load the diff',
-      );
-    default:
-      return unreachable(source);
-  }
+  return rpc('diff.get', { source });
 }
 
 /**
@@ -70,36 +36,13 @@ export async function getDiffFile(
   source: DiffsetSource,
   entry: Pick<DiffFileEntry, 'root' | 'path' | 'status'>,
 ): Promise<DiffFileText> {
-  const from = entry.status.kind === 'renamed' ? { from: entry.status.from } : {};
-  switch (source.kind) {
-    case 'branch':
-      return decode(
-        await client.GET('/api/diff/file', {
-          params: { query: { ...branchQuery(source), path: entry.path, ...from } },
-        }),
-        `Failed to load ${entry.path}`,
-      );
-    case 'session_record':
-      return decode(
-        await client.GET('/api/diff/file', {
-          params: {
-            query: { ...sessionQuery(source), root: entry.root, path: entry.path, ...from },
-          },
-        }),
-        `Failed to load ${entry.path}`,
-      );
-    case 'proposal':
-      return decode(
-        await client.GET('/api/diff/file', {
-          params: {
-            query: { ...proposalQuery(source), root: entry.root, path: entry.path, ...from },
-          },
-        }),
-        `Failed to load ${entry.path}`,
-      );
-    default:
-      return unreachable(source);
-  }
+  const from = entry.status.kind === 'renamed' ? entry.status.from : undefined;
+  return rpc('diff.file', {
+    source,
+    path: entry.path,
+    from,
+    root: source.kind === 'branch' ? undefined : entry.root,
+  });
 }
 
 /**
@@ -107,34 +50,12 @@ export async function getDiffFile(
  * whose quoted text is gone as outdated.
  */
 export async function getDiffComments(source: DiffsetSource): Promise<ListedComment[]> {
-  let query;
-  switch (source.kind) {
-    case 'branch':
-      query = branchQuery(source);
-      break;
-    case 'session_record':
-      query = sessionQuery(source);
-      break;
-    case 'proposal':
-      query = proposalQuery(source);
-      break;
-    default:
-      return unreachable(source);
-  }
-  const reply = decode(
-    await client.GET('/api/diff/comments', { params: { query } }),
-    'Failed to load the comments',
-  );
-  return reply.comments;
+  return (await rpc('diff.comments', { source })).comments;
 }
 
 /** Stores one comment on a line range of one file. The reply is the stored comment. */
 export async function postDiffComment(body: NewDiffComment): Promise<DiffComment> {
-  const reply = decode(
-    await client.POST('/api/diff/comment', { body }),
-    'Failed to save the comment',
-  );
-  return reply.comment;
+  return (await rpc('diff.comment', body)).comment;
 }
 
 /**
@@ -145,12 +66,7 @@ export async function resolveDiffComment(
   source: DiffsetSource,
   commentId: string,
 ): Promise<{ diffset: string; comment_id: string; resolved: boolean }> {
-  return decode(
-    await client.POST('/api/diff/comment/resolve', {
-      body: { source, comment_id: commentId },
-    }),
-    'Failed to resolve the comment',
-  );
+  return rpc('diff.resolve_comment', { source, comment_id: commentId });
 }
 
 /**
@@ -164,10 +80,5 @@ export async function deleteDiffComment(
   source: DiffsetSource,
   commentId: string,
 ): Promise<{ diffset: string; comment_id: string; deleted: boolean }> {
-  return decode(
-    await client.POST('/api/diff/comment/delete', {
-      body: { source, comment_id: commentId },
-    }),
-    'Failed to delete the comment',
-  );
+  return rpc('diff.delete_comment', { source, comment_id: commentId });
 }

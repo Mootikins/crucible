@@ -6,7 +6,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import { listAllModels, listModels, switchModel } from '@/lib/api';
+import { listModels, switchModel } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -41,7 +42,7 @@ function storedModels(): string[] | undefined {
 
 /** The one catalogue read, which also refreshes what the next cold load paints. */
 async function fetchAllModels(): Promise<string[]> {
-  const models = await listAllModels();
+  const models = (await rpc('models.list', {}, { notify: true })).models;
   writeLocalCache(STORAGE_KEY, models);
   return models;
 }

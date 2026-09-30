@@ -1,5 +1,5 @@
 import { useQuery, type QueryClient, type UseQueryResult } from '@tanstack/solid-query';
-import { listAgents } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
 import type { AgentProfileEntry } from '@/lib/types';
 import { getQueryClient } from './client';
@@ -33,7 +33,7 @@ function storedAgents(): AgentProfileEntry[] | undefined {
 
 /** The one probe, which also refreshes what the next cold load paints. */
 async function fetchAgents(): Promise<AgentProfileEntry[]> {
-  const agents = await listAgents();
+  const agents = (await rpc('agents.list_profiles', null)).profiles;
   writeLocalCache(STORAGE_KEY, agents);
   return agents;
 }

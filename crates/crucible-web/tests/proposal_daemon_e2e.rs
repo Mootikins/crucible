@@ -50,10 +50,16 @@ async fn web_decisions_select_the_second_kiln() {
             );
         }
         let proposal = proposal.unwrap();
-        let request = |action: &str, body: Value| {
+        // Each decision only forwarded one RPC row, so the dedicated route is
+        // gone (Simplification Plan step 19); the browser reaches it through
+        // `POST /api/rpc/{method}` now, with the id in the body.
+        let request = |action: &str, mut body: Value| {
+            body.as_object_mut()
+                .unwrap()
+                .insert("id".to_string(), json!(proposal.id));
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/proposals/{}/{action}", proposal.id))
+                .uri(format!("/api/rpc/proposal.{action}"))
                 .header("content-type", "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap()

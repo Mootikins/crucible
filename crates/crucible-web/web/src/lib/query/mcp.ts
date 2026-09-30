@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import { getMcpStatus } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -20,7 +20,7 @@ export function useMcpStatus(): UseQueryResult<Record<string, unknown>, Error> {
   return useQuery(
     () => ({
       queryKey: keys.mcpStatus(),
-      queryFn: getMcpStatus,
+      queryFn: () => rpc('mcp.status', null),
       staleTime: 60_000,
     }),
     getQueryClient,

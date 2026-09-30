@@ -123,7 +123,7 @@ export type CreateSessionParams = Omit<Schemas['CreateSessionRequest'], 'isolati
   workspace_target?: string;
 };
 
-/** ACP agent profile entry from GET /api/agents. */
+/** ACP agent profile entry, one row of `agents.list_profiles`. */
 export type AgentProfileEntry = Schemas['AgentProfileEntry'];
 
 /** One provider and its models, from `GET /api/providers`. `endpoint` and

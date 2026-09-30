@@ -1,29 +1,22 @@
 //! Plugin surfaces: the panels a plugin declares for every client to draw.
 //!
-//! One endpoint and no interpretation. `GET /api/surfaces` passes the daemon's
-//! answer through verbatim, exactly as publications do. A surface changing
-//! travels on the `system` topic of `GET /api/events`
+//! `GET /api/surfaces` is gone (Simplification Plan step 19): it only
+//! forwarded `surface.list`, which the browser now calls through
+//! `POST /api/rpc/{method}` (`routes/rpc.rs`). A surface changing travels on
+//! the `system` topic of `GET /api/events`
 //! (`routes/events.rs::system_event_frame`), which says only that a surface
 //! moved. Nothing here knows what a plugin's rows mean: a row is `{id, text,
 //! detail, mark}` and the component draws it from that, so a plugin shipped
 //! tomorrow gets a panel with no change on this side.
 //!
-//! Its own event shape rather than a variant on
-//! [`FsEvent`](crate::fs_events::FsEvent), which is a *filesystem* change by
-//! its own definition. A focused type per channel is what keeps either one
+//! `SurfaceChangedEvent` stays: it is the push frame's own shape, not a
+//! forwarder for the deleted route. Its own event shape rather than a variant
+//! on [`FsEvent`](crate::fs_events::FsEvent), which is a *filesystem* change
+//! by its own definition. A focused type per channel is what keeps either one
 //! honest.
-use crate::services::daemon::AppState;
-use crate::{error::WebResultExt, WebError};
-use axum::{extract::State, Json};
-use crucible_core::protocol::requests::SurfaceListReply;
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
 use serde::Serialize;
-use utoipa_axum::{router::OpenApiRouter, routes};
-
-pub fn surface_routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(list_surfaces))
-}
 
 /// A surface changed, delivered to the browser.
 ///
@@ -77,52 +70,9 @@ impl SurfaceChangedEvent {
     }
 }
 
-/// `GET /api/surfaces` — every declared surface, rows included.
-///
-/// Rows come with the list because a surface is a panel, not a feed: fetching
-/// each one separately would draw an empty sidebar first. The registry's row cap
-/// keeps the response bounded. `Surface`, `Shape`, `Mark` and `SurfaceRow` are
-/// `crucible_core::types` types: the daemon answers them directly, and this
-/// route forwards them unchanged, so no row here can drop a field the daemon
-/// added.
-#[utoipa::path(
-    get,
-    path = "/api/surfaces",
-    responses(
-        (status = 200, body = SurfaceListReply),
-        (status = 502, description = "The daemon could not list the surfaces"),
-    )
-)]
-async fn list_surfaces(State(state): State<AppState>) -> Result<Json<SurfaceListReply>, WebError> {
-    let surfaces = state.daemon.surfaces().await.daemon_err()?;
-    Ok(Json(SurfaceListReply { surfaces }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::shape;
-    use crucible_core::types::{Mark, Shape};
-
-    // =====================================================================
-    // The route answers the shape it declares
-    // =====================================================================
-
-    #[tokio::test]
-    async fn list_surfaces_answers_the_declared_shape() {
-        let listing: SurfaceListReply = shape("GET", "/api/surfaces", None).await;
-
-        let panel = &listing.surfaces[0];
-        assert_eq!(panel.name, "sessions");
-        assert_eq!(panel.shape, Shape::List);
-        // About the plugin rather than about one session, and the key is
-        // written either way.
-        assert_eq!(panel.session, None);
-        assert_eq!(panel.rows[0].mark, Some(Mark::Busy));
-        // A line with no status. `null` is "no status", never "unknown".
-        assert_eq!(panel.rows[1].mark, None);
-        assert_eq!(panel.rows[1].detail, None);
-    }
 
     // =====================================================================
     // The push frame

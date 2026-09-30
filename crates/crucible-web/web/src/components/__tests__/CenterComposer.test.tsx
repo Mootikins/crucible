@@ -19,8 +19,9 @@ const KILNS = [
   { path: '/home/user/.crucible/sessions', name: 'sessions', registered: false },
 ];
 
-// `listAgents` is NOT stubbed: the agent chip reads the roster through
-// `useAgents`, which runs the real one against the route below.
+// `useAgents` is NOT stubbed: the agent chip reads the roster through the
+// real hook, which calls `rpc('agents.list_profiles', null)` against the
+// route below.
 const AGENTS = [
   {
     name: 'claude',
@@ -99,10 +100,10 @@ beforeEach(async () => {
   clonedUrl = null;
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: KILNS }),
-    'GET /api/agents': () => ({ agents: AGENTS }),
+    'POST /api/rpc/agents.list_profiles': () => ({ profiles: AGENTS }),
     // The model chip and its default hint are real reads now: the composer
     // shares both keys with the session context and the phone sheet.
-    'GET /api/models': () => ({ models: ['ollama/llama3.2', 'openai/gpt-4o'] }),
+    'POST /api/rpc/models.list': () => ({ models: ['ollama/llama3.2', 'openai/gpt-4o'] }),
     'GET /api/providers': () => ({
       providers: [
         {

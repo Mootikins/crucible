@@ -38,9 +38,10 @@ export function proposalRoutes(
   counts: { added: number; removed: number } = { added: 3, removed: 1 },
 ): Record<string, MockFetchAnswer> {
   return {
-    'GET /api/proposals': () => proposals,
-    'GET /api/diff': (request: Request) => {
-      const id = new URL(request.url).searchParams.get('proposal') ?? '';
+    'POST /api/rpc/proposal.list': () => proposals,
+    'POST /api/rpc/diff.get': async (request: Request) => {
+      const { source } = (await request.clone().json()) as { source: { kind: string; id?: string } };
+      const id = source.kind === 'proposal' ? (source.id ?? '') : '';
       const proposal = proposals.find((p) => p.id === id);
       return {
         id: `proposal-${id}`,

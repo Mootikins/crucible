@@ -8,14 +8,16 @@
 #[path = "route_contract_tests/shared.rs"]
 mod shared;
 
+#[path = "route_contract_tests/agents.rs"]
+mod agents;
 #[path = "route_contract_tests/chat.rs"]
 mod chat;
 #[path = "route_contract_tests/commands.rs"]
 mod commands;
 #[path = "route_contract_tests/daemon_errors.rs"]
 mod daemon_errors;
-#[path = "route_contract_tests/diff_comments.rs"]
-mod diff_comments;
+#[path = "route_contract_tests/diff.rs"]
+mod diff;
 #[path = "route_contract_tests/errors.rs"]
 mod errors;
 #[path = "route_contract_tests/fs.rs"]
@@ -24,10 +26,14 @@ mod fs;
 mod health;
 #[path = "route_contract_tests/kilns.rs"]
 mod kilns;
+#[path = "route_contract_tests/mcp.rs"]
+mod mcp;
 #[path = "route_contract_tests/plugins.rs"]
 mod plugins;
 #[path = "route_contract_tests/projects.rs"]
 mod projects;
+#[path = "route_contract_tests/proposals.rs"]
+mod proposals;
 #[path = "route_contract_tests/router.rs"]
 mod router;
 #[path = "route_contract_tests/session_config.rs"]
@@ -38,5 +44,7 @@ mod sessions;
 mod skills;
 #[path = "route_contract_tests/stream_version.rs"]
 mod stream_version;
+#[path = "route_contract_tests/surface.rs"]
+mod surface;
 #[path = "route_contract_tests/system_events.rs"]
 mod system_events;

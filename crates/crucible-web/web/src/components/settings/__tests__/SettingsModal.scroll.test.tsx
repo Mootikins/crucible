@@ -54,9 +54,9 @@ beforeEach(() => {
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [] }),
-    // `getMcpStatus` is NOT stubbed: the MCP section reads it through
-    // `useMcpStatus`, which runs the real one against this route.
-    'GET /api/mcp/status': () => ({ servers: [] }),
+    // `useMcpStatus` is NOT stubbed: the MCP section reads it through the real
+    // hook, which calls `rpc('mcp.status', null)` against this route.
+    'POST /api/rpc/mcp.status': () => ({ servers: [] }),
     'GET /api/config': () => ({
       kiln_path: '/kilns/main',
       config: {},

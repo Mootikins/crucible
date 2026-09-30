@@ -1163,6 +1163,60 @@ pub enum McpStatus {
     Stopped(McpStopped),
 }
 
+#[cfg(test)]
+mod mcp_status_tests {
+    use super::*;
+
+    /// The untagged union reads BOTH ways: each arm's wire form comes back as
+    /// that arm, so the running payload can never be read as a stopped one.
+    ///
+    /// Moved from `crates/crucible-web/src/routes/mcp.rs` when
+    /// `GET /api/mcp/status` was deleted (Simplification Plan step 19): this
+    /// property belongs to the type, not to the route that used to forward it.
+    #[test]
+    fn each_status_arm_round_trips_as_itself() {
+        let running = McpStatus::Running(McpRunning {
+            running: true,
+            transport: "sse".to_string(),
+            port: Some(3847),
+            kiln_path: "/kilns/docs".to_string(),
+            finished: false,
+        });
+        let wire = serde_json::to_value(&running).expect("the running arm serialises");
+        assert_eq!(wire["running"], serde_json::json!(true));
+        assert_eq!(wire["port"], serde_json::json!(3847));
+        assert_eq!(
+            serde_json::from_value::<McpStatus>(wire).expect("the running arm parses"),
+            running
+        );
+
+        let stopped = McpStatus::Stopped(McpStopped { running: false });
+        let wire = serde_json::to_value(&stopped).expect("the stopped arm serialises");
+        assert_eq!(wire, serde_json::json!({ "running": false }));
+        assert_eq!(
+            serde_json::from_value::<McpStatus>(wire).expect("the stopped arm parses"),
+            stopped
+        );
+    }
+
+    /// A stdio server has no port, and says so with a written null rather
+    /// than by leaving the key out: "no port" and "this answer does not
+    /// mention ports" are different sentences.
+    #[test]
+    fn a_stdio_server_writes_a_null_port() {
+        let wire = serde_json::to_value(McpStatus::Running(McpRunning {
+            running: true,
+            transport: "stdio".to_string(),
+            port: None,
+            kiln_path: "/kilns/docs".to_string(),
+            finished: false,
+        }))
+        .expect("the running arm serialises");
+        assert!(wire.get("port").is_some(), "{wire}");
+        assert!(wire["port"].is_null(), "{wire}");
+    }
+}
+
 /// What `webhook.receive` answers.
 ///
 /// Acceptance only: the delivery became a `webhook:received` event, and

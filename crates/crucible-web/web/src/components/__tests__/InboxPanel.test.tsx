@@ -351,8 +351,8 @@ describe('InboxPanel — proposals', () => {
     ];
     const served = serve({
       ...proposalRoutes(rows),
-      'GET /api/proposals': () => rows,
-      [`POST /api/proposals/${OPEN}/dismiss`]: () => {
+      'POST /api/rpc/proposal.list': () => rows,
+      'POST /api/rpc/proposal.dismiss': () => {
         const dismissed = { ...rows[0], state: { kind: 'dismissed' as const } };
         rows = rows.slice(1);
         return dismissed;
@@ -368,7 +368,7 @@ describe('InboxPanel — proposals', () => {
 
     fireEvent.click(getByTestId(`inbox-proposal-dismiss-${OPEN}`));
     await waitFor(() => expect(queryByTestId(`inbox-proposal-${OPEN}`)).toBeNull());
-    expect(served.fetch.calls(`POST /api/proposals/${OPEN}/dismiss`)).toBe(1);
+    expect(served.fetch.calls('POST /api/rpc/proposal.dismiss')).toBe(1);
     expect(getByTestId(`inbox-proposal-${NEWER}`)).toBeTruthy();
   });
 });

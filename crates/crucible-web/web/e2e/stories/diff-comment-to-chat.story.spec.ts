@@ -9,13 +9,13 @@ import { MOCK_PROJECT, MOCK_SESSION } from '../helpers/fixtures';
  *
  * The user opens the branch diff of the project of the session, selects a
  * line range and writes a comment. **Comment** stores the comment through
- * `POST /api/diff/comment` AND puts a chip into the composer of the chat of
+ * `diff.comment` (`POST /api/rpc/diff.comment`) AND puts a chip into the composer of the chat of
  * the pane. The chip carries the reference of the comment, so `POST
  * /api/chat/send` sends `{ id, source }` and never the text: the daemon
  * builds the context block.
  *
  * The chip and the stored comment are one thing. The `×` of the chip deletes
- * the comment through `POST /api/diff/comment/delete`, so the pane loses it
+ * the comment through `diff.delete_comment` (`POST /api/rpc/diff.delete_comment`), so the pane loses it
  * too. **Attach** on a comment with no chip puts the chip back. A comment
  * that a message already carried is the exception: the agent has it, so a
  * later `×` only drops the chip.

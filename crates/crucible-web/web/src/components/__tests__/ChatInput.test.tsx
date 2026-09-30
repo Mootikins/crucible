@@ -123,7 +123,7 @@ beforeEach(() => {
     // The docked permission card reads the file it is about to overwrite.
     'GET /api/kiln/file': () => ({ content: '' }),
     // The `×` of a comment chip deletes the comment.
-    'POST /api/diff/comment/delete': () =>
+    'POST /api/rpc/diff.delete_comment': () =>
       deleteFails
         ? new Response(
             JSON.stringify({ error: { code: 422, message: 'the diffset has no such comment' } }),
@@ -241,7 +241,7 @@ describe('ChatInput', () => {
     await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
     expect(composerComments.of('test-session')).toEqual([]);
     // The chip and the comment are one thing: the comment leaves the store.
-    await waitFor(() => expect(kilnEnv.fetch.calls('POST /api/diff/comment/delete')).toBe(1));
+    await waitFor(() => expect(kilnEnv.fetch.calls('POST /api/rpc/diff.delete_comment')).toBe(1));
     const sent = await kilnEnv.fetch.sent(kilnEnv.fetch.mock.calls.length - 1);
     expect(sent.body).toEqual({ source, comment_id: 'c1' });
     expect(mockSendMessage).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ describe('ChatInput', () => {
     fireEvent.click(await screen.findByTestId('composer-attachment-remove'));
 
     await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
-    expect(kilnEnv.fetch.calls('POST /api/diff/comment/delete')).toBe(0);
+    expect(kilnEnv.fetch.calls('POST /api/rpc/diff.delete_comment')).toBe(0);
   });
 
   it('disables send button when input is empty', () => {

@@ -2,9 +2,8 @@ use super::forwarding::ReplayPolicy;
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
 use crucible_core::protocol::requests::{
-    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
-    DiffFileRequest, DiffResolveCommentReply, FsRootKind, GetBacklinksReply, KilnGraphReply,
-    KilnRow, NoteByNameReply, NoteListRow, SessionCreateRequest, VectorHit,
+    FsRootKind, GetBacklinksReply, KilnGraphReply, KilnRow, NoteByNameReply, NoteListRow,
+    SessionCreateRequest, VectorHit,
 };
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
@@ -330,11 +329,11 @@ impl ReconnectingDaemon {
         -> crucible_daemon::GrepSearchResponse = search_grep(&root, &query, regex, glob.as_deref(), limit, case_insensitive);
     }
 
-    forward_rpc! {
-        Safe McpStatus =>
-        mcp_status()
-        -> crucible_daemon::McpStatus = mcp_status();
-    }
+    // mcp.status: the browser calls it through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19), so this forwarder is gone.
+    // `DaemonClient::mcp_status` itself stays for now: deleting a
+    // hand-written `DaemonClient` method that only forwards one row is
+    // step 19 item 9, a separate pass.
 
     // skills.list/get/search: the browser calls them through
     // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
@@ -611,19 +610,10 @@ impl ReconnectingDaemon {
         -> Vec<ProviderInfo> = list_providers(kiln_path.as_deref());
     }
 
-    forward_rpc! {
-        /// List all chat models across providers without an active session.
-        Safe ModelsList =>
-        list_all_models(kiln_path: Option<&std::path::Path> => kiln_path.map(Path::to_path_buf))
-        -> Vec<String> = list_all_models(kiln_path.as_deref());
-    }
-
-    forward_rpc! {
-        /// List ACP agent profiles (builtins + config) with probed availability.
-        Safe AgentsListProfiles =>
-        agents_list_profiles()
-        -> crucible_daemon::AgentProfilesReply = agents_list_profiles();
-    }
+    // models.list and agents.list_profiles: the browser calls them through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19), so these
+    // forwarders are gone. `DaemonClient::list_all_models`/
+    // `agents_list_profiles` stay (item 9 is a separate pass).
 
     forward_rpc! {
         Once SessionSetPluginApproval =>
@@ -693,43 +683,14 @@ impl ReconnectingDaemon {
         -> crucible_daemon::FsListing = fs_list_dir(&root, &rel_path, show_ignored, show_hidden);
     }
 
-    forward_rpc! {
-        Safe DiffGet =>
-        diff_get(source: &crucible_core::diff::DiffsetSource)
-        -> crucible_core::diff::Diffset = diff_get(&source);
-    }
-
-    forward_rpc! {
-        Safe DiffFile =>
-        diff_file_request(request: &DiffFileRequest)
-        -> crucible_core::diff::DiffFileText = diff_file_request(request.clone());
-    }
-
-    forward_rpc! {
-        Once DiffComment =>
-        diff_comment(request: &DiffCommentRequest)
-        -> DiffCommentReply = diff_comment(request.clone());
-    }
-
-    forward_rpc! {
-        Once DiffResolveComment =>
-        diff_resolve_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
-        -> DiffResolveCommentReply
-        = diff_resolve_comment(&source, &comment_id);
-    }
-
-    forward_rpc! {
-        Once DiffDeleteComment =>
-        diff_delete_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
-        -> DiffDeleteCommentReply
-        = diff_delete_comment(&source, &comment_id);
-    }
-
-    forward_rpc! {
-        Safe DiffComments =>
-        diff_comments(source: &crucible_core::diff::DiffsetSource)
-        -> DiffCommentsReply = diff_comments(&source);
-    }
+    // diff.get/file/comment/resolve_comment/delete_comment/comments: the
+    // browser calls them through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19), so these forwarders are gone.
+    // `DaemonClient::diff_get`/`diff_file_request`/`diff_comment`/
+    // `diff_resolve_comment`/`diff_delete_comment`/`diff_comments` stay
+    // (item 9 is a separate pass); `daemon_retry_tests.rs` now proves the
+    // `Once` replay policy of a decision through `rpc_forward` directly,
+    // since no named forwarder is left to call.
 
     forward_rpc! {
         Safe FsRead =>

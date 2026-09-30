@@ -234,9 +234,11 @@ async fn a_busy_proposal_decision_maps_to_409() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/proposals/0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11/accept")
+                .uri("/api/rpc/proposal.accept")
                 .header("content-type", "application/json")
-                .body(Body::from("{}"))
+                .body(Body::from(
+                    serde_json::json!({ "id": "0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11" }).to_string(),
+                ))
                 .unwrap(),
         )
         .await

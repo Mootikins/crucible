@@ -26,17 +26,9 @@ impl ReconnectingDaemon {
         -> Vec<crucible_core::types::PluginCommand> = plugin_commands();
     }
 
-    forward_rpc! {
-        /// Surfaces plugins declared, rows included.
-        ///
-        /// Passed through verbatim, exactly as publications are: nothing on this
-        /// side knows what a plugin's rows mean. A row is `{id, text, detail, mark}`
-        /// and the component draws it from that, so a plugin shipped tomorrow gets a
-        /// panel with no change here.
-        Safe SurfaceList =>
-        surfaces()
-        -> Vec<crucible_core::types::Surface> = surface_list();
-    }
+    // surface.list: the browser calls it through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19), so this forwarder is gone.
+    // `DaemonClient::surface_list` stays: item 9 is a separate pass.
 
     forward_rpc! {
         Safe PluginPublications =>

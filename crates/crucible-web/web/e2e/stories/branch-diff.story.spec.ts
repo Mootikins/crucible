@@ -22,10 +22,10 @@ test.describe('Branch diff from the Files panel', () => {
       projects: [{ ...MOCK_PROJECT, repository: { root: ROOT, is_worktree: false } }],
     });
 
-    const asked: URL[] = [];
+    const asked: Request[] = [];
     page.on('request', (request: Request) => {
       const url = new URL(request.url());
-      if (url.pathname === '/api/diff') asked.push(url);
+      if (url.pathname === '/api/rpc/diff.get') asked.push(request);
     });
 
     await page.goto('/');
@@ -63,9 +63,10 @@ test.describe('Branch diff from the Files panel', () => {
 
     // One request, for the browsed root, with the default base and the working tree.
     expect(asked.length).toBeGreaterThan(0);
-    const query = asked[0].searchParams;
-    expect(query.get('root')).toBe(ROOT);
-    expect(query.has('base')).toBe(false);
-    expect(query.has('head')).toBe(false);
+    const { source } = asked[0].postDataJSON() as { source: { kind: string; root: string; base: string; head: string | null } };
+    expect(source.kind).toBe('branch');
+    expect(source.root).toBe(ROOT);
+    expect(source.base).toBe('');
+    expect(source.head).toBeNull();
   });
 });

@@ -4,34 +4,6 @@
  */
 
 export interface paths {
-    "/api/agents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read the `profiles` array out of the daemon's `agents.list_profiles`
-         *     answer, failing safe to an empty list. A missing, non-array or unreadable
-         *     key must not leak `null` to the client — the picker expects `agents` to be
-         *     iterable.
-         *     ACP agent profiles with probed availability, for the session-creation
-         *     agent picker.
-         * @description Cached in the daemon (`agents.list_profiles`,
-         *     `crate::agent_manager::CATALOG_CACHE_TTL`) — the probe takes ~0.5s and
-         *     must not gate every splash render. Every caller of that RPC method shares
-         *     the cache now; it used to be a cache in this crate alone.
-         */
-        get: operations["list_agents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/backlinks": {
         parameters: {
             query?: never;
@@ -217,135 +189,6 @@ export interface paths {
          *     line the daemon named, which an error status cannot carry.
          */
         post: operations["save_config"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/diff` — the files of the branch diff of one root, of the record
-         *     of one session, or of one proposal.
-         * @description The reply has the counts of each file and no text. For a branch, its
-         *     `source` names the base branch that the daemon used. A session with no
-         *     review ledger has no files.
-         */
-        get: operations["get_diff"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/diff/comment` — anchor a comment to a line range of one file of
-         *     a branch diff or of a session record.
-         * @description The daemon quotes the text of the range on the named side. A comment on a
-         *     session record also tells the clients of the session with
-         *     `review_changed`.
-         */
-        post: operations["post_diff_comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff/comment/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/diff/comment/delete` — remove one comment of a diffset.
-         * @description Delete is not resolve. Resolve keeps a settled remark in the record;
-         *     delete says that the author never wrote the remark, so the comment leaves
-         *     the store.
-         */
-        post: operations["post_diff_delete_comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff/comment/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** `POST /api/diff/comment/resolve` — mark one comment of a diffset resolved. */
-        post: operations["post_diff_resolve_comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/diff/comments` — the comments of the branch diff of one root, of
-         *     the record of one session, or of one proposal.
-         * @description The daemon finds the quoted text of each comment in the current text of
-         *     its side. A moved text moves the range. A text that is gone makes the
-         *     comment outdated.
-         */
-        get: operations["get_diff_comments"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/diff/file": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/diff/file` — the two texts of one file of a branch diff, of a
-         *     session record or of a proposal.
-         * @description A side is `null` when the file is absent on it, binary or too large.
-         */
-        get: operations["get_diff_file"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -644,49 +487,6 @@ export interface paths {
          * @description Idempotent: deleting a layout that is not there succeeds.
          */
         delete: operations["reset_layout"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Whether the daemon is serving an MCP surface, and where.
-         * @description The daemon's own answer, forwarded: the two arms and the keys each one
-         *     writes belong to the manager that holds the server, not to this route.
-         */
-        get: operations["mcp_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * All chat models across providers, no session required (draft-state picker).
-         * @description Takes no `kiln` parameter, for the reason `list_providers` does not: it
-         *     used to accept a raw `PathBuf` that reached the daemon's classification
-         *     resolver unfloored, and no caller ever sent one.
-         */
-        get: operations["list_all_models"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1056,122 +856,6 @@ export interface paths {
          * @description The directory stays on disk; only the registration goes.
          */
         post: operations["unregister_project"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/proposals` — the proposals in the Inbox, oldest first. */
-        get: operations["list_proposals"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/proposals/{id}` — one proposal, in any state. */
-        get: operations["get_proposal"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{id}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/proposals/{id}/accept` — write every file of the proposal, or
-         *     the files that the body names.
-         * @description The reply is the proposal that holds the written files.
-         */
-        post: operations["accept_proposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{id}/dismiss": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/proposals/{id}/dismiss` — take the proposal out of the Inbox
-         *     with no decision. The daemon keeps its file.
-         */
-        post: operations["dismiss_proposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/proposals/{id}/reject` — reject the proposal, or the files that
-         *     the body names. No file changes.
-         * @description The reply is the proposal that holds the rejected files.
-         */
-        post: operations["reject_proposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{id}/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/proposals/{id}/resolve` — write the settled text of one
-         *     conflicted file.
-         */
-        post: operations["resolve_proposal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1913,31 +1597,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/surfaces": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/surfaces` — every declared surface, rows included.
-         * @description Rows come with the list because a surface is a panel, not a feed: fetching
-         *     each one separately would draw an empty sidebar first. The registry's row cap
-         *     keeps the response bounded. `Surface`, `Shape`, `Mark` and `SurfaceRow` are
-         *     `crucible_core::types` types: the daemon answers them directly, and this
-         *     route forwards them unchanged, so no row here can drop a field the daemon
-         *     added.
-         */
-        get: operations["list_surfaces"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/terminal/ws": {
         parameters: {
             query?: never;
@@ -1988,17 +1647,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description The body of an accept. */
-        AcceptProposalBody: {
-            /** @description Root-qualified files. Use this instead of paths for per-file decisions. */
-            files?: components["schemas"]["ProposalFile"][];
-            /**
-             * @description The files to write, as the proposal names them. The daemon moves them
-             *     into a new proposal and accepts that one. Absent or empty means every
-             *     file.
-             */
-            paths?: string[];
-        };
         /**
          * @description An agent card - static definition of an agent's configuration
          *
@@ -2094,16 +1742,6 @@ export interface components {
             id: string;
             /** @description What to label the control. */
             name: string;
-        };
-        /**
-         * @description The agent picker's list.
-         *
-         *     The key is `agents`, where the daemon's own answer says `profiles`: this
-         *     route names the list after what the picker shows, and the ROW is the
-         *     daemon's, so a probed field cannot be dropped on the way through.
-         */
-        AgentListResponse: {
-            agents: components["schemas"]["AgentProfileEntry"][];
         };
         /** @description One choice in an agent's select option. */
         AgentOptionChoice: {
@@ -6314,19 +5952,6 @@ export interface components {
              */
             reason: string;
         };
-        /** @description The body of a reject. */
-        RejectProposalBody: {
-            /** @description Root-qualified files. Use this instead of paths for per-file decisions. */
-            files?: components["schemas"]["ProposalFile"][];
-            /**
-             * @description The files to reject, as the proposal names them. The daemon moves
-             *     them into a new proposal and rejects that one. Absent or empty means
-             *     every file.
-             */
-            paths?: string[];
-            /** @description Why the user rejects the proposal. The proposal keeps it. */
-            reason?: string | null;
-        };
         /**
          * @description One fact of a [`ToolRender`]. The value is JSON, so a client can draw a
          *     structured value, for example `rawInput`, in its own way.
@@ -6373,15 +5998,6 @@ export interface components {
             path: string;
             /** @description The file stem, or `null` when the path has none. Always written. */
             title: string | null;
-        };
-        /** @description The body of a resolve: the text that the user settled for one file. */
-        ResolveProposalBody: {
-            /** @description The path relative to the kiln root, as the proposal names it. */
-            path: string;
-            /** @description The stored kiln root. Omit only when the path is unique in the proposal. */
-            root?: string | null;
-            /** @description The whole text to write. */
-            text: string;
         };
         /**
          * @description What `POST /api/session/{id}/resume` answers, which depends on the path
@@ -9017,12 +8633,10 @@ export interface components {
     headers: never;
     pathItems: never;
 }
-export type SchemaAcceptProposalBody = components['schemas']['AcceptProposalBody'];
 export type SchemaAgentCard = components['schemas']['AgentCard'];
 export type SchemaAgentCardsListReply = components['schemas']['AgentCardsListReply'];
 export type SchemaAgentConfig = components['schemas']['AgentConfig'];
 export type SchemaAgentConfigOption = components['schemas']['AgentConfigOption'];
-export type SchemaAgentListResponse = components['schemas']['AgentListResponse'];
 export type SchemaAgentOptionChoice = components['schemas']['AgentOptionChoice'];
 export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
 export type SchemaAgentOptionKind = components['schemas']['AgentOptionKind'];
@@ -9345,12 +8959,10 @@ export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
 export type SchemaRecordingMode = components['schemas']['RecordingMode'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
-export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
 export type SchemaRenderField = components['schemas']['RenderField'];
 export type SchemaReorderGroupsParams = components['schemas']['ReorderGroupsParams'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
-export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewPayload = components['schemas']['ReviewPayload'];
 export type SchemaRow = components['schemas']['Row'];
@@ -9517,32 +9129,6 @@ export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
 export type $defs = Record<string, never>;
 export interface operations {
-    list_agents: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentListResponse"];
-                };
-            };
-            /** @description The daemon could not list the agent profiles */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     get_backlinks: {
         parameters: {
             query: {
@@ -10060,281 +9646,6 @@ export interface operations {
                 };
             };
             /** @description The daemon could not save the values */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_diff: {
-        parameters: {
-            query?: {
-                /** @description The branch to compare against. Absent takes the default branch. */
-                base?: string;
-                /** @description The other side. Absent takes the working tree. */
-                head?: string;
-                /**
-                 * @description The id of a proposal. Names the proposal: the base of each write, to
-                 *     its new text.
-                 */
-                proposal?: string;
-                /**
-                 * @description Absolute path of the top level of a git repository. Names a branch
-                 *     source. Give exactly one of `root`, `session` and `proposal`.
-                 */
-                root?: string;
-                /**
-                 * @description The id of a session. Names the record of the session: its session
-                 *     base, to the files on disk.
-                 */
-                session?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Diffset"];
-                };
-            };
-            /** @description The query or the daemon refuses the source, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description git failed, or the daemon could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    post_diff_comment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DiffCommentRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiffCommentReply"];
-                };
-            };
-            /** @description The daemon refuses the source, the root, the path or the range, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the comment, or could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    post_diff_delete_comment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DiffCommentKey"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiffDeleteCommentReply"];
-                };
-            };
-            /** @description The diffset has no such comment, or the daemon refuses the source */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not delete the comment, or could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    post_diff_resolve_comment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DiffCommentKey"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiffResolveCommentReply"];
-                };
-            };
-            /** @description The diffset has no such comment, or the daemon refuses the source */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not resolve the comment, or could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_diff_comments: {
-        parameters: {
-            query?: {
-                /** @description The branch to compare against. Absent takes the default branch. */
-                base?: string;
-                /** @description The other side. Absent takes the working tree. */
-                head?: string;
-                /**
-                 * @description The id of a proposal. Names the proposal: the base of each write, to
-                 *     its new text.
-                 */
-                proposal?: string;
-                /**
-                 * @description Absolute path of the top level of a git repository. Names a branch
-                 *     source. Give exactly one of `root`, `session` and `proposal`.
-                 */
-                root?: string;
-                /**
-                 * @description The id of a session. Names the record of the session: its session
-                 *     base, to the files on disk.
-                 */
-                session?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiffCommentsReply"];
-                };
-            };
-            /** @description The query or the daemon refuses the source, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description git failed, or the daemon could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_diff_file: {
-        parameters: {
-            query: {
-                /** @description The branch to compare against. Absent takes the default branch. */
-                base?: string;
-                /** @description The old path of a renamed file. */
-                from?: string;
-                /** @description The other side. Absent takes the working tree. */
-                head?: string;
-                /** @description The path of the file relative to `root`, on the current side. */
-                path: string;
-                /**
-                 * @description The id of a proposal. Names the proposal instead of a branch. Give
-                 *     `session` or `proposal`, not both.
-                 */
-                proposal?: string;
-                /**
-                 * @description Absolute path of the root of the file. For a branch source, the top
-                 *     level of the git repository. For a session record or a proposal, the
-                 *     `root` of the file entry.
-                 */
-                root: string;
-                /**
-                 * @description The id of a session. Names the record of the session instead of a
-                 *     branch.
-                 */
-                session?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiffFileText"];
-                };
-            };
-            /** @description The query or the daemon refuses the source, the root or the path, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description git failed, or the daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -11045,51 +10356,6 @@ export interface operations {
             };
         };
     };
-    mcp_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpStatus"];
-                };
-            };
-            /** @description The daemon could not report the MCP status */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_all_models: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelsResponse"];
-                };
-            };
-        };
-    };
     list_notes: {
         parameters: {
             query: {
@@ -11777,258 +11043,6 @@ export interface operations {
                 };
             };
             /** @description The daemon could not unregister the project */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_proposals: {
-        parameters: {
-            query?: {
-                /**
-                 * @description Also list the proposals that left the Inbox: accepted, rejected and
-                 *     dismissed.
-                 */
-                all?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"][];
-                };
-            };
-            /** @description The daemon could not read the proposals */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_proposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The proposal */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"];
-                };
-            };
-            /** @description No proposal has the id */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the proposal */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    accept_proposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The proposal */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcceptProposalBody"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"];
-                };
-            };
-            /** @description Another decision holds the proposal; send the request again after it finishes */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No proposal has the id, or the proposal is already settled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not write the files */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    dismiss_proposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The proposal */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"];
-                };
-            };
-            /** @description Another decision holds the proposal; send the request again after it finishes */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No proposal has the id, or the proposal is already settled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the decision */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    reject_proposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The proposal */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RejectProposalBody"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"];
-                };
-            };
-            /** @description Another decision holds the proposal; send the request again after it finishes */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No proposal has the id, or the proposal is already settled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the decision */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    resolve_proposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The proposal */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResolveProposalBody"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Proposal"];
-                };
-            };
-            /** @description Another decision holds the proposal; send the request again after it finishes */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No proposal has the id, or the file has no conflict */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not write the file */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -13381,32 +12395,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not run the search */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_surfaces: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SurfaceListReply"];
-                };
-            };
-            /** @description The daemon could not list the surfaces */
             502: {
                 headers: {
                     [name: string]: unknown;

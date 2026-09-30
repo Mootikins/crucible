@@ -8,7 +8,6 @@ import { rawFileUrl } from './paths';
 import { assertStreamVersion } from './stream-version';
 import type { BaseRequest, BaseResult, CreateEntryParams, ReorderGroupsParams, SetPropertyParams, WriteOutcome } from './query/bases';
 import type {
-  AgentProfileEntry,
   AnchoredEdit,
   AppConfigNode,
   ChatEvent,
@@ -30,7 +29,6 @@ import type {
   SessionSearchResponse,
   SessionKnobSupport,
   SessionModes,
-  Surface,
   TargetProvider,
   FileEntry,
   NoteEntry,
@@ -1433,21 +1431,9 @@ export async function disconnectSessionKiln(
   );
 }
 
-/** List ACP agent profiles with probed availability. */
-export async function listAgents(): Promise<AgentProfileEntry[]> {
-  return decode(await client.GET('/api/agents'), 'Failed to list agents').agents;
-}
-
-/**
- * List all chat models across providers — no session required.
- *
- * Takes no kiln. The route used to accept `?kiln=<path>` and forward the raw
- * directory to the daemon's classification resolver, and no caller ever sent
- * one; the parameter is gone from both sides rather than converted to a name.
- */
-export async function listAllModels(): Promise<string[]> {
-  return decode(await client.GET('/api/models'), 'Failed to list models', { notify: true }).models;
-}
+// Agents and models: `lib/query/agents.ts` and `lib/query/models.ts` call
+// `rpc('agents.list_profiles' | 'models.list', ...)` directly. No REST route
+// forwards them any more (Simplification Plan step 19).
 
 // =============================================================================
 // Session knobs
@@ -1575,15 +1561,8 @@ export async function listSessionCommands(
  */
 export type SurfaceChangedEvent = Schemas['SurfaceChangedEvent'];
 
-/**
- * Every surface a plugin declared (`GET /api/surfaces`).
- *
- * Rows come with the list, so a panel draws on first paint rather than showing an
- * empty sidebar and filling in.
- */
-export async function getSurfaces(): Promise<Surface[]> {
-  return decode(await client.GET('/api/surfaces'), 'Failed to list plugin surfaces').surfaces;
-}
+// Surfaces: `lib/query/surfaces.ts` calls `rpc('surface.list', {})` directly.
+// No REST route forwards it any more (Simplification Plan step 19).
 
 /**
  * Subscribe to surface changes: the `system` topic of the shared connection
@@ -1702,23 +1681,8 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
 // 'skills.search', ...)` directly. No REST route forwards them any more
 // (Simplification Plan step 19 item 3).
 
-// =============================================================================
-// MCP Endpoints
-// =============================================================================
-
-/** Get MCP server status. */
-/**
- * Whether the kiln's MCP server runs, and how to reach it.
- *
- * A two-arm union, not one open record: a stopped server answers `running`
- * alone, and only a running one names its transport, its port and its kiln.
- * Narrow on `running` before reading the rest.
- */
-export type McpStatus = Schemas['McpStatus'];
-
-export async function getMcpStatus(): Promise<McpStatus> {
-  return decode(await client.GET('/api/mcp/status'), 'Failed to get MCP status');
-}
+// MCP: `lib/query/mcp.ts` calls `rpc('mcp.status', null)` directly. No REST
+// route forwards it any more (Simplification Plan step 19).
 
 // =============================================================================
 // Search Endpoints

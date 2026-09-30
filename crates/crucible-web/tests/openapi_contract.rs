@@ -36,12 +36,17 @@ fn openapi_json_path() -> PathBuf {
 
 #[test]
 fn the_spec_describes_list_all_models() {
+    // `GET /api/models` only forwarded `models.list`, so it is gone
+    // ([[Simplification Plan#Step 19]]); the browser reaches it through
+    // `POST /api/rpc/{method}` now. `GET /api/session/{id}/models` (the
+    // session-scoped list) still answers the same `ModelsResponse` shape, so
+    // this test reads that operation instead.
     let spec = spec_json();
 
-    let operation = &spec["paths"]["/api/models"]["get"];
+    let operation = &spec["paths"]["/api/session/{id}/models"]["get"];
     assert!(
         !operation.is_null(),
-        "the document has no GET /api/models operation"
+        "the document has no GET /api/session/{{id}}/models operation"
     );
 
     let reference = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
@@ -892,8 +897,12 @@ fn every_route_the_router_serves_is_in_the_document() {
 /// The TypeScript modules that name `/api` paths as literals.
 ///
 /// `diff-api.ts` is here because the regex scan that this test replaces never
-/// read a module beside `api.ts`, and those paths went unchecked.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/diff-api.ts", 5)];
+/// read a module beside `api.ts`, and those paths went unchecked. Its own
+/// floor is 0 now: every diff row moved onto `rpc(...)` (Simplification Plan
+/// step 19), which names a method, not a literal path, so this scan has
+/// nothing left to find there — kept in the list rather than deleted, so a
+/// route added back to that file directly is still caught.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 69), ("lib/diff-api.ts", 0)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.

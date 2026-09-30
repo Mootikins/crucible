@@ -3,8 +3,10 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { getDiffFile, getDiffset } from '../diff-api';
 import type { DiffFileEntry, Diffset, DiffsetSource } from '../diffset';
 
-// The mock `fetch` answers the two diff routes. Each case asserts the query
-// that went on the wire.
+// The mock `fetch` answers the two diff rows through `POST /api/rpc/{method}`.
+// Each case asserts the JSON body that went on the wire: `diff.get` and
+// `diff.file` both take the tagged `DiffsetSource` directly now
+// (Simplification Plan step 19), so there is no flat query string to build.
 
 const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
 
@@ -32,8 +34,8 @@ let env: TestQueryEnv;
 
 function serve(): void {
   env = createTestQueryEnv({
-    'GET /api/diff': { body: recordSet },
-    'GET /api/diff/file': { body: { base_text: 'a\n', current_text: 'b\n' } },
+    'POST /api/rpc/diff.get': { body: recordSet },
+    'POST /api/rpc/diff.file': { body: { base_text: 'a\n', current_text: 'b\n' } },
   });
 }
 
@@ -47,11 +49,8 @@ describe('diff-api', () => {
     expect(await getDiffset(record)).toEqual(recordSet);
 
     const sent = await env.fetch.sent(0);
-    expect(sent.path).toBe('/api/diff');
-    expect(sent.query.get('session')).toBe('chat-1');
-    expect(sent.query.has('root')).toBe(false);
-    expect(sent.query.has('base')).toBe(false);
-    expect(sent.query.has('head')).toBe(false);
+    expect(sent.path).toBe('/api/rpc/diff.get');
+    expect(sent.body).toEqual({ source: record });
   });
 
   it('sends the root of the entry with each file of a session record', async () => {
@@ -60,12 +59,12 @@ describe('diff-api', () => {
     expect(text).toEqual({ base_text: 'a\n', current_text: 'b\n' });
 
     const sent = await env.fetch.sent(0);
-    expect(sent.path).toBe('/api/diff/file');
-    expect(sent.query.get('session')).toBe('chat-1');
-    expect(sent.query.get('root')).toBe('/work/b');
-    expect(sent.query.get('path')).toBe('notes/x.md');
-    expect(sent.query.has('from')).toBe(false);
-    expect(sent.query.has('base')).toBe(false);
+    expect(sent.path).toBe('/api/rpc/diff.file');
+    expect(sent.body).toEqual({
+      source: record,
+      path: 'notes/x.md',
+      root: '/work/b',
+    });
   });
 
   it('sends the old path of a renamed file in a session record', async () => {
@@ -76,20 +75,16 @@ describe('diff-api', () => {
     );
 
     const sent = await env.fetch.sent(0);
-    expect(sent.query.get('from')).toBe('old.md');
-    expect(sent.query.get('root')).toBe('/work');
+    expect(sent.body).toMatchObject({ from: 'old.md', root: '/work' });
   });
 
-  it('asks for a branch by its root, and sends no session', async () => {
+  it('asks for a branch by its root, and sends no root field', async () => {
     serve();
     const branch: DiffsetSource = { kind: 'branch', root: '/repo', base: 'main', head: 'topic' };
     await getDiffFile(branch, entry('/repo', 'a.rs'));
 
     const sent = await env.fetch.sent(0);
-    expect(sent.query.get('root')).toBe('/repo');
-    expect(sent.query.get('base')).toBe('main');
-    expect(sent.query.get('head')).toBe('topic');
-    expect(sent.query.has('session')).toBe(false);
+    expect(sent.body).toEqual({ source: branch, path: 'a.rs' });
   });
 
   it('asks for a proposal by its id, and sends the root of each file', async () => {
@@ -102,14 +97,10 @@ describe('diff-api', () => {
     await getDiffFile(proposal, entry('/kiln', 'a.md'));
 
     const list = await env.fetch.sent(0);
-    expect(list.path).toBe('/api/diff');
-    expect(list.query.get('proposal')).toBe(proposal.id);
-    expect(list.query.has('root')).toBe(false);
+    expect(list.path).toBe('/api/rpc/diff.get');
+    expect(list.body).toEqual({ source: proposal });
     const file = await env.fetch.sent(1);
-    expect(file.path).toBe('/api/diff/file');
-    expect(file.query.get('proposal')).toBe(proposal.id);
-    expect(file.query.get('root')).toBe('/kiln');
-    expect(file.query.get('path')).toBe('a.md');
-    expect(file.query.has('session')).toBe(false);
+    expect(file.path).toBe('/api/rpc/diff.file');
+    expect(file.body).toEqual({ source: proposal, path: 'a.md', root: '/kiln' });
   });
 });

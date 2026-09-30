@@ -29,14 +29,15 @@ export interface MockOverrides {
   sessionStatus?: object;
   sseEvents?: Array<{ type: string; data: object }>;
   sessionCreate?: object;
-  /** The file entries of `GET /api/diff`, without `root`. The mock adds the asked root. */
+  /** The file entries of `diff.get`, without `root`. The mock adds the asked root. */
   diffFiles?: object[];
-  /** The texts of `GET /api/diff/file`, by path. */
+  /** The texts of `diff.file`, by path. */
   diffTexts?: Record<string, { base_text: string | null; current_text: string | null }>;
   chatMessage?: object | number;
   /**
-   * The proposals of `GET /api/proposals`, as the daemon sends them. The
-   * proposal diffset of `GET /api/diff?proposal=` lists their writes.
+   * The proposals of `proposal.list` (`POST /api/rpc/proposal.list`), as the
+   * daemon sends them. The proposal diffset of `diff.get` (`source.kind:
+   * 'proposal'`) lists their writes.
    */
   proposals?: Array<{
     id: string;
@@ -54,7 +55,7 @@ interface SentMessage {
 
 /** What the mock recorded, for the assertions of a spec. */
 export interface MockApi {
-  /** The comments that `POST /api/diff/comment` stored, oldest first. */
+  /** The comments that `diff.comment` (`POST /api/rpc/diff.comment`) stored, oldest first. */
   comments: DiffComment[];
   /** The messages that `POST /api/chat/send` took, oldest first. */
   sent: SentMessage[];
@@ -168,127 +169,105 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   );
 
   // The diffsets. A branch reply names the default branch, as the daemon
-  // does for an empty base. A predicate keeps `/api/diff/file` out.
-  await page.route(
-    (url) => url.pathname === '/api/diff',
-    (route) => {
-      const query = new URL(route.request().url()).searchParams;
-      const session = query.get('session');
-      if (session) {
-        // A session record. The mock session changed no file.
-        return route.fulfill({
-          json: {
-            id: `session-${session}`,
-            source: { kind: 'session_record', session },
-            files: [],
-            unreadable_roots: [],
-          },
-        });
-      }
-      const proposalId = query.get('proposal');
-      if (proposalId) {
-        // A proposal diffset lists the writes of the proposal. Each write
-        // adds its lines to a note, which is enough for the counts.
-        const proposal = (overrides.proposals ?? []).find((p) => p.id === proposalId);
-        return route.fulfill({
-          json: {
-            id: `proposal-${proposalId}`,
-            source: { kind: 'proposal', id: proposalId },
-            files: (proposal?.writes ?? []).map((write) => ({
-              root: write.root,
-              path: write.path,
-              status: { kind: 'modified' },
-              added: write.new_text.split('\n').filter(Boolean).length,
-              removed: 0,
-              binary: false,
-              too_large: false,
-            })),
-            unreadable_roots: [],
-          },
-        });
-      }
-      const root = query.get('root') ?? '';
-      const head = query.get('head');
-      route.fulfill({
+  // does for an empty base. Both rows reach the daemon through
+  // `POST /api/rpc/{method}` now (Simplification Plan step 19), with the
+  // tagged `DiffsetSource` in the body rather than a flat query string.
+  await page.route('**/api/rpc/diff.get', (route) => {
+    const { source } = route.request().postDataJSON() as { source: DiffsetSource };
+    if (source.kind === 'session_record') {
+      // A session record. The mock session changed no file.
+      return route.fulfill({
+        json: { id: `session-${source.session}`, source, files: [], unreadable_roots: [] },
+      });
+    }
+    if (source.kind === 'proposal') {
+      // A proposal diffset lists the writes of the proposal. Each write
+      // adds its lines to a note, which is enough for the counts.
+      const proposal = (overrides.proposals ?? []).find((p) => p.id === source.id);
+      return route.fulfill({
         json: {
-          id: 'branch-00000000000000000000000000000000',
-          source: { kind: 'branch', root, base: query.get('base') ?? 'master', head },
-          files: (overrides.diffFiles ?? MOCK_DIFF_FILES).map((file) => ({ root, ...file })),
+          id: `proposal-${source.id}`,
+          source,
+          files: (proposal?.writes ?? []).map((write) => ({
+            root: write.root,
+            path: write.path,
+            status: { kind: 'modified' },
+            added: write.new_text.split('\n').filter(Boolean).length,
+            removed: 0,
+            binary: false,
+            too_large: false,
+          })),
           unreadable_roots: [],
         },
       });
-    },
-  );
+    }
+    route.fulfill({
+      json: {
+        id: 'branch-00000000000000000000000000000000',
+        source,
+        files: (overrides.diffFiles ?? MOCK_DIFF_FILES).map((file) => ({
+          root: source.root,
+          ...file,
+        })),
+        unreadable_roots: [],
+      },
+    });
+  });
 
   // The comment store of the daemon, in memory. A POST keeps the comment, so
   // the listing that follows shows it under its lines, as the daemon does.
   // The reply carries the id, which the composer chip then references.
-  await page.route(
-    (url) => url.pathname === '/api/diff/comment',
-    (route) => {
-      const body = route.request().postDataJSON() as NewDiffComment;
-      comments += 1;
-      const comment: DiffComment = {
-        id: `c-${comments}`,
-        diffset: diffsetId(body.source),
-        root: body.root ?? (body.source.kind === 'branch' ? body.source.root : ''),
-        path: body.path,
-        anchor: anchorOf(body.source),
-        side: body.side,
-        line_range: { start: body.line_start, end: body.line_end ?? body.line_start + 1 },
-        quoted: '',
-        body: body.body,
-        author: body.author ?? 'human',
-        resolved: false,
-        created_at: '2026-09-22T10:00:00Z',
-      };
-      recorded.comments.push(comment);
-      return route.fulfill({ json: { diffset: comment.diffset, comment } });
-    },
-  );
+  await page.route('**/api/rpc/diff.comment', (route) => {
+    const body = route.request().postDataJSON() as NewDiffComment;
+    comments += 1;
+    const comment: DiffComment = {
+      id: `c-${comments}`,
+      diffset: diffsetId(body.source),
+      root: body.root ?? (body.source.kind === 'branch' ? body.source.root : ''),
+      path: body.path,
+      anchor: anchorOf(body.source),
+      side: body.side,
+      line_range: { start: body.line_start, end: body.line_end ?? body.line_start + 1 },
+      quoted: '',
+      body: body.body,
+      author: body.author ?? 'human',
+      resolved: false,
+      created_at: '2026-09-22T10:00:00Z',
+    };
+    recorded.comments.push(comment);
+    return route.fulfill({ json: { diffset: comment.diffset, comment } });
+  });
 
   // The `×` of a composer chip deletes the comment, so the pane loses it
   // too. Delete is not resolve: the comment leaves the store.
-  await page.route(
-    (url) => url.pathname === '/api/diff/comment/delete',
-    (route) => {
-      const body = route.request().postDataJSON() as { source: DiffsetSource; comment_id: string };
-      const at = recorded.comments.findIndex((c) => c.id === body.comment_id);
-      if (at < 0) {
-        return route.fulfill({
-          status: 422,
-          json: { error: { code: 422, message: `unknown comment ${body.comment_id}` } },
-        });
-      }
-      const [gone] = recorded.comments.splice(at, 1);
+  await page.route('**/api/rpc/diff.delete_comment', (route) => {
+    const body = route.request().postDataJSON() as { source: DiffsetSource; comment_id: string };
+    const at = recorded.comments.findIndex((c) => c.id === body.comment_id);
+    if (at < 0) {
       return route.fulfill({
-        json: { diffset: gone.diffset, comment_id: gone.id, deleted: true },
+        status: 422,
+        json: { error: { code: 422, message: `unknown comment ${body.comment_id}` } },
       });
-    },
-  );
+    }
+    const [gone] = recorded.comments.splice(at, 1);
+    return route.fulfill({
+      json: { diffset: gone.diffset, comment_id: gone.id, deleted: true },
+    });
+  });
 
   // The comments of a diffset: the ones this page stored. None is outdated,
   // because the mock texts do not change under a comment.
-  await page.route(
-    (url) => url.pathname === '/api/diff/comments',
-    (route) => {
-      const query = new URL(route.request().url()).searchParams;
-      const session = query.get('session');
-      const proposal = query.get('proposal');
-      const diffset = session
-        ? `session-${session}`
-        : proposal
-          ? `proposal-${proposal}`
-          : 'branch-00000000000000000000000000000000';
-      const comments = recorded.comments
-        .filter((c) => c.diffset === diffset && !c.resolved)
-        .map((comment) => ({ comment, outdated: false }));
-      return route.fulfill({ json: { diffset, comments } });
-    },
-  );
+  await page.route('**/api/rpc/diff.comments', (route) => {
+    const { source } = route.request().postDataJSON() as { source: DiffsetSource };
+    const diffset = diffsetId(source);
+    const comments = recorded.comments
+      .filter((c) => c.diffset === diffset && !c.resolved)
+      .map((comment) => ({ comment, outdated: false }));
+    return route.fulfill({ json: { diffset, comments } });
+  });
 
-  await page.route('**/api/diff/file**', (route) => {
-    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+  await page.route('**/api/rpc/diff.file', (route) => {
+    const { path } = route.request().postDataJSON() as { path: string };
     const text = (overrides.diffTexts ?? MOCK_DIFF_TEXTS)[path];
     if (!text) return route.fulfill({ status: 404, json: { error: `no file ${path}` } });
     return route.fulfill({ json: text });
@@ -296,24 +275,28 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   // The proposals in the Inbox, and one proposal by id. The `system` topic
   // of the shared connection carries `proposal_changed`; the mock sends none
-  // (registered once, above, for every topic).
-  await page.route(
-    (url) => url.pathname === '/api/proposals',
-    (route) => route.fulfill({ json: overrides.proposals ?? [] }),
+  // (registered once, above, for every topic). Both rows reach the daemon
+  // through `POST /api/rpc/{method}` now (Simplification Plan step 19), with
+  // the id in the body rather than the path.
+  await page.route('**/api/rpc/proposal.list', (route) =>
+    route.fulfill({ json: overrides.proposals ?? [] }),
   );
-  await page.route(
-    (url) => /^\/api\/proposals\/[^/]+$/.test(url.pathname),
-    (route) => {
-      const id = new URL(route.request().url()).pathname.split('/').pop();
-      const proposal = (overrides.proposals ?? []).find((p) => p.id === id);
-      if (!proposal) return route.fulfill({ status: 422, json: { error: `no proposal ${id}` } });
-      return route.fulfill({ json: proposal });
-    },
-  );
+  await page.route('**/api/rpc/proposal.get', (route) => {
+    const { id } = route.request().postDataJSON() as { id: string };
+    const proposal = (overrides.proposals ?? []).find((p) => p.id === id);
+    if (!proposal) return route.fulfill({ status: 422, json: { error: `no proposal ${id}` } });
+    return route.fulfill({ json: proposal });
+  });
 
-  // Draft-session panel loads (lazy session creation surface).
-  await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));
-  await page.route('**/api/models**', (route) => route.fulfill({ json: { models: ['llama3.2'] } }));
+  // Draft-session panel loads (lazy session creation surface). Both rows
+  // reach the daemon through `POST /api/rpc/{method}` now (Simplification
+  // Plan step 19), not their own REST route.
+  await page.route('**/api/rpc/agents.list_profiles', (route) =>
+    route.fulfill({ json: { profiles: [] } }),
+  );
+  await page.route('**/api/rpc/models.list', (route) =>
+    route.fulfill({ json: { models: ['llama3.2'] } }),
+  );
 
   await page.route('**/api/layout', (route) => {
     if (route.request().method() === 'GET') {

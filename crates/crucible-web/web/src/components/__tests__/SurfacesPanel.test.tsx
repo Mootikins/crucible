@@ -10,12 +10,12 @@ import { SurfacesPanel } from '../SurfacesPanel';
 /**
  * Nothing in `@/lib/api` is stubbed here. The panel reads the roster through
  * `useSurfaces` and the daemon's frames arrive on a fake `EventSource`, so
- * every case runs the real `getSurfaces` and the real stream parser against a
- * mocked `fetch` and a hand-driven source — which is where the two used to
- * disagree.
+ * every case runs the real `rpc('surface.list', ...)` call and the real
+ * stream parser against a mocked `fetch` and a hand-driven source — which is
+ * where the two used to disagree.
  */
 
-/** What `GET /api/surfaces` answers next. Re-read on every fetch. */
+/** What `surface.list` answers next. Re-read on every fetch. */
 let served: Surface[] = [];
 let env: TestQueryEnv;
 
@@ -45,13 +45,13 @@ async function stream(): Promise<FakeEventSource> {
 
 /** How many times the panel asked the daemon for the roster. */
 function fetches(): number {
-  return env.fetch.calls('GET /api/surfaces');
+  return env.fetch.calls('POST /api/rpc/surface.list');
 }
 
 beforeEach(() => {
   served = [];
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/surfaces': () => ({ surfaces: served }) });
+  env = createTestQueryEnv({ 'POST /api/rpc/surface.list': () => ({ surfaces: served }) });
   // The app installs the route at start (`src/index.tsx`); a test installs it
   // after `createTestQueryEnv` has forgotten the previous one.
   installSurfaceEventRoute();

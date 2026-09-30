@@ -376,7 +376,7 @@ describe('ChangesPanel — proposals', () => {
     env = served;
     render(() => <ChangesPanel />);
 
-    await waitFor(() => expect(served.fetch.calls('GET /api/proposals')).toBe(1));
+    await waitFor(() => expect(served.fetch.calls('POST /api/rpc/proposal.list')).toBe(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId('changes-proposals')).toBeNull();
   });

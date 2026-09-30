@@ -6,8 +6,8 @@ import { resolveDiffComment } from '../diff-api';
 import type { DiffsetSource } from '../diffset';
 
 /**
- * The client resolves a comment through the diff route
- * `POST /api/diff/comment/resolve`. The body names the diffset source,
+ * The client resolves a comment through the `diff.resolve_comment` row
+ * (`POST /api/rpc/diff.resolve_comment`). The body names the diffset source,
  * because a comment belongs to a diffset and not to a session route.
  */
 
@@ -31,9 +31,9 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-describe('diff comment REST surface', () => {
+describe('diff comment RPC surface', () => {
   it('resolves a comment of the session record through the diff route', async () => {
-    const mockFetch = serve('POST /api/diff/comment/resolve', {
+    const mockFetch = serve('POST /api/rpc/diff.resolve_comment', {
       diffset: 'session-a/b',
       comment_id: 'c 1',
       resolved: true,
@@ -41,7 +41,7 @@ describe('diff comment REST surface', () => {
     await resolveDiffComment(record('a/b'), 'c 1');
 
     const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/diff/comment/resolve');
+    expect(sent.path).toBe('/api/rpc/diff.resolve_comment');
     expect(sent.headers.get('Content-Type')).toBe('application/json');
     expect(sent.body).toEqual({
       source: { kind: 'session_record', session: 'a/b' },
@@ -54,7 +54,7 @@ describe('diff comment REST surface', () => {
     // `{"error": {code, message}}`. Throwing the body raw puts that blob in a
     // toast where the server had already written a sentence.
     global.fetch = createMockFetch({
-      'POST /api/diff/comment/resolve': apiError(422, 'unknown comment c1'),
+      'POST /api/rpc/diff.resolve_comment': apiError(422, 'unknown comment c1'),
     });
 
     const error = await resolveDiffComment(record('s1'), 'c1').then(
@@ -73,7 +73,7 @@ describe('diff comment REST surface', () => {
     const prompted = vi.fn();
     const stopListening = getBus().on('authRequired', prompted);
     global.fetch = createMockFetch({
-      'POST /api/diff/comment/resolve': { status: 401 },
+      'POST /api/rpc/diff.resolve_comment': { status: 401 },
     });
 
     await expect(resolveDiffComment(record('s1'), 'c1')).rejects.toThrow();
@@ -84,7 +84,7 @@ describe('diff comment REST surface', () => {
 
   it('falls back to the status when the body is empty', async () => {
     global.fetch = createMockFetch({
-      'POST /api/diff/comment/resolve': { status: 500 },
+      'POST /api/rpc/diff.resolve_comment': { status: 500 },
     });
     await expect(resolveDiffComment(record('s1'), 'c1')).rejects.toThrow('HTTP 500');
   });
