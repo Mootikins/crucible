@@ -979,7 +979,7 @@ reverted after measuring.
   by a deliberate rename.
 
 
-## Step 16. The last TS copies
+## Step 16. The last TS copies (done)
 
 **Change.** Replace the remaining hand TS wire types (`GrepHit`,
 `SemanticHit`, the Bases and file request types, four `api.ts` types) with
@@ -988,6 +988,24 @@ aliases of the generated schema. Keep one `rel_path` mapper, or none.
 **Done when.** The listed TS types are gone, and each is an alias of the
 generated schema. A field that the daemon renames makes `tsc` fail at each
 reader.
+
+**Outcome.** `GrepHit`, `SemanticHit` and `GrepResponse` are schema aliases;
+their camelCase mappers are gone, and `SearchPanel.tsx` reads `rel_path`/
+`match_start`/`match_end` off the wire directly. `SystemEvent` ties its
+fields to `PublicationChangedEvent`/`ProposalChangedEvent`; it keeps the
+`event` tag by hand because the daemon's type is `#[serde(untagged)]` and the
+document cannot describe an SSE frame name. `AppConfigControls` and
+`PluginOptions` stay hand-written — `ConfigResponse.controls` is
+`serde_json::Value`, so no generated shape exists to alias; this is the
+plugin-vocabulary gap Step 20 owns. In `lib/query/bases.ts`, eight of the
+nine listed types were already aliases; `BaseRequest` stays a client-local
+discriminated union (the design rules forbid merging its `path`/`yaml` OR
+into the wire's two-optional-fields shape) with its field types now drawn
+from the generated operation parameters. In `lib/query/fs.ts`,
+`SaveFileParams` is now a schema alias; `DirRequest`/`FsMoveParams`/
+`FsPathParams` stay client-local hook-parameter shapes, each documented and
+each keeping the one mapper the rule allows. See the Web Server page's
+Findings for the measured counts and the drift proof.
 
 
 ## Step 17. One daemon test fixture

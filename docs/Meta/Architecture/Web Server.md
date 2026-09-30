@@ -840,3 +840,40 @@ page's file set and are not summarized above.
   worth fixing before a refactor relies on the gate being present.
 - No other conflict with `AGENTS.md`'s ownership table, dead code, or
   duplicate write/config pipeline was found in this page's file set.
+- **Step 16 of the Simplification Plan (the last TS copies) is done.**
+  `GrepHit` and `SemanticHit` in `lib/types.ts` are now aliases of the
+  generated schema (`Schemas['GrepHit']`, `Schemas['SemanticSearchRow']`);
+  `grepSearch`/`semanticSearch` in `lib/api.ts` read the wire's own
+  `rel_path`/`match_start`/`match_end` names directly, and `SearchPanel.tsx`
+  reads them the same way — the camelCase mapper each function used to carry
+  is gone. `GrepResponse` in `lib/api.ts` is now `Schemas['GrepSearchResponse']`.
+  `SystemEvent` ties its two variants' fields to
+  `Schemas['PublicationChangedEvent']`/`Schemas['ProposalChangedEvent']` (it
+  still adds the `event` tag by hand, because the daemon's `SystemEvent` is
+  `#[serde(untagged)]` and carries the discriminant only in the SSE frame
+  name, which the document cannot describe). `AppConfigControls` and
+  `PluginOptions` stay hand-written: `ConfigResponse.controls` is
+  `serde_json::Value`, so there is no generated shape to alias. In
+  `lib/query/bases.ts`, `BaseValue`/`BaseRow`/`BaseGroup`/`BaseResult`/
+  `SetPropertyParams`/`CreateEntryParams`/`ReorderGroupsParams`/`WriteOutcome`
+  were already schema aliases; `BaseRequest` stays a client-local
+  discriminated union (`path` XOR `yaml`, where the wire takes both as
+  optional query parameters) with its field types now drawn from
+  `operations['query_base']['parameters']['query']`. In `lib/query/fs.ts`,
+  `SaveFileParams` is now `Schemas['PutFileRequest']`; `DirRequest`,
+  `FsMoveParams` and `FsPathParams` stay client-local hook-parameter shapes
+  (documented why), each with the one camelCase-to-wire mapper it keeps, in
+  `lib/api.ts`.
+  **Gone:** the hand `GrepHit`/`SemanticHit`/`GrepResponse` interfaces and
+  their mappers, and the untied `SystemEvent`/`BaseRequest` field types.
+  **Measured:** the web TS type/interface declaration count (`rg -c '^\s*
+  (export )?(interface|type) [A-Z]' crates/crucible-web/web/src -g '*.ts' -g
+  '*.tsx' -g '!api-schema.d.ts' -g '!**/__tests__/**'`, summed) went from 693
+  to 695 — the two new `type Schemas = components['schemas']` aliases that
+  `bases.ts` and `fs.ts` needed to reach the generated types they now cite,
+  not a new hand copy. The Rust struct/enum count in
+  `crates/{core,daemon,web,cli}/src` is unchanged (1084 before and after):
+  this step touched no Rust type. A drift proof (rename
+  `crucible-daemon::tools::grep_engine::GrepHit::rel_path` to
+  `relative_path`, regenerate, `bun run typecheck`) failed at all five
+  `SearchPanel.tsx` readers, then was reverted.

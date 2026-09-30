@@ -15,9 +15,12 @@ import {
   saveFileContent,
   type FsMoveOutcome,
 } from '@/lib/api';
+import type { components } from '@/lib/api-schema';
 import type { FsListing } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
+
+type Schemas = components['schemas'];
 
 /**
  * The filesystem as one cache: a listing per folder, and a file per path.
@@ -40,7 +43,13 @@ import { keys } from './keys';
  * away, and a root the daemon does not watch never sends one.
  */
 
-/** What one directory read asks for: a root, and a folder inside it. */
+/**
+ * What one directory read asks for: a root, and a folder inside it.
+ *
+ * Client-local: `showHidden` and `notify` are hook options, not wire fields —
+ * `listDir` reads `showHidden` into a query parameter and keeps `notify` for
+ * itself. No wire type describes this shape, so there is nothing to alias.
+ */
 export interface DirRequest {
   /** The absolute root the daemon admits: a registered project or a kiln. */
   readonly root: string;
@@ -55,7 +64,14 @@ export interface DirRequest {
   readonly notify?: boolean;
 }
 
-/** What one move asks for. `kind` picks the daemon's allowlist. */
+/**
+ * What one move asks for. `kind` picks the daemon's allowlist.
+ *
+ * Client-local: these are the hook's own camelCase argument names
+ * (`fromRel`/`toRel`), not the wire body. `fsMove` in `lib/api.ts` is the one
+ * place that renames them onto `FsMoveRequest`'s `from_rel`/`to_rel` — the
+ * one mapper this shape keeps, per the last-TS-copies rule.
+ */
 export interface FsMoveParams {
   readonly root: string;
   readonly kind: 'project' | 'kiln';
@@ -63,18 +79,20 @@ export interface FsMoveParams {
   readonly toRel: string;
 }
 
-/** What one folder creation or one trash asks for. */
+/**
+ * What one folder creation or one trash asks for.
+ *
+ * Client-local: the hook's own argument names, renamed onto `FsPathRequest`
+ * by `fsMkdir`/`fsTrash` in `lib/api.ts` — the one mapper this shape keeps.
+ */
 export interface FsPathParams {
   readonly root: string;
   readonly kind: 'project' | 'kiln';
   readonly relPath: string;
 }
 
-/** What one whole-file save asks for. */
-export interface SaveFileParams {
-  readonly path: string;
-  readonly content: string;
-}
+/** What one whole-file save asks for: `PUT /api/kiln/file`'s own body. */
+export type SaveFileParams = Schemas['PutFileRequest'];
 
 /**
  * The folder one absolute path is in.

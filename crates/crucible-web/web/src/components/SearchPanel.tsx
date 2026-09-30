@@ -83,8 +83,8 @@ const scopeIcon = (k: ScopeKind) => (k === 'everywhere' ? Search : k === 'projec
 
 /** Split a line into [before, match, after] for <mark> highlighting. */
 function highlightParts(hit: GrepHit): [string, string, string] {
-  const s = Math.max(0, Math.min(hit.matchStart, hit.text.length));
-  const e = Math.max(s, Math.min(hit.matchEnd, hit.text.length));
+  const s = Math.max(0, Math.min(hit.match_start, hit.text.length));
+  const e = Math.max(s, Math.min(hit.match_end, hit.text.length));
   return [hit.text.slice(0, s), hit.text.slice(s, e), hit.text.slice(e)];
 }
 
@@ -94,15 +94,15 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
     <button
       type="button"
       onClick={props.onOpen}
-      title={`${props.hit.relPath}:${props.hit.line}`}
+      title={`${props.hit.rel_path}:${props.hit.line}`}
       class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors"
       data-testid="search-hit"
     >
       <div class="flex items-center gap-1.5 min-w-0">
         <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
-        <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
+        <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.rel_path)}</span>
         <span class="text-floor text-muted-dark shrink-0">:{props.hit.line}</span>
-        <span class="text-floor text-muted-dark truncate ml-auto pl-2">{props.hit.relPath}</span>
+        <span class="text-floor text-muted-dark truncate ml-auto pl-2">{props.hit.rel_path}</span>
       </div>
       <div class="mt-0.5 pl-5 text-floor font-mono leading-snug text-muted whitespace-pre-wrap break-all line-clamp-2">
         {parts()[0]}
@@ -118,13 +118,13 @@ const SemanticRow: Component<{ hit: SemanticHit; onOpen: () => void }> = (props)
   <button
     type="button"
     onClick={props.onOpen}
-    title={props.hit.relPath}
+    title={props.hit.rel_path}
     class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
     data-testid="search-semantic-hit"
   >
     <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
-    <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.relPath)}</span>
-    <span class="text-floor text-muted-dark truncate min-w-0">{props.hit.relPath}</span>
+    <span class="text-xs text-shell-body truncate">{pathBasename(props.hit.rel_path)}</span>
+    <span class="text-floor text-muted-dark truncate min-w-0">{props.hit.rel_path}</span>
     <span
       class="ml-auto shrink-0 text-floor font-mono tabular-nums text-primary/90 bg-primary/10 rounded px-1"
       title="similarity"
@@ -369,21 +369,21 @@ export const SearchPanel: Component = () => {
         <Show when={mode() === 'semantic' && showNotes() && semanticHits().length > 0}>
           <div class={treeSectionHeader}>Notes · semantic · {counts().semantic}</div>
           <For each={semanticHits()}>
-            {(hit) => <SemanticRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
+            {(hit) => <SemanticRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.rel_path) || undefined)} />}
           </For>
         </Show>
 
         <Show when={mode() === 'text' && showNotes() && noteHits().length > 0}>
           <div class={treeSectionHeader}>Notes · {counts().notes}</div>
           <For each={noteHits()}>
-            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
+            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.rel_path) || undefined)} />}
           </For>
         </Show>
 
         <Show when={showFiles() && fileHits().length > 0}>
           <div class={treeSectionHeader}>Files · {counts().files}</div>
           <For each={fileHits()}>
-            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.relPath) || undefined)} />}
+            {(hit) => <HitRow hit={hit} onOpen={() => openFileInEditor(hit.path, pathBasename(hit.rel_path) || undefined)} />}
           </For>
         </Show>
 

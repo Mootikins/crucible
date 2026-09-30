@@ -71,14 +71,14 @@ it('maps search result fields and supplies defaults without swallowing errors', 
   })));
   vi.stubGlobal('fetch', fetch);
   expect(await api.grepSearch('/r', 'q')).toEqual({ truncated: true, hits: [
-    { path: '/a', relPath: 'a', line: 2, text: 'hit', matchStart: 1, matchEnd: 3 },
+    { path: '/a', rel_path: 'a', line: 2, text: 'hit', match_start: 1, match_end: 3 },
   ] });
   expect((await sent(fetch, 0)).body).toEqual({ root: '/r', query: 'q', glob: null, limit: 100, case_insensitive: true });
   fetch.mockResolvedValue(new Response('{"hits":[],"truncated":false}'));
   await api.grepSearch('/r', 'q', { glob: '*.md', limit: 3, caseInsensitive: false });
   expect((await sent(fetch, 1)).body).toEqual({ root: '/r', query: 'q', glob: '*.md', limit: 3, case_insensitive: false });
   fetch.mockResolvedValue(new Response('{"results":[{"path":"/a","rel_path":"a","score":0.8}]}'));
-  expect(await api.semanticSearch('k', 'q')).toEqual([{ path: '/a', relPath: 'a', score: 0.8 }]);
+  expect(await api.semanticSearch('k', 'q')).toEqual([{ path: '/a', rel_path: 'a', score: 0.8 }]);
   expect((await sent(fetch, 2)).body).toEqual({ kiln: 'k', query: 'q', limit: 20 });
 });
 

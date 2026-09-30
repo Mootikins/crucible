@@ -613,30 +613,22 @@ export type PluginPublications = Schemas['PluginPublicationsReply']['publication
 export type PluginCommand = Schemas['PluginCommand'];
 
 /**
- * One matched line, in the panel's own camelCase.
- *
- * Client-only: `grepSearch` maps the wire's `GrepHit` (snake_case, with
- * `rel_path`/`match_start`/`match_end`) onto this. The mapping is the reason
- * the type is hand-written — the panel reads one spelling and the document
- * keeps the other.
+ * One matched line, as the document declares it: `rel_path`, `match_start`
+ * and `match_end` stay the wire's own names. `grepSearch` used to rename them
+ * to camelCase on a hand copy of this shape; the panel now reads `rel_path`
+ * directly, so a field the daemon renames fails `tsc` here instead of
+ * drifting past a silent mapper.
  */
-export interface GrepHit {
-  path: string;
-  relPath: string;
-  line: number;
-  text: string;
-  matchStart: number;
-  matchEnd: number;
-}
+export type GrepHit = Schemas['GrepHit'];
 
 /** One semantically-matched note. `score` is a bounded similarity (higher =
- * closer). `path` is absolute (open in the editor); `relPath` is kiln-relative
- * (display). Requires the kiln's notes to be embedded/processed. */
-export interface SemanticHit {
-  path: string;
-  relPath: string;
-  score: number;
-}
+ * closer). `path` is absolute (open in the editor); `rel_path` is
+ * kiln-relative (display). Requires the kiln's notes to be
+ * embedded/processed. Carries `document_id`, `block` and `snippet` too — the
+ * full `SemanticSearchRow` the document answers with — because a narrower
+ * hand copy of three fields was the reason this type used to drift from the
+ * route it names. */
+export type SemanticHit = Schemas['SemanticSearchRow'];
 
 /** What `GET /api/session/search` answers, as the document declares it. */
 export type SessionSearchResponse = Schemas['SessionSearchResponse'];

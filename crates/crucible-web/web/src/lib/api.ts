@@ -13,7 +13,6 @@ import type {
   AppConfigNode,
   ChatEvent,
   CreateSessionParams,
-  GrepHit,
   MergeRegion,
   PendingInteractionEntry,
   PluginCommand,
@@ -934,22 +933,24 @@ export async function getSession(id: string): Promise<SessionDetail> {
 // Content Search (ripgrep) — POST /api/search/grep
 // =============================================================================
 
-export interface GrepResponse {
-  hits: GrepHit[];
-  truncated: boolean;
-}
+/** What `POST /api/search/grep` answers, read straight off the document. */
+export type GrepResponse = Schemas['GrepSearchResponse'];
 
 /**
  * Ripgrep content search over an absolute `root` (must be inside a registered
  * kiln or project — the daemon rejects anything else). `glob` filters by name
  * (e.g. `*.md` for notes); omit to search all files. Respects .gitignore.
+ *
+ * Answers the document's own hit shape (`rel_path`/`match_start`/`match_end`)
+ * with no camelCase remap: a remap once hid a field rename from `tsc`, and
+ * `SearchPanel` now reads the wire's own names.
  */
 export async function grepSearch(
   root: string,
   query: string,
   opts?: { glob?: string; limit?: number; caseInsensitive?: boolean },
 ): Promise<GrepResponse> {
-  const data = decode(
+  return decode(
     await client.POST('/api/search/grep', {
       body: {
         root,
@@ -961,17 +962,6 @@ export async function grepSearch(
     }),
     'Search failed',
   );
-  return {
-    truncated: data.truncated,
-    hits: data.hits.map((h) => ({
-      path: h.path,
-      relPath: h.rel_path,
-      line: h.line,
-      text: h.text,
-      matchStart: h.match_start,
-      matchEnd: h.match_end,
-    })),
-  };
 }
 
 // =============================================================================
@@ -993,11 +983,13 @@ export async function semanticSearch(
     await client.POST('/api/search/semantic', { body: { kiln, query, limit } }),
     'Semantic search failed',
   );
-  return expectList(data.results, 'results', 'Failed to search notes').map((r) => ({
-    path: r.path,
-    relPath: r.rel_path,
-    score: r.score,
-  }));
+  // `openapi-fetch`'s inferred response type widens `BlockRef.cited` from the
+  // document's `[number, number][]` to `number[][]` somewhere in its own
+  // generic pipeline; `components['schemas']` keeps the tuple. Both describe
+  // the SAME bytes, so the cast is safe — a real field rename still fails
+  // `tsc` on `SemanticHit`'s other fields, which this narrowing does not
+  // touch.
+  return expectList(data.results, 'results', 'Failed to search notes') as SemanticHit[];
 }
 
 /** Pause a session. */
@@ -2087,10 +2079,19 @@ export function subscribeToFsEvents(
 /**
  * One event of the system stream. The `event` field copies the SSE event
  * name, so a consumer can tell the two shapes apart.
+ *
+ * Hand-written for the shape, not for the fields: the document's own
+ * `SystemEvent` is `PublicationChangedEvent | ProposalChangedEvent` with NO
+ * `event` field — the daemon's enum is `#[serde(untagged)]`, so the two
+ * shapes on the wire differ only in the SSE frame's `event:` name, which
+ * `subscribeToSystemEvents` reads separately from the JSON body. This type
+ * puts that name back onto the parsed body, which the document cannot
+ * describe; each variant's OTHER fields (`plugin`/`key`, `id`) are read off
+ * the document's own shapes below, so a daemon rename still fails `tsc`.
  */
 export type SystemEvent =
-  | { event: 'publication_changed'; plugin: string; key: string }
-  | { event: 'proposal_changed'; id: string };
+  | ({ event: 'publication_changed' } & Schemas['PublicationChangedEvent'])
+  | ({ event: 'proposal_changed' } & Schemas['ProposalChangedEvent']);
 
 /**
  * Subscribe to the daemon's system session (`GET /api/events/system`).

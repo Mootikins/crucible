@@ -1,4 +1,4 @@
-import type { components } from '../api-schema';
+import type { components, operations } from '../api-schema';
 import { useQuery, type QueryClient } from '@tanstack/solid-query';
 import type { Accessor } from 'solid-js';
 import type { KilnListEntry } from '@/lib/types';
@@ -8,6 +8,8 @@ import { isUnder } from './notes';
 import { queryBase, writeBaseProperty, createBaseEntry, reorderBaseGroups } from '../api';
 
 type Schemas = components['schemas'];
+/** The document's own query parameters of `GET /api/bases/query`. */
+type BaseQueryParams = NonNullable<operations['query_base']['parameters']['query']>;
 
 export type BaseValue = Schemas['BaseValue'];
 /** `movable`: the daemon says whether a drag can move this row to another group. */
@@ -24,7 +26,23 @@ export type ReorderGroupsParams = Schemas['ReorderGroupsParams'];
 /** What a write did. A stale hash and a refusal arrive as HTTP errors (409, 403 or 422). */
 export type WriteOutcome = Schemas['WriteOutcome'];
 
-export interface BaseRequest { kiln: string; source: { path: string } | { yaml: string }; view?: string; this?: string }
+/**
+ * What one base query asks for.
+ *
+ * Client-local: the route (`GET /api/bases/query`) takes `path`/`yaml` as two
+ * separate OPTIONAL query parameters — a shape the design rules forbid here
+ * ("no field made optional to merge shapes") — because exactly one of them is
+ * ever present. `source` keeps that as a discriminated union instead, so a
+ * caller cannot build a request naming neither or both. Each field's type
+ * still comes from the document's own query parameters, so a rename there
+ * fails `tsc` here.
+ */
+export interface BaseRequest {
+  kiln: BaseQueryParams['kiln'];
+  source: { path: NonNullable<BaseQueryParams['path']> } | { yaml: NonNullable<BaseQueryParams['yaml']> };
+  view?: BaseQueryParams['view'];
+  this?: BaseQueryParams['this'];
+}
 export function useBase(request: Accessor<BaseRequest | null>) {
   return useQuery(() => ({ queryKey: keys.baseQuery(request()), enabled: request() !== null,
     queryFn: () => queryBase(request()!), }), getQueryClient);
