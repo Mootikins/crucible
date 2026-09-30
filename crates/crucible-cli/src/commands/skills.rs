@@ -3,21 +3,11 @@
 //! Provides CLI commands for listing, showing, and searching skills.
 
 use anyhow::Result;
-use serde::Serialize;
 
 use crate::cli::SkillsCommands;
 use crate::common::daemon_client;
 use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
-
-#[derive(Debug, Serialize)]
-pub struct SkillOutput {
-    pub name: String,
-    pub scope: String,
-    pub description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shadowed_count: Option<u64>,
-}
 
 /// Execute skills subcommand
 pub async fn execute(config: CliAppConfig, command: SkillsCommands) -> Result<()> {
@@ -57,16 +47,7 @@ async fn list(
 
     match format {
         OutputFormat::Json => {
-            let output: Vec<SkillOutput> = skills
-                .iter()
-                .map(|skill| SkillOutput {
-                    name: skill.name.clone(),
-                    scope: skill.scope.clone(),
-                    description: skill.description.clone(),
-                    shadowed_count: Some(skill.shadowed_count as u64),
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            println!("{}", serde_json::to_string_pretty(&skills)?);
         }
         OutputFormat::Table => {
             let rows: Vec<Vec<String>> = skills
@@ -133,6 +114,35 @@ async fn show(config: &CliAppConfig, name: String) -> Result<()> {
     println!("{}", skill.body);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The JSON shape of `cru skills list --format json` must not move.
+    /// This literal is the shape from before the SkillOutput copy of
+    /// SkillSummary was deleted, captured so the deletion cannot change
+    /// the wire.
+    #[test]
+    fn skill_output_json_matches_the_captured_shape() {
+        let output = vec![crucible_core::types::SkillSummary {
+            name: "example".to_string(),
+            scope: "personal".to_string(),
+            description: "An example skill.".to_string(),
+            shadowed_count: 1,
+        }];
+        let json = serde_json::to_string_pretty(&output).expect("serialize");
+        assert_eq!(
+            json,
+            r#"[
+  {
+    "name": "example",
+    "scope": "personal",
+    "description": "An example skill.",
+    "shadowed_count": 1
+  }
+]"#
+        );
+    }
 }
 
 /// Search skills (basic text matching)

@@ -2,7 +2,7 @@ use crate::config::CliAppConfig;
 use crate::formatting::TextFormat;
 use anyhow::{anyhow, Result};
 use crucible_core::EXCLUDED_DIRS;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -29,15 +29,24 @@ impl KilnStats {
     }
 }
 
-/// Output format for stats (JSON serializable)
-#[derive(Debug, Serialize)]
-pub struct StatsOutput {
-    pub file_count: u64,
-    pub markdown_count: u64,
-    pub canvas_count: u64,
-    pub plain_text_count: u64,
-    pub indexed_count: u64,
-    pub size_bytes: u64,
+/// Writes the field names and order of `cru stats --format json`, which
+/// predate this type and must not move. `indexed_count` is derived, so a
+/// plain derive cannot write it; this impl adds it by hand.
+impl Serialize for KilnStats {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("KilnStats", 6)?;
+        state.serialize_field("file_count", &self.total_files)?;
+        state.serialize_field("markdown_count", &self.markdown_files)?;
+        state.serialize_field("canvas_count", &self.canvas_files)?;
+        state.serialize_field("plain_text_count", &self.plain_text_files)?;
+        state.serialize_field("indexed_count", &self.indexed_files())?;
+        state.serialize_field("size_bytes", &self.total_size_bytes)?;
+        state.end()
+    }
 }
 
 /// Abstraction over the source of kiln statistics so tests can stub results.
@@ -132,15 +141,7 @@ pub async fn execute_with_service(
 
     match format {
         TextFormat::Json => {
-            let output = StatsOutput {
-                file_count: stats.total_files,
-                markdown_count: stats.markdown_files,
-                canvas_count: stats.canvas_files,
-                plain_text_count: stats.plain_text_files,
-                indexed_count: stats.indexed_files(),
-                size_bytes: stats.total_size_bytes,
-            };
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            println!("{}", serde_json::to_string_pretty(&stats)?);
         }
         TextFormat::Text => {
             println!("📊 Kiln Statistics\n");
@@ -342,21 +343,39 @@ mod tests {
 
     #[test]
     fn test_stats_output_json_serialization() {
-        let output = StatsOutput {
-            file_count: 42,
-            markdown_count: 10,
-            canvas_count: 2,
-            plain_text_count: 3,
-            indexed_count: 15,
-            size_bytes: 1024 * 100,
+        let stats = KilnStats {
+            total_files: 42,
+            markdown_files: 10,
+            canvas_files: 2,
+            plain_text_files: 3,
+            total_size_bytes: 1024 * 100,
         };
 
-        let json_str = serde_json::to_string(&output).expect("Failed to serialize");
+        let json_str = serde_json::to_string(&stats).expect("Failed to serialize");
         let parsed: serde_json::Value =
             serde_json::from_str(&json_str).expect("Failed to parse JSON");
 
         assert_eq!(parsed["file_count"], 42);
         assert_eq!(parsed["markdown_count"], 10);
         assert_eq!(parsed["size_bytes"], 1024 * 100);
+    }
+
+    /// The JSON shape of `cru stats --format json` must not move. This
+    /// literal is the shape from before the StatsOutput copy of KilnStats
+    /// was deleted, captured so the deletion cannot change the wire.
+    #[test]
+    fn stats_output_json_matches_the_captured_shape() {
+        let stats = KilnStats {
+            total_files: 42,
+            markdown_files: 10,
+            canvas_files: 2,
+            plain_text_files: 3,
+            total_size_bytes: 1024 * 100,
+        };
+        let json = serde_json::to_string(&stats).expect("serialize");
+        assert_eq!(
+            json,
+            r#"{"file_count":42,"markdown_count":10,"canvas_count":2,"plain_text_count":3,"indexed_count":15,"size_bytes":102400}"#
+        );
     }
 }
