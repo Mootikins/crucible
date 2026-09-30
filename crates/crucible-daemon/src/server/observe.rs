@@ -3,8 +3,9 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::protocol::requests::{
-    EventCursor, ExportOptions, MarkdownOptions, Scoped, SessionCleanupRequest,
-    SessionListPersistedRequest,
+    EventCursor, ExportOptions, MarkdownOptions, Scoped, SessionCleanupReply,
+    SessionCleanupRequest, SessionExportToFileResponse, SessionListPersistedRequest,
+    SessionRenderMarkdownResponse,
 };
 use crucible_core::session::SessionSummary;
 
@@ -182,7 +183,7 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
 
     let md = crate::observe::render_to_markdown(&transcript, &options);
 
-    Response::success(req.id, serde_json::json!({ "markdown": md }))
+    typed_success(req.id, SessionRenderMarkdownResponse { markdown: md })
 }
 
 /// Where an export is allowed to land, resolved into the path that will
@@ -312,12 +313,12 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
         return internal_error(req.id, e);
     }
 
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "status": "ok",
-            "output_path": out_path.to_string_lossy(),
-        }),
+        SessionExportToFileResponse {
+            status: "ok".to_string(),
+            output_path: out_path.to_string_lossy().into_owned(),
+        },
     )
 }
 
@@ -377,14 +378,14 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
     };
 
     if !sm.sessions_root().exists() {
-        return Response::success(
+        return typed_success(
             req.id,
-            serde_json::json!({
-                "deleted": [],
-                "total": 0,
-                "dry_run": dry_run,
-                "scope": scope_label,
-            }),
+            SessionCleanupReply {
+                deleted: Vec::new(),
+                total: 0,
+                dry_run,
+                scope: scope_label,
+            },
         );
     }
 
@@ -429,14 +430,14 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
     }
 
     let total = deleted_ids.len();
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "deleted": deleted_ids,
-            "total": total,
-            "dry_run": dry_run,
-            "scope": scope_label,
-        }),
+        SessionCleanupReply {
+            deleted: deleted_ids,
+            total,
+            dry_run,
+            scope: scope_label,
+        },
     )
 }
 

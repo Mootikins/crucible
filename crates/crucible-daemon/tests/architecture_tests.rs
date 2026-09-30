@@ -251,12 +251,24 @@ const SCOPE_METHODS: &[ScopeMethod] = &[
     },
 ];
 
-// UNIQUE: the result field names are JSON string literals on both sides of the wire, and the type system does not see them. The request side is a shared type, and this gate checks that each side names it.
+// The request side of each pair is a shared type (`shared_request_type_failures`
+// below), so a client/server field-name mismatch there is a compile error, not
+// something this gate needs to catch by itself — it only proves each side
+// still names the type. The response side used to be exactly the case this
+// file's own header warns about: a JSON literal on both sides, invisible to
+// the type system (`scope_response` built the reply with `serde_json::json!`,
+// and the client returned the raw `Value` untouched). Since step 19 gap 2,
+// `scope_response` builds `crucible_core::protocol::requests::SessionScopeReply`
+// instead, so the response is a shared type too — this gate now proves that
+// the server actually uses it, and that the type still carries the three
+// fields a caller relies on (a rename inside the struct would otherwise pass
+// silently, since the client-side functions here return the value untouched).
 #[test]
 fn rpc_scope_mutation_field_names_match_across_the_wire() {
     let root = workspace_root();
     let client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/agent.rs"));
     let server = read(&root.join("crates/crucible-daemon/src/server/session/scope.rs"));
+    let core_session = read(&root.join("crates/crucible-core/src/protocol/requests/session.rs"));
 
     let mut failures = Vec::new();
 
@@ -271,18 +283,27 @@ fn rpc_scope_mutation_field_names_match_across_the_wire() {
         ));
     }
 
-    // All three mutations return the shared scope response, and the client
-    // hands that JSON back verbatim (no per-field reads), so response parity
-    // is a single assertion on the shared builder.
+    // All three mutations return the shared scope response.
     let scope_response = fn_body(&server, "fn scope_response(");
-    let response_fields = captures(r#""([a-z_][a-z0-9_]*)""#, &scope_response);
+    if !Regex::new(r"\bSessionScopeReply\s*\{")
+        .unwrap()
+        .is_match(&scope_response)
+    {
+        failures.push(
+            "scope_response: does not build SessionScopeReply — return the shared reply \
+             type, not a JSON literal"
+                .to_string(),
+        );
+    }
+    let reply_struct = fn_body(&core_session, "struct SessionScopeReply {");
+    let response_fields = captures(r"pub ([a-z_][a-z0-9_]*):", &reply_struct);
     let expected: BTreeSet<String> = ["session_id", "kilns", "workspace"]
         .into_iter()
         .map(str::to_string)
         .collect();
     if response_fields != expected {
         failures.push(format!(
-            "scope_response: returns fields {response_fields:?}, expected {expected:?}"
+            "SessionScopeReply: has fields {response_fields:?}, expected {expected:?}"
         ));
     }
 

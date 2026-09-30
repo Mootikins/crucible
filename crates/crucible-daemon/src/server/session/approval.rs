@@ -1,6 +1,8 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{PluginApprovalChange, PluginRef, Scoped};
+use crucible_core::protocol::requests::{
+    PluginApprovalChange, PluginApprovalReply, PluginRef, Scoped, SessionListPluginApprovalsReply,
+};
 use crucible_core::session::PluginApproval;
 
 pub(crate) async fn handle_session_set_plugin_approval(
@@ -31,9 +33,12 @@ pub(crate) async fn handle_session_set_plugin_approval(
         .set_plugin_approval(session_id, plugin, approval, Some(event_tx))
         .await
     {
-        Ok(()) => Response::success(
+        Ok(()) => typed_success(
             req.id,
-            serde_json::json!({"plugin": plugin, "approval": value}),
+            PluginApprovalReply {
+                plugin: plugin.to_string(),
+                approval: value.to_string(),
+            },
         ),
         Err(e) => agent_error_to_response(req.id, e),
     }
@@ -50,9 +55,12 @@ pub(crate) async fn handle_session_get_plugin_approval(
     let session_id = params.session_id.as_str();
     let plugin = params.body.plugin.as_str();
     match am.get_plugin_approval(session_id, plugin).await {
-        Ok(approval) => Response::success(
+        Ok(approval) => typed_success(
             req.id,
-            serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
+            PluginApprovalReply {
+                plugin: plugin.to_string(),
+                approval: approval.as_str().to_string(),
+            },
         ),
         Err(e) => agent_error_to_response(req.id, e),
     }
@@ -67,7 +75,7 @@ pub(crate) async fn handle_session_list_plugin_approvals(
         Err(response) => return *response,
     };
     match am.list_plugin_approvals(&params.session_id).await {
-        Ok(approvals) => Response::success(req.id, serde_json::json!({"approvals": approvals})),
+        Ok(approvals) => typed_success(req.id, SessionListPluginApprovalsReply { approvals }),
         Err(e) => agent_error_to_response(req.id, e),
     }
 }

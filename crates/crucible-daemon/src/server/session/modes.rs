@@ -1,6 +1,9 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::Scoped;
+use crucible_core::protocol::requests::{
+    Scoped, SessionCommandsReply, SessionListAgentOptionsReply, SessionSetAgentOptionRequest,
+};
+use crucible_core::types::plugin_reply::PluginAck;
 
 /// The modes a session can be in, and which one it is in now.
 ///
@@ -84,12 +87,12 @@ pub(crate) async fn handle_session_commands(
         .session_commands(&params.session_id, Some(event_tx))
         .await
     {
-        Ok(commands) => Response::success(
+        Ok(commands) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": params.session_id,
-                "commands": commands,
-            }),
+            SessionCommandsReply {
+                session_id: params.session_id,
+                commands,
+            },
         ),
         Err(e) => agent_error_to_response(req.id, e),
     }
@@ -169,16 +172,16 @@ pub(crate) async fn handle_session_list_agent_options(
         return session_not_found(req.id, &id);
     }
 
-    match serde_json::to_value(
-        am.live_agent_config_options(session_id, Some(event_tx))
-            .await,
-    ) {
-        Ok(options) => Response::success(
-            req.id,
-            serde_json::json!({ "session_id": session_id, "options": options }),
-        ),
-        Err(e) => Response::error(req.id, -32603, format!("failed to encode options: {e}")),
-    }
+    let options = am
+        .live_agent_config_options(session_id, Some(event_tx))
+        .await;
+    typed_success(
+        req.id,
+        SessionListAgentOptionsReply {
+            session_id: session_id.clone(),
+            options,
+        },
+    )
 }
 
 /// Set one of those settings on the live agent.
@@ -187,14 +190,7 @@ pub(crate) async fn handle_session_set_agent_option(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    #[derive(serde::Deserialize)]
-    struct SetAgentOptionRequest {
-        session_id: String,
-        option_id: String,
-        value: String,
-    }
-
-    let params = match typed_params::<SetAgentOptionRequest>(&req) {
+    let params = match typed_params::<SessionSetAgentOptionRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -208,7 +204,7 @@ pub(crate) async fn handle_session_set_agent_option(
         )
         .await
     {
-        Ok(()) => Response::success(req.id, serde_json::json!({ "ok": true })),
+        Ok(()) => typed_success(req.id, PluginAck::ok()),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
         }

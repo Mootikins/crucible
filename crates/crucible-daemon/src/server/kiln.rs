@@ -71,7 +71,7 @@ pub(crate) async fn handle_kiln_open(
                     tracing::debug!("process_complete event had no subscribers");
                 }
 
-                reply(
+                typed_success(
                     req.id,
                     KilnOpenReply::Processed {
                         status: "ok".to_string(),
@@ -90,7 +90,7 @@ pub(crate) async fn handle_kiln_open(
             }
             Err(e) => {
                 warn!("Processing failed for kiln {:?}: {}", kiln_path, e);
-                reply(
+                typed_success(
                     req.id,
                     KilnOpenReply::ProcessError {
                         status: "ok".to_string(),
@@ -100,24 +100,12 @@ pub(crate) async fn handle_kiln_open(
             }
         }
     } else {
-        reply(
+        typed_success(
             req.id,
             KilnOpenReply::Opened {
                 status: "ok".to_string(),
             },
         )
-    }
-}
-
-/// Answer with `value` as JSON, or report the serialisation failure.
-///
-/// The reply types here hold only strings, numbers, booleans and vectors of
-/// those, so the error arm is unreachable in practice. It exists because an
-/// `expect` here would take the daemon down over a reply nobody can act on.
-fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
-    match serde_json::to_value(value) {
-        Ok(value) => Response::success(id, value),
-        Err(e) => internal_error(id, anyhow::anyhow!(e)),
     }
 }
 
@@ -128,7 +116,7 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     };
 
     match km.close(Path::new(&params.path)).await {
-        Ok(()) => reply(
+        Ok(()) => typed_success(
             req.id,
             StatusReply {
                 status: "ok".to_string(),
@@ -350,7 +338,7 @@ pub(crate) async fn handle_kiln_register(
     }
 
     info!(kiln = %name, path = %path.display(), "Kiln registered");
-    reply(
+    typed_success(
         req.id,
         KilnRegisterReply {
             status: "ok".to_string(),
@@ -561,7 +549,7 @@ pub(crate) async fn handle_kiln_forget(
     match state.forget(&params.name) {
         Ok(_) => {
             info!(kiln = %params.name, "Kiln registration forgotten");
-            reply(
+            typed_success(
                 req.id,
                 KilnForgetReply {
                     status: "ok".to_string(),
@@ -681,7 +669,7 @@ pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> R
     let fts_query = crate::storage::sqlite::fts::build_match_query(query);
 
     match handle.text.search(&fts_query, limit).await {
-        Ok(results) => reply(req.id, results),
+        Ok(results) => typed_success(req.id, results),
         Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
     }
 }
@@ -701,7 +689,7 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
 
     match km.embedding_provider().await {
         Ok(provider) => match provider.embed(text).await {
-            Ok(vector) => reply(req.id, EmbedQueryReply { vector }),
+            Ok(vector) => typed_success(req.id, EmbedQueryReply { vector }),
             Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
         },
         Err(e) => internal_error(req.id, e),
@@ -984,7 +972,7 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
     // announces the events. It used to write only the row, so a note written
     // here was missing from every text search.
     match km.upsert_note_record(Path::new(kiln_path), note).await {
-        Ok(events_count) => reply(
+        Ok(events_count) => typed_success(
             req.id,
             NoteUpsertReply {
                 status: "ok".to_string(),
@@ -1044,7 +1032,7 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     match note_store.get(path, &scope).await {
         Ok(Some(_)) => {}
         Ok(None) => {
-            return reply(
+            return typed_success(
                 req.id,
                 StatusReply {
                     status: "not_found".to_string(),
@@ -1057,7 +1045,7 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     // The manager drops the text row with the note row. The note row alone
     // left the note in every text search.
     match km.delete_note_rows(Path::new(kiln_path), path).await {
-        Ok(()) => reply(
+        Ok(()) => typed_success(
             req.id,
             StatusReply {
                 status: "ok".to_string(),
@@ -1107,7 +1095,7 @@ pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> 
         .process_file(Path::new(kiln_path), Path::new(file_path))
         .await
     {
-        Ok(processed) => reply(
+        Ok(processed) => typed_success(
             req.id,
             ProcessFileReply {
                 status: if processed { "processed" } else { "skipped" }.to_string(),
@@ -1155,7 +1143,7 @@ pub(crate) async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) ->
         }
     }
 
-    reply(
+    typed_success(
         request_id,
         ProcessBatchReply {
             processed,
@@ -1194,7 +1182,7 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
     let note_names: Vec<String> = notes.into_iter().map(|n| n.name).collect();
     let suggestions = crate::tools::autolink::suggest_links(text, &note_names);
 
-    reply(req.id, SuggestLinksReply { suggestions })
+    typed_success(req.id, SuggestLinksReply { suggestions })
 }
 
 #[cfg(test)]

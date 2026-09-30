@@ -2,7 +2,7 @@ use super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     LuaCommands, LuaDiscoverPluginsRequest, LuaGenerateStubsRequest, LuaPluginHealthRequest,
-    LuaSessionInit, Scoped,
+    LuaRegisterCommandsReply, LuaSessionInit, Scoped,
 };
 
 pub(crate) async fn handle_lua_init_session(
@@ -465,12 +465,7 @@ pub(crate) async fn handle_lua_register_commands(
         }
     }
 
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "registered": registered,
-        }),
-    )
+    typed_success(req.id, LuaRegisterCommandsReply { registered })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

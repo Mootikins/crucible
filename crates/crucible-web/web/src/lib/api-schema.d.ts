@@ -2760,11 +2760,16 @@ export interface components {
             remote_shell: boolean;
         };
         /**
-         * @description What `config.save` answers.
+         * @description Reply from `config.save`.
          *
-         *     A refusal rides in the answer rather than in an error: refusal is per leaf,
-         *     the siblings the caller changed in the same call did save, and `refused`
-         *     carries the file and the line a human's config holds the key on.
+         *     A refusal rides in the answer rather than in an error: refusal is per
+         *     leaf, the siblings the caller changed in the same call did save, and
+         *     `refused` carries the file and the line a human's config holds the key
+         *     on.
+         *
+         *     Moved here from `crucible-daemon`: the type it named
+         *     ([`crate::config::PinnedLeaf`]) already lived in core, so nothing kept it
+         *     out.
          */
         ConfigSaveReply: {
             /** @description Whether every leaf the caller sent reached the `Settings` layer. */

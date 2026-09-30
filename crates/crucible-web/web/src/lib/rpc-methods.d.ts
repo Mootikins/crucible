@@ -22,7 +22,7 @@ export type WithSessionId<T> = { session_id: string } & T;
 export interface RpcMethods {
   'ping': { params: null; result: string };
   'daemon.capabilities': { params: null; result: unknown };
-  'shutdown': { params: null; result: unknown };
+  'shutdown': { params: null; result: string };
   'kiln.open': { params: unknown; result: unknown };
   'kiln.close': { params: unknown; result: unknown };
   'kiln.list': { params: null; result: (Schemas['KilnRow'])[] };
@@ -78,7 +78,7 @@ export interface RpcMethods {
   'session.knob.set': { params: WithSessionId<Schemas['KnobValue']>; result: unknown };
   'session.knob.get': { params: WithSessionId<unknown>; result: Schemas['KnobValue'] };
   'session.list_agent_options': { params: WithSessionId<Record<string, never>>; result: unknown };
-  'session.set_agent_option': { params: unknown; result: unknown };
+  'session.set_agent_option': { params: unknown; result: Schemas['PluginAck'] };
   'session.cache_stats': { params: WithSessionId<Record<string, never>>; result: unknown };
   'session.add_notification': { params: WithSessionId<unknown>; result: unknown };
   'session.list_notifications': { params: WithSessionId<Record<string, never>>; result: unknown };
@@ -102,7 +102,7 @@ export interface RpcMethods {
   'session.export_to_file': { params: WithSessionId<unknown>; result: unknown };
   'session.replay': { params: unknown; result: unknown };
   'session.cleanup': { params: unknown; result: unknown };
-  'session.reindex': { params: null; result: unknown };
+  'session.reindex': { params: null; result: null };
   'session.undo': { params: WithSessionId<unknown>; result: unknown };
   'session.can_undo': { params: WithSessionId<Record<string, never>>; result: unknown };
   'session.undo_depth': { params: WithSessionId<Record<string, never>>; result: unknown };
@@ -130,7 +130,7 @@ export interface RpcMethods {
   'lua.eval': { params: unknown; result: unknown };
   'config.get': { params: unknown; result: unknown };
   'config.set': { params: unknown; result: unknown };
-  'config.save': { params: unknown; result: unknown };
+  'config.save': { params: unknown; result: Schemas['ConfigSaveReply'] };
   'config.reset': { params: unknown; result: unknown };
   'config.pop': { params: unknown; result: unknown };
   'config.unset': { params: unknown; result: unknown };

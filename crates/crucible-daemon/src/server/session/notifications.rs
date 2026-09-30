@@ -1,6 +1,9 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{NewNotification, NotificationKey, Scoped};
+use crucible_core::protocol::requests::{
+    NewNotification, NotificationKey, Scoped, SessionAddNotificationReply,
+    SessionDismissNotificationReply, SessionListNotificationsReply,
+};
 
 /// The session, live or in storage, or the refusal when it is neither. A
 /// session in storage only, after a restart, has notifications too.
@@ -33,12 +36,12 @@ pub(crate) async fn handle_session_add_notification(
         return *response;
     }
     match hub.add_for_session(session_id, notification) {
-        Ok(_) => Response::success(
+        Ok(_) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "success": true,
-            }),
+            SessionAddNotificationReply {
+                session_id: session_id.to_string(),
+                success: true,
+            },
         ),
         Err(e) => internal_error(req.id, e),
     }
@@ -58,12 +61,12 @@ pub(crate) async fn handle_session_list_notifications(
         Ok(session) => session,
         Err(response) => return *response,
     };
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "session_id": params.session_id,
-            "notifications": hub.list_for_session(&session),
-        }),
+        SessionListNotificationsReply {
+            session_id: params.session_id,
+            notifications: hub.list_for_session(&session),
+        },
     )
 }
 
@@ -83,12 +86,12 @@ pub(crate) async fn handle_session_dismiss_notification(
         Ok(session) => session,
         Err(response) => return *response,
     };
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "session_id": session_id,
-            "notification_id": notification_id,
-            "success": hub.dismiss_for_session(&session, notification_id),
-        }),
+        SessionDismissNotificationReply {
+            session_id: session_id.clone(),
+            notification_id: notification_id.clone(),
+            success: hub.dismiss_for_session(&session, notification_id),
+        },
     )
 }

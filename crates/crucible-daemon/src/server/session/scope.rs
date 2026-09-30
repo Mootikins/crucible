@@ -4,7 +4,7 @@ use crate::agent_manager::AgentError;
 use crate::rpc_helpers::typed_params;
 use crate::session_manager::KilnScope;
 use crucible_core::config::{KilnName, RegistrationOrigin};
-use crucible_core::protocol::requests::{NamedKiln, Scoped, WorkspaceChoice};
+use crucible_core::protocol::requests::{NamedKiln, Scoped, SessionScopeReply, WorkspaceChoice};
 use crucible_core::Session;
 
 /// The caller's kiln set, as the four backlog-spanning handlers receive it.
@@ -87,13 +87,16 @@ fn scope_response(
     req_id: Option<crucible_core::protocol::RequestId>,
     session: &Session,
 ) -> Response {
-    Response::success(
+    typed_success(
         req_id,
-        serde_json::json!({
-            "session_id": session.id,
-            "kilns": session.kilns,
-            "workspace": session.workspace,
-        }),
+        SessionScopeReply {
+            session_id: session.id.clone(),
+            kilns: session.kilns.clone(),
+            workspace: session
+                .workspace
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+        },
     )
 }
 

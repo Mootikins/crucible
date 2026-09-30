@@ -2,7 +2,10 @@ use super::super::*;
 use crate::agent_manager::commands::SlashRoute;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    AgentConfig, ContextInjection, InteractionAnswer, MessageInput, Scoped, TestInteraction,
+    AgentConfig, ContextInjection, InteractionAnswer, MessageInput, PendingInteraction, Scoped,
+    SessionClearReply, SessionConfigureAgentReply, SessionInjectContextReply,
+    SessionInteractionRespondReply, SessionPendingInteractionsReply, SessionTestInteractionReply,
+    TestInteraction,
 };
 use crucible_core::types::SendOutcome;
 
@@ -29,12 +32,12 @@ pub(crate) async fn handle_session_configure_agent(
         };
 
     match am.configure_agent(session_id, agent).await {
-        Ok(()) => Response::success(
+        Ok(()) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "configured": true,
-            }),
+            SessionConfigureAgentReply {
+                session_id: session_id.clone(),
+                configured: true,
+            },
         ),
         // How `configure_agent`'s trust gate refuses a provider the session's
         // attached kilns do not clear. Caller-fixable, so it must not read as a
@@ -294,7 +297,12 @@ pub(crate) async fn handle_session_inject_context(
     )
     .await
     {
-        Ok(()) => Response::success(req.id, serde_json::json!({ "status": "ok" })),
+        Ok(()) => typed_success(
+            req.id,
+            SessionInjectContextReply {
+                status: "ok".to_string(),
+            },
+        ),
         Err(msg)
             if msg.starts_with("Invalid role") || msg.starts_with("Context injection requires") =>
         {
@@ -337,9 +345,11 @@ pub(crate) async fn handle_session_clear(
         .clear_session(&params.session_id, None, None, event_tx)
         .await
     {
-        Ok(_) => Response::success(
+        Ok(_) => typed_success(
             req.id,
-            serde_json::json!({ "session_id": params.session_id }),
+            SessionClearReply {
+                session_id: params.session_id,
+            },
         ),
         Err(e) => agent_error_to_response(req.id, e),
     }
@@ -363,18 +373,16 @@ pub(crate) async fn handle_session_pending_interactions(
             });
     // Both registries, one list: a client asking what it owes an answer to
     // does not care which map the request came out of.
-    let pending: Vec<serde_json::Value> = permissions
+    let pending: Vec<PendingInteraction> = permissions
         .chain(am.list_all_pending_interactions())
-        .map(|(session_id, request_id, request)| {
-            serde_json::json!({
-                "session_id": session_id,
-                "request_id": request_id,
-                "request": request,
-            })
+        .map(|(session_id, request_id, request)| PendingInteraction {
+            session_id,
+            request_id,
+            request,
         })
         .collect();
 
-    Response::success(req.id, serde_json::json!({ "pending": pending }))
+    typed_success(req.id, SessionPendingInteractionsReply { pending })
 }
 
 pub(crate) async fn handle_session_interaction_respond(
@@ -422,12 +430,12 @@ pub(crate) async fn handle_session_interaction_respond(
         tracing::debug!("Failed to emit interaction_completed event (no subscribers)");
     }
 
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "session_id": session_id,
-            "request_id": request_id,
-        }),
+        SessionInteractionRespondReply {
+            session_id: session_id.clone(),
+            request_id: request_id.clone(),
+        },
     )
 }
 
@@ -498,13 +506,13 @@ pub(crate) async fn handle_session_test_interaction(
         tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
     }
 
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "session_id": session_id,
-            "request_id": request_id,
-            "type": interaction_type,
-        }),
+        SessionTestInteractionReply {
+            session_id: session_id.clone(),
+            request_id,
+            interaction_type: interaction_type.to_string(),
+        },
     )
 }
 

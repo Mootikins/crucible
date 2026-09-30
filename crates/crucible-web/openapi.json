@@ -5938,7 +5938,7 @@
       },
       "ConfigSaveReply": {
         "type": "object",
-        "description": "What `config.save` answers.\n\nA refusal rides in the answer rather than in an error: refusal is per leaf,\nthe siblings the caller changed in the same call did save, and `refused`\ncarries the file and the line a human's config holds the key on.",
+        "description": "Reply from `config.save`.\n\nA refusal rides in the answer rather than in an error: refusal is per\nleaf, the siblings the caller changed in the same call did save, and\n`refused` carries the file and the line a human's config holds the key\non.\n\nMoved here from `crucible-daemon`: the type it named\n([`crate::config::PinnedLeaf`]) already lived in core, so nothing kept it\nout.",
         "required": [
           "ok",
           "refused",

@@ -15,21 +15,6 @@ pub use crucible_core::protocol::requests::{
     AgentCardsListReply, AgentProfileEntry, AgentProfileResolved, AgentProfilesReply,
 };
 
-/// Answer with `value` as JSON, or report the serialisation failure.
-///
-/// The reply types here hold only strings, numbers, booleans and vectors of
-/// those, so the error arm is unreachable in practice. It exists because an
-/// `expect` here would take the daemon down over a reply nobody can act on.
-pub(crate) fn reply<T: serde::Serialize>(
-    id: Option<crate::protocol::RequestId>,
-    value: T,
-) -> Response {
-    match serde_json::to_value(value) {
-        Ok(value) => Response::success(id, value),
-        Err(e) => Response::error(id, INTERNAL_ERROR, e.to_string()),
-    }
-}
-
 pub(crate) async fn handle_mcp_start(
     req: Request,
     km: &Arc<KilnManager>,
@@ -75,20 +60,20 @@ pub(crate) async fn handle_mcp_start(
         )
         .await
     {
-        Ok(result) => reply(req.id, result),
+        Ok(result) => typed_success(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
 
 pub(crate) async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
     match mcp_mgr.stop().await {
-        Ok(result) => reply(req.id, result),
+        Ok(result) => typed_success(req.id, result),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
 
 pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
-    reply(req.id, mcp_mgr.status().await)
+    typed_success(req.id, mcp_mgr.status().await)
 }
 
 /// Discover the skills visible from `kiln_path` and the caller's
@@ -147,7 +132,7 @@ pub(crate) async fn handle_skills_list(
                 })
                 .collect();
             skills.sort_by(|a, b| a.name.cmp(&b.name));
-            reply(req.id, SkillsReply { skills })
+            typed_success(req.id, SkillsReply { skills })
         }
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -171,7 +156,7 @@ pub(crate) async fn handle_skills_get(
         Ok(Ok(skills)) => match crate::skills::discovery::resolve_skill(&skills, &name) {
             Ok(Some(resolved)) => {
                 let skill = &resolved.skill;
-                reply(
+                typed_success(
                     req.id,
                     SkillDetail {
                         name: name.clone(),
@@ -229,7 +214,7 @@ pub(crate) async fn handle_skills_search(
                     shadowed_count: resolved.shadowed.len(),
                 })
                 .collect();
-            reply(req.id, SkillsReply { skills: matches })
+            typed_success(req.id, SkillsReply { skills: matches })
         }
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -261,7 +246,7 @@ pub(crate) async fn handle_agents_list_profiles(
     });
     let mut profiles: Vec<AgentProfileEntry> = futures::future::join_all(probes).await;
     profiles.sort_by(|a, b| a.name.cmp(&b.name));
-    reply(req.id, AgentProfilesReply { profiles })
+    typed_success(req.id, AgentProfilesReply { profiles })
 }
 
 /// The agent cards a session started from the request's workspace would
@@ -289,7 +274,7 @@ pub(crate) async fn handle_agents_list_cards(
     })
     .collect();
     cards.sort_by(|a, b| a.name.cmp(&b.name));
-    reply(req.id, AgentCardsListReply { cards })
+    typed_success(req.id, AgentCardsListReply { cards })
 }
 
 /// A profile with no command can never spawn, so it is never available;
@@ -312,7 +297,7 @@ pub(crate) async fn handle_agents_resolve_profile(
     let profiles = agent_manager.build_available_agents();
 
     match profiles.get(&name) {
-        Some(profile) => reply(
+        Some(profile) => typed_success(
             req.id,
             AgentProfileResolved {
                 is_builtin: crate::acp::discovery::is_builtin(&name),

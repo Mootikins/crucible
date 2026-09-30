@@ -6,7 +6,7 @@
 //! inserts, `workflow.approve_gate`/`workflow.status` look up,
 //! `workflow.cancel` or the normal session.end path removes.
 
-use crucible_core::workflow::{WorkflowExecution, WorkflowStatus};
+use crucible_core::workflow::WorkflowExecution;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -54,13 +54,4 @@ impl WorkflowRegistry {
     pub fn remove(&self, session_id: &str) -> Option<ExecutionHandle> {
         self.inner.remove(session_id).map(|(_, (handle, _))| handle)
     }
-}
-
-/// Shorthand for what a handler returns on `workflow.status`.
-#[derive(Debug, serde::Serialize)]
-pub struct WorkflowStatusSnapshot {
-    pub status: WorkflowStatus,
-    pub completed_slots: usize,
-    pub total_slots: usize,
-    pub scope: serde_json::Value,
 }

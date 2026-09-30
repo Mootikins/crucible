@@ -49,6 +49,7 @@
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
+use crate::server::typed_success;
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
 use crucible_core::protocol::requests::{
@@ -342,7 +343,7 @@ pub(crate) async fn handle_fs_move(
         && base.join(from_rel).is_file()
     {
         return match crate::server::note_refactor::rename_note(km, &base, from_rel, to_rel).await {
-            Ok(outcome) => reply(
+            Ok(outcome) => typed_success(
                 req.id,
                 FsMoveReply {
                     moved: true,
@@ -362,7 +363,7 @@ pub(crate) async fn handle_fs_move(
             if kind == FsRootKind::Kiln {
                 km.folder_moved(&from, &to);
             }
-            reply(
+            typed_success(
                 req.id,
                 FsMoveReply {
                     moved: true,
@@ -484,7 +485,7 @@ pub(crate) async fn handle_fs_mkdir(
     };
 
     match mkdir_within(&base, rel_path) {
-        Ok(()) => reply(req.id, FsMkdirReply { created: true }),
+        Ok(()) => typed_success(req.id, FsMkdirReply { created: true }),
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
@@ -562,25 +563,13 @@ pub(crate) async fn handle_fs_trash(
         }
     }
 
-    reply(
+    typed_success(
         req.id,
         FsTrashReply {
             trashed: true,
             trash_path: trash_rel,
         },
     )
-}
-
-/// Answer with `value` as JSON, or report the serialisation failure.
-///
-/// The reply types here hold only strings, booleans and vectors of those, so
-/// the error arm is unreachable in practice. It exists because an `expect`
-/// here would take the daemon down over a reply nobody can act on.
-fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
-    match serde_json::to_value(value) {
-        Ok(value) => Response::success(id, value),
-        Err(e) => Response::error(id, INTERNAL_ERROR, e.to_string()),
-    }
 }
 
 /// Indexed files at or under `path` — the pre-move index-cleanup set.

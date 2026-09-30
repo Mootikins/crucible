@@ -35,10 +35,12 @@ use crate::rpc::context::RpcContext;
 use crate::rpc::dispatch::RpcResult;
 use crate::rpc::params::parse_params;
 use crate::workflow_handlers::DaemonInlineHandler;
-use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
+use crate::workflow_registry::ExecutionHandle;
 use crucible_core::config::components::permissions::PermissionEngine;
 use crucible_core::parser::types::{extract_yaml_frontmatter, ParsedNote, WorkflowDoc};
-use crucible_core::protocol::requests::{GateRef, Scoped, WorkflowSource};
+use crucible_core::protocol::requests::{
+    GateRef, Scoped, WorkflowCancelReply, WorkflowRunReply, WorkflowSource, WorkflowStatusReply,
+};
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
     DefaultHandler, DispatchTable, GateHandler, WorkflowEvent, WorkflowExecution, WorkflowSnapshot,
@@ -106,10 +108,15 @@ pub async fn handle_workflow_start(
     let status = drive(ctx, &p.session_id, &handle).await;
     finalize(ctx, &p.session_id, &handle, &status).await;
 
-    Ok(serde_json::json!({
-        "session_id": p.session_id,
-        "status": status,
-    }))
+    serde_json::to_value(WorkflowRunReply {
+        session_id: p.session_id,
+        status,
+    })
+    .map_err(|e| RpcError {
+        code: INTERNAL_ERROR,
+        message: e.to_string(),
+        data: None,
+    })
 }
 
 pub async fn handle_workflow_approve_gate(
@@ -140,10 +147,15 @@ pub async fn handle_workflow_approve_gate(
     let status = drive(ctx, &p.session_id, &handle).await;
     finalize(ctx, &p.session_id, &handle, &status).await;
 
-    Ok(serde_json::json!({
-        "session_id": p.session_id,
-        "status": status,
-    }))
+    serde_json::to_value(WorkflowRunReply {
+        session_id: p.session_id,
+        status,
+    })
+    .map_err(|e| RpcError {
+        code: INTERNAL_ERROR,
+        message: e.to_string(),
+        data: None,
+    })
 }
 
 pub async fn handle_workflow_status(
@@ -161,15 +173,11 @@ pub async fn handle_workflow_status(
         })?;
 
     let guard = handle.lock().await;
-    let snapshot = WorkflowStatusSnapshot {
+    let snapshot = WorkflowStatusReply {
         status: guard.status().clone(),
         completed_slots: guard.completed_slots(),
         total_slots: guard.total_slots(),
-        scope: serde_json::to_value(guard.scope()).map_err(|e| RpcError {
-            code: INTERNAL_ERROR,
-            message: format!("scope serialization: {}", e),
-            data: None,
-        })?,
+        scope: guard.scope().clone(),
     };
     serde_json::to_value(snapshot).map_err(|e| RpcError {
         code: INTERNAL_ERROR,
@@ -187,10 +195,15 @@ pub async fn handle_workflow_cancel(
     let handle = match resolve_or_rehydrate(ctx, &p.session_id).await {
         Some(h) => h,
         None => {
-            return Ok(serde_json::json!({
-                "session_id": p.session_id,
-                "status": "not_found",
-            }));
+            return serde_json::to_value(WorkflowCancelReply {
+                session_id: p.session_id,
+                status: "not_found".to_string(),
+            })
+            .map_err(|e| RpcError {
+                code: INTERNAL_ERROR,
+                message: e.to_string(),
+                data: None,
+            });
         }
     };
 
@@ -209,10 +222,15 @@ pub async fn handle_workflow_cancel(
     ctx.workflows.remove(&p.session_id);
     remove_snapshot(ctx, &p.session_id).await;
 
-    Ok(serde_json::json!({
-        "session_id": p.session_id,
-        "status": "cancelled",
-    }))
+    serde_json::to_value(WorkflowCancelReply {
+        session_id: p.session_id,
+        status: "cancelled".to_string(),
+    })
+    .map_err(|e| RpcError {
+        code: INTERNAL_ERROR,
+        message: e.to_string(),
+        data: None,
+    })
 }
 
 // ---------- dispatch setup ----------

@@ -1,6 +1,8 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{ForkPoint, Scoped};
+use crucible_core::protocol::requests::{
+    ForkPoint, Scoped, SessionForkReply, SessionListModelsReply,
+};
 use crucible_core::protocol::requests::{
     ListAllModelsRequest, ListProvidersRequest, ModelsListReply, ProvidersListReply,
 };
@@ -43,36 +45,36 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
             return session_not_found(req.id, &id);
         }
         Err(crate::agent_manager::AgentError::NoAgentConfigured(_)) => {
-            return Response::success(
+            return typed_success(
                 req.id,
-                serde_json::json!({
-                    "session_id": session_id,
-                    "models": Vec::<String>::new(),
-                }),
+                SessionListModelsReply {
+                    session_id: session_id.clone(),
+                    models: Vec::new(),
+                },
             );
         }
         Err(e) => return internal_error(req.id, e),
     };
 
     match am.list_models(session_id, classification).await {
-        Ok(models) => Response::success(
+        Ok(models) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "models": models,
-            }),
+            SessionListModelsReply {
+                session_id: session_id.clone(),
+                models,
+            },
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
         }
         Err(crate::agent_manager::AgentError::NoAgentConfigured(_)) => {
             // Return empty models list if no agent is configured
-            Response::success(
+            typed_success(
                 req.id,
-                serde_json::json!({
-                    "session_id": session_id,
-                    "models": Vec::<String>::new(),
-                }),
+                SessionListModelsReply {
+                    session_id: session_id.clone(),
+                    models: Vec::new(),
+                },
             )
         }
         Err(e) => internal_error(req.id, e),
@@ -94,10 +96,10 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
         .and_then(|kiln| crate::trust_resolution::find_workspace_and_resolve_classification(kiln));
 
     match am.list_models("", classification).await {
-        Ok(models) => reply(req.id, ModelsListReply { models }),
+        Ok(models) => typed_success(req.id, ModelsListReply { models }),
         Err(crate::agent_manager::AgentError::SessionNotFound(_)) => {
             // No session fallback path hit — return empty list
-            reply(req.id, ModelsListReply { models: Vec::new() })
+            typed_success(req.id, ModelsListReply { models: Vec::new() })
         }
         Err(e) => internal_error(req.id, e),
     }
@@ -125,19 +127,7 @@ pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) 
     } else {
         am.list_providers_summary(classification).await
     };
-    reply(req.id, ProvidersListReply { providers })
-}
-
-/// Answer with `value` as JSON, or report the serialisation failure.
-///
-/// The reply types here hold only strings, numbers, booleans and vectors of
-/// those, so the error arm is unreachable in practice. It exists because an
-/// `expect` here would take the daemon down over a reply nobody can act on.
-fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
-    match serde_json::to_value(value) {
-        Ok(value) => Response::success(id, value),
-        Err(e) => internal_error(id, anyhow::anyhow!(e)),
-    }
+    typed_success(req.id, ProvidersListReply { providers })
 }
 
 /// Fork a session by creating a new session and replaying messages from the parent.
@@ -162,13 +152,13 @@ pub(crate) async fn handle_session_fork(
         Err(error) => return internal_error(req.id, error),
     };
     match am.fork_session(parent, params.body.up_to).await {
-        Ok((child, count)) => Response::success(
+        Ok((child, count)) => typed_success(
             req.id,
-            serde_json::json!({
-                "id": child.id,
-                "parent_id": params.session_id,
-                "messages_copied": count,
-            }),
+            SessionForkReply {
+                id: child.id,
+                parent_id: params.session_id,
+                messages_copied: count,
+            },
         ),
         Err(
             crate::agent_manager::AgentError::InvalidConfig(message)

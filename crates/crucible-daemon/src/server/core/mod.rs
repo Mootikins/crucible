@@ -14,7 +14,7 @@ pub(super) fn internal_error(req_id: Option<RequestId>, err: impl std::fmt::Disp
 /// has to cross the JSON-RPC boundary, which speaks `serde_json::Value`; this
 /// is the one place that conversion happens, so a handler's own code stays a
 /// typed value from construction to return.
-pub(super) fn typed_success(req_id: Option<RequestId>, value: impl serde::Serialize) -> Response {
+pub(crate) fn typed_success(req_id: Option<RequestId>, value: impl serde::Serialize) -> Response {
     match serde_json::to_value(value) {
         Ok(v) => Response::success(req_id, v),
         Err(e) => internal_error(req_id, e),

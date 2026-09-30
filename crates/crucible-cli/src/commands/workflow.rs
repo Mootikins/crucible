@@ -413,7 +413,7 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
         .await
         .context("workflow.start RPC failed")?;
 
-    print_status_result(&result);
+    print_status_result(&serde_json::to_value(&result)?);
     Ok(())
 }
 
@@ -430,7 +430,7 @@ async fn run_approve(session: &str, gate: Option<&str>) -> Result<()> {
         .await
         .context("workflow.approve_gate RPC failed")?;
 
-    print_status_result(&result);
+    print_status_result(&serde_json::to_value(&result)?);
     Ok(())
 }
 

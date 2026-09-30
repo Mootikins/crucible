@@ -1,6 +1,9 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{KnobRef, Scoped, UndoCount};
+use crucible_core::protocol::requests::{
+    KnobRef, Scoped, SessionCacheStatsReply, SessionCanUndoReply, SessionKnobSetReply,
+    SessionUndoDepthReply, SessionUndoReply, UndoCount,
+};
 use crucible_core::types::{AcpKnob, KnobValue, SessionKnob};
 
 // One handler writes every knob and one handler reads every knob: both
@@ -135,13 +138,13 @@ pub(crate) async fn handle_session_knob_set(
 /// caller already knows what it sent, and `session.knob.get` is the read
 /// path for a value some other client changed.
 fn knob_set_response(req_id: Option<RequestId>, session_id: &str, knob: SessionKnob) -> Response {
-    Response::success(
+    typed_success(
         req_id,
-        serde_json::json!({
-            "session_id": session_id,
-            "knob": knob.id(),
-            "set": true,
-        }),
+        SessionKnobSetReply {
+            session_id: session_id.to_string(),
+            knob: knob.id().to_string(),
+            set: true,
+        },
     )
 }
 
@@ -209,12 +212,12 @@ pub(crate) async fn handle_session_undo(
     let count = params.body.count.unwrap_or(1);
 
     match am.undo(session_id, count, Some(event_tx)).await {
-        Ok(summaries) => Response::success(
+        Ok(summaries) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "undone": summaries,
-            }),
+            SessionUndoReply {
+                session_id: session_id.to_string(),
+                undone: summaries,
+            },
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
@@ -242,12 +245,12 @@ pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>
     let session_id = params.session_id.as_str();
 
     match am.can_undo(session_id).await {
-        Ok(can_undo) => Response::success(
+        Ok(can_undo) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "can_undo": can_undo,
-            }),
+            SessionCanUndoReply {
+                session_id: session_id.to_string(),
+                can_undo,
+            },
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
@@ -267,12 +270,12 @@ pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManage
     let session_id = params.session_id.as_str();
 
     match am.undo_depth(session_id).await {
-        Ok(depth) => Response::success(
+        Ok(depth) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "undo_depth": depth,
-            }),
+            SessionUndoDepthReply {
+                session_id: session_id.to_string(),
+                undo_depth: depth,
+            },
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             session_not_found(req.id, &id)
@@ -294,17 +297,17 @@ pub(crate) async fn handle_session_cache_stats(req: Request, am: &Arc<AgentManag
     };
     let session_id = params.session_id.as_str();
     let stats = am.get_cache_stats(session_id);
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "session_id": session_id,
-            "hits": stats.hits,
-            "misses": stats.misses,
-            "read_tokens": stats.read_tokens,
-            "creation_tokens": stats.creation_tokens,
-            "prompt_tokens": stats.prompt_tokens,
-            "completion_tokens": stats.completion_tokens,
-            "hit_rate": stats.hit_rate(),
-        }),
+        SessionCacheStatsReply {
+            session_id: session_id.to_string(),
+            hits: stats.hits,
+            misses: stats.misses,
+            read_tokens: stats.read_tokens,
+            creation_tokens: stats.creation_tokens,
+            prompt_tokens: stats.prompt_tokens,
+            completion_tokens: stats.completion_tokens,
+            hit_rate: stats.hit_rate(),
+        },
     )
 }

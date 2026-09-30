@@ -3,7 +3,10 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
 use crate::SessionError;
 use crucible_core::protocol::requests::SessionReplayRequest;
-use crucible_core::protocol::requests::{Page, Scoped};
+use crucible_core::protocol::requests::{
+    Page, Scoped, SessionArchiveReply, SessionCompactReply, SessionDeleteReply, SessionEndReply,
+    SessionHistoryReply, SessionReplayStartedReply, SessionTransitionReply,
+};
 use crucible_core::session::{SessionId, SessionState};
 
 pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecycle) -> Response {
@@ -14,13 +17,13 @@ pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecy
     let session_id = &params.session_id;
 
     match lifecycle.stop(session_id, StopCause::Pause).await {
-        Ok(Stopped::Paused { previous }) => Response::success(
+        Ok(Stopped::Paused { previous }) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "previous_state": format!("{}", previous),
-                "state": "paused",
-            }),
+            SessionTransitionReply {
+                session_id: session_id.clone(),
+                previous_state: format!("{}", previous),
+                state: "paused".to_string(),
+            },
         ),
         Ok(other) => unexpected_stop(req.id, "pause", other),
         Err(e) => stop_error(req.id, "pause", e),
@@ -60,13 +63,13 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
         resumed => resumed,
     };
     match resumed {
-        Ok(previous_state) => Response::success(
+        Ok(previous_state) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "previous_state": format!("{}", previous_state),
-                "state": "active",
-            }),
+            SessionTransitionReply {
+                session_id: session_id.clone(),
+                previous_state: format!("{}", previous_state),
+                state: "active".to_string(),
+            },
         ),
         Err(e) => invalid_state_error(req.id, "resume", e),
     }
@@ -150,17 +153,17 @@ async fn history_reply(
             // session with no history. Log internally but don't expose error
             // details to the client.
             warn!("Failed to load session history: {}", e);
-            return Response::success(
+            return typed_success(
                 req_id,
-                serde_json::json!({
-                    "session_id": session.id,
-                    "type": session.session_type.as_prefix(),
-                    "state": format!("{}", session.state),
-                    "kilns": session.kilns,
-                    "history": [],
-                    "total_events": 0,
-                    "transcript": crucible_core::transcript::Transcript::default(),
-                }),
+                SessionHistoryReply {
+                    session_id: session.id.clone(),
+                    session_type: session.session_type.as_prefix().to_string(),
+                    state: format!("{}", session.state),
+                    kilns: session.kilns.clone(),
+                    history: Vec::new(),
+                    total_events: 0,
+                    transcript: crucible_core::transcript::Transcript::default(),
+                },
             );
         }
     };
@@ -177,17 +180,17 @@ async fn history_reply(
         }
     };
 
-    Response::success(
+    typed_success(
         req_id,
-        serde_json::json!({
-            "session_id": session.id,
-            "type": session.session_type.as_prefix(),
-            "state": format!("{}", session.state),
-            "kilns": session.kilns,
-            "history": history,
-            "total_events": total,
-            "transcript": transcript,
-        }),
+        SessionHistoryReply {
+            session_id: session.id.clone(),
+            session_type: session.session_type.as_prefix().to_string(),
+            state: format!("{}", session.state),
+            kilns: session.kilns.clone(),
+            history,
+            total_events: total,
+            transcript,
+        },
     )
 }
 
@@ -199,13 +202,13 @@ pub(crate) async fn handle_session_end(req: Request, lifecycle: &SessionLifecycl
     let session_id = &params.session_id;
 
     match lifecycle.stop(session_id, StopCause::End).await {
-        Ok(Stopped::Ended(session)) => Response::success(
+        Ok(Stopped::Ended(session)) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "state": "ended",
-                "kilns": session.kilns,
-            }),
+            SessionEndReply {
+                session_id: session.id.clone(),
+                state: "ended".to_string(),
+                kilns: session.kilns.clone(),
+            },
         ),
         Ok(other) => unexpected_stop(req.id, "end", other),
         Err(e) => stop_error(req.id, "end", e),
@@ -225,12 +228,12 @@ pub(crate) async fn handle_session_delete(req: Request, lifecycle: &SessionLifec
     };
 
     match lifecycle.stop(session_id.as_str(), StopCause::Delete).await {
-        Ok(Stopped::Deleted) => Response::success(
+        Ok(Stopped::Deleted) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "deleted": true,
-            }),
+            SessionDeleteReply {
+                session_id: session_id.clone(),
+                deleted: true,
+            },
         ),
         Ok(other) => unexpected_stop(req.id, "delete", other),
         Err(e) => stop_error(req.id, "delete", e),
@@ -253,12 +256,12 @@ pub(crate) async fn handle_session_archive(req: Request, lifecycle: &SessionLife
         .stop(session_id.as_str(), StopCause::Archive)
         .await
     {
-        Ok(Stopped::Archived(session)) => Response::success(
+        Ok(Stopped::Archived(session)) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "archived": session.archived,
-            }),
+            SessionArchiveReply {
+                session_id: session.id.clone(),
+                archived: session.archived,
+            },
         ),
         Ok(other) => unexpected_stop(req.id, "archive", other),
         Err(e) => stop_error(req.id, "archive", e),
@@ -283,12 +286,12 @@ pub(crate) async fn handle_session_unarchive(
     match sm.unarchive_session(session_id).await {
         Ok(session) => {
             am.cleanup_session(session_id, events);
-            Response::success(
+            typed_success(
                 req.id,
-                serde_json::json!({
-                    "session_id": session.id,
-                    "archived": session.archived,
-                }),
+                SessionArchiveReply {
+                    session_id: session.id.clone(),
+                    archived: session.archived,
+                },
             )
         }
         Err(e) => invalid_state_error(req.id, "unarchive", e),
@@ -323,13 +326,13 @@ pub(crate) async fn handle_session_replay(
             sm.register_transient(replay.session().clone());
             let _handle = replay.start();
 
-            Response::success(
+            typed_success(
                 req.id,
-                serde_json::json!({
-                    "session_id": replay_session_id.as_str(),
-                    "status": "replaying",
-                    "speed": speed,
-                }),
+                SessionReplayStartedReply {
+                    session_id: replay_session_id.as_str().to_string(),
+                    status: "replaying".to_string(),
+                    speed,
+                },
             )
         }
         Err(e) => internal_error(req.id, e),
@@ -344,13 +347,13 @@ pub(crate) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager
     let session_id = &params.session_id;
 
     match sm.request_compaction(session_id).await {
-        Ok(session) => Response::success(
+        Ok(session) => typed_success(
             req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "state": format!("{}", session.state),
-                "compaction_requested": true,
-            }),
+            SessionCompactReply {
+                session_id: session.id.clone(),
+                state: format!("{}", session.state),
+                compaction_requested: true,
+            },
         ),
         Err(e) => invalid_state_error(req.id, "compact", e),
     }

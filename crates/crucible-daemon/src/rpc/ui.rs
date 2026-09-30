@@ -30,6 +30,7 @@
 //! when capability negotiation has an actual use site.
 
 use crate::rpc::context::RpcContext;
+use crucible_core::protocol::requests::{UiConfigRequest, UiSetThemeReply, UiSetThemeRequest};
 use crucible_core::protocol::Request;
 use crucible_lua::theme_wire::{theme_to_wire, UI_CONFIG_VERSION};
 
@@ -38,11 +39,8 @@ use crucible_lua::theme_wire::{theme_to_wire, UI_CONFIG_VERSION};
 /// Falls back to the built-in dark theme when Lua has not populated the config
 /// store — a complete, coherent theme, never a partial one.
 pub fn handle_ui_config(ctx: &RpcContext, req: &Request) -> serde_json::Value {
-    let session_id = req
-        .params
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let params: UiConfigRequest = serde_json::from_value(req.params.clone()).unwrap_or_default();
+    let session_id = params.session_id.as_deref().unwrap_or_default();
     style_payload(&ctx.agents, session_id)
 }
 
@@ -53,11 +51,9 @@ pub fn handle_ui_config(ctx: &RpcContext, req: &Request) -> serde_json::Value {
 /// success the new palette is broadcast, which is what makes the switch appear
 /// in every attached client rather than only the one that asked.
 pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json::Value, String> {
-    let name = req
-        .params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "ui.set_theme requires a 'name'".to_string())?;
+    let params: UiSetThemeRequest = serde_json::from_value(req.params.clone())
+        .map_err(|_| "ui.set_theme requires a 'name'".to_string())?;
+    let name = params.name.as_str();
 
     // Reject separators outright rather than sanitizing: a theme name is a bare
     // stem by construction, so anything with a path in it is a mistake or an
@@ -112,7 +108,7 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
         &ctx.agents,
         crate::server::ui_broadcast::GLOBAL,
     );
-    Ok(serde_json::json!({ "theme": applied }))
+    serde_json::to_value(UiSetThemeReply { theme: applied }).map_err(|e| e.to_string())
 }
 
 /// Just the expression values, for the push that follows one changing.

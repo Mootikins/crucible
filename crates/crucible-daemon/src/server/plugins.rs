@@ -1,4 +1,3 @@
-use super::platform::reply;
 use super::*;
 use crate::daemon_plugins::PluginServiceFn;
 use crate::rpc_helpers::typed_params;
@@ -6,7 +5,8 @@ use crucible_core::protocol::requests::{
     KilnOpenError, NameRequest, OpenedKiln, PathRequest, PluginOptionCallRequest,
     PluginOptionsRequest, PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow,
     ProjectOpenKilnsNoMatch, ProjectOpenKilnsReply, ScmCloneRequest, ScmCloneResponse, Scoped,
-    SkippedKiln, StatusReply, SurfaceGetReply, SurfaceListReply, SurfaceRequest,
+    SessionStatusReply, SkippedKiln, StatusReply, SurfaceGetReply, SurfaceListReply,
+    SurfaceRequest,
 };
 
 /// Drain extracted service functions, spawn each, and record the handle
@@ -141,7 +141,7 @@ pub(crate) async fn handle_session_status(
         Err(response) => return *response,
     };
     let status = agents.status_items(&params.session_id).await;
-    Response::success(req.id, serde_json::json!({ "status": status }))
+    typed_success(req.id, SessionStatusReply { status })
 }
 
 /// `plugin.publications` — what plugins published about themselves.
@@ -169,7 +169,7 @@ pub(crate) async fn handle_surface_list(
     };
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return reply(req.id, SurfaceListReply::default());
+        return typed_success(req.id, SurfaceListReply::default());
     };
     let surfaces = loader
         .surfaces()
@@ -177,7 +177,7 @@ pub(crate) async fn handle_surface_list(
         .into_iter()
         .filter(|s| params.plugin.as_ref().is_none_or(|p| *p == s.plugin))
         .collect();
-    reply(req.id, SurfaceListReply { surfaces })
+    typed_success(req.id, SurfaceListReply { surfaces })
 }
 
 /// `surface.get` — one surface by name.
@@ -203,7 +203,7 @@ pub(crate) async fn handle_surface_get(
     };
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return reply(req.id, SurfaceGetReply::default());
+        return typed_success(req.id, SurfaceGetReply::default());
     };
     let registry = loader.surfaces();
     let surface = match params.plugin {
@@ -213,7 +213,7 @@ pub(crate) async fn handle_surface_get(
         // different one per call.
         None => registry.list().into_iter().find(|s| s.name == name),
     };
-    reply(req.id, SurfaceGetReply { surface })
+    typed_success(req.id, SurfaceGetReply { surface })
 }
 
 pub(crate) async fn handle_plugin_publications(
@@ -469,7 +469,7 @@ pub(crate) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectMana
     };
 
     match pm.unregister(Path::new(&params.path)) {
-        Ok(()) => reply(
+        Ok(()) => typed_success(
             req.id,
             StatusReply {
                 status: "ok".to_string(),
@@ -639,7 +639,7 @@ pub(crate) async fn handle_project_open_kilns(
     };
 
     let Some(project) = pm.get(Path::new(&params.path)) else {
-        return reply(
+        return typed_success(
             req.id,
             ProjectOpenKilnsReply::NoMatch(ProjectOpenKilnsNoMatch {
                 matched: false,
@@ -693,7 +693,7 @@ pub(crate) async fn handle_project_open_kilns(
         }
     }
 
-    reply(
+    typed_success(
         req.id,
         ProjectOpenKilnsReply::Matched {
             matched: true,

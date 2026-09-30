@@ -22,8 +22,8 @@ use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
 use crucible_core::protocol::requests::{
-    ConfigKeyRequest, ConfigLookupRequest, ConfigValuesRequest, LuaEvalRequest, Scoped,
-    SessionCreateRequest, SessionSubscribeRequest, SubagentCollectRequest, Title,
+    ConfigKeyRequest, ConfigLookupRequest, ConfigSaveReply, ConfigValuesRequest, LuaEvalRequest,
+    Scoped, SessionCreateRequest, SessionSubscribeRequest, SubagentCollectRequest, Title,
     WebhookReceiveReply, WebhookReceiveRequest,
 };
 use crucible_core::protocol::{RpcMethod, METHODS};
@@ -1133,10 +1133,15 @@ impl RpcDispatcher {
             }
         }
 
-        Ok(serde_json::json!({
-            "subscribed": p.session_ids,
-            "client_id": format!("{:?}", client_id),
-        }))
+        serde_json::to_value(crucible_core::protocol::requests::SessionSubscribeReply {
+            subscribed: p.session_ids,
+            client_id: format!("{:?}", client_id),
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     fn handle_unsubscribe(
@@ -1150,10 +1155,15 @@ impl RpcDispatcher {
             self.ctx.subscriptions.unsubscribe(client_id, session_id);
         }
 
-        Ok(serde_json::json!({
-            "unsubscribed": p.session_ids,
-            "client_id": format!("{:?}", client_id),
-        }))
+        serde_json::to_value(crucible_core::protocol::requests::SessionUnsubscribeReply {
+            unsubscribed: p.session_ids,
+            client_id: format!("{:?}", client_id),
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     async fn handle_set_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1171,10 +1181,15 @@ impl RpcDispatcher {
                 data: None,
             })?;
 
-        Ok(serde_json::json!({
-            "session_id": p.session_id,
-            "title": p.body.title,
-        }))
+        serde_json::to_value(crucible_core::protocol::requests::SessionTitleReply {
+            session_id: p.session_id,
+            title: p.body.title,
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     async fn handle_generate_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1191,10 +1206,15 @@ impl RpcDispatcher {
                 data: None,
             })?;
 
-        Ok(serde_json::json!({
-            "session_id": p.session_id,
-            "title": title,
-        }))
+        serde_json::to_value(crucible_core::protocol::requests::SessionTitleReply {
+            session_id: p.session_id,
+            title,
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     // ── Session lifecycle wrappers ────────────────────────────────────────────
@@ -1647,7 +1667,15 @@ impl RpcDispatcher {
                 "config.set refused keys that name where the daemon acts; edit the config file instead"
             );
         }
-        Ok(serde_json::json!({ "ok": true, "rejected": rejected }))
+        serde_json::to_value(crucible_core::protocol::requests::ConfigSetReply {
+            ok: true,
+            rejected,
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     /// Save values as the user's durable preference: the `settings.json`
@@ -2008,27 +2036,9 @@ impl RpcDispatcher {
     }
 }
 
-/// What `config.save` answers.
-///
-/// A refusal rides in the answer rather than in an error: refusal is per leaf,
-/// the siblings the caller changed in the same call did save, and `refused`
-/// carries the file and the line a human's config holds the key on.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ConfigSaveReply {
-    /// Whether every leaf the caller sent reached the `Settings` layer.
-    pub ok: bool,
-    /// The leaves a pin refused, each with the source that holds it.
-    pub refused: Vec<crucible_core::config::PinnedLeaf>,
-    /// The top-level keys that name where the daemon acts, which no save may
-    /// write. They are dropped rather than refused, so they are reported apart
-    /// from `refused`.
-    pub rejected: Vec<String>,
-}
-
-// `WebhookReceiveReply` is canonical in core (`crucible_core::protocol::
-// requests::WebhookReceiveReply`), imported above with the other request
-// types this module reads.
+// `ConfigSaveReply` and `WebhookReceiveReply` are canonical in core
+// (`crucible_core::protocol::requests`), imported above with the other
+// request types this module reads.
 
 /// `config.controls` — the app config's declared control tree, and the leaves
 /// that take no control.
