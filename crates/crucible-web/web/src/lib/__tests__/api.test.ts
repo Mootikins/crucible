@@ -925,19 +925,11 @@ describe('plugin endpoints', () => {
   );
 });
 
-// Skills: covered in `lib/query/__tests__/skills.test.ts`, against
-// `POST /api/rpc/{skills.list,skills.get,skills.search}` — no REST route
-// forwards them any more (Simplification Plan step 19 item 3).
-
 // =============================================================================
 // MCP / Kilns / Notes / Search
 // =============================================================================
 
 describe('MCP / kilns / notes / search', () => {
-  // getMcpStatus is gone: `lib/query/mcp.ts` calls `rpc('mcp.status', null)`
-  // directly, tested in `lib/query/__tests__/mcp.test.ts` against
-  // `POST /api/rpc/mcp.status` (Simplification Plan step 19).
-
   it('listDir sends root/rel_path/show_ignored and returns the listing envelope', async () => {
     const entries = [
       {

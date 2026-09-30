@@ -66,15 +66,6 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
       undefined,
       { session_id: 's/x', knob: 'mode', value: 'plan' },
     ],
-    // agents.list_profiles / models.list: `api.listAgents`/`listAllModels`
-    // are gone; `lib/query/agents.ts`/`models.ts` call `rpc(...)` directly
-    // now (Simplification Plan step 19), covered in their own query tests.
-    // session.list_knobs / session.list_agent_options / session.set_agent_option
-    // / session.connect_kiln / session.disconnect_kiln / session.commands:
-    // `lib/query/session-config.ts`, `lib/query/scope.ts` and
-    // `lib/query/commands.ts` call `rpc(...)` directly, covered in their own
-    // query tests (`session-config.test.ts`, `scope.test.ts`,
-    // `commands.test.ts`).
     [
       '/api/rpc/session.knob.get',
       () => api.getContextStrategy('s/x'),
@@ -89,9 +80,6 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
       undefined,
       { session_id: 's/x', knob: 'context_strategy', value: 'truncate' },
     ],
-    // surface.list: `api.getSurfaces` is gone; `lib/query/surfaces.ts` calls
-    // `rpc('surface.list', {})` directly (Simplification Plan step 19),
-    // covered in `lib/query/__tests__/surfaces.test.ts`.
     [
       '/api/notes/resolve?kiln=k&name=a%20b',
       () => api.resolveNotePath('k', 'a b'),
@@ -111,8 +99,6 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
       { path: '/repo' },
       { url: 'owner/repo' },
     ],
-    // kiln.graph: `lib/query/notes.ts` calls `rpc('kiln.graph', ...)`
-    // directly, covered in `lib/query/__tests__/notes.test.ts`.
     [
       '/api/kiln/file?path=a%20b',
       () => api.getFileWithHash('a b'),

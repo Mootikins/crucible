@@ -281,11 +281,6 @@ impl ReconnectingDaemon {
         false
     }
 
-    // kiln.list/list_notes/get_note_by_name/kiln.graph: the browser calls
-    // them through `POST /api/rpc/{method}` now (Simplification Plan step 19
-    // item 3, the kiln/note migration), so these forwarders are gone; no
-    // other caller in this crate named them.
-
     forward_rpc! {
         Safe GetBacklinks =>
         get_backlinks(kiln_path: &Path, name: &str)
@@ -313,23 +308,13 @@ impl ReconnectingDaemon {
         -> Vec<f32> = embed_query(&kiln_path, &text);
     }
 
-    // search_grep: the browser calls `search_grep` through
-    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
-    // this forwarder is gone; `routes/search.rs`'s own route was its only
-    // caller.
-
-    // mcp.status: the browser calls it through `POST /api/rpc/{method}` now
-    // (Simplification Plan step 19), so this forwarder is gone.
     // `DaemonClient::mcp_status` itself stays for now: deleting a
     // hand-written `DaemonClient` method that only forwards one row is
     // step 19 item 9, a separate pass.
 
-    // skills.list/get/search: the browser calls them through
-    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
-    // this forwarder is gone; `DaemonClient::skills_list`/`skills_get`/
-    // `skills_search` stay, because they reshape an ergonomic `&Path`
-    // argument into the wire request's `String` field, which the CLI still
-    // calls directly (item 9).
+    // `DaemonClient::skills_list`/`skills_get`/`skills_search` stay, because
+    // they reshape an ergonomic `&Path` argument into the wire request's
+    // `String` field, which the CLI still calls directly (item 9).
 
     forward_rpc! {
         /// Create a session and have the daemon resolve + configure its agent in
@@ -490,13 +475,6 @@ impl ReconnectingDaemon {
         -> crucible_core::types::mode::SessionModes = session_list_modes(&session_id);
     }
 
-    // providers.list, models.list and agents.list_profiles: the browser
-    // calls them through `POST /api/rpc/{method}` now (Simplification Plan
-    // step 19), so these forwarders are gone. `DaemonClient::list_all_models`
-    // stays (the CLI calls it by name); `list_providers` (no caller) and
-    // `agents_list_profiles`/`agents_list_cards`/`agents_resolve_profile`
-    // (each with a single CLI caller, inlined onto the generated method) are
-    // gone too — step 19 item 9.
 
     // Used only by this module's own startup auto-registration of the
     // operator-configured kiln path, which is a local, trusted decision, not
@@ -518,19 +496,13 @@ impl ReconnectingDaemon {
     }
 
     // The HTTP route's own rollback calls this after a registration lands
-    // outside a configured `[web] registration_roots` entry; the browser
-    // reaches `project.unregister` itself through `POST /api/rpc/{method}`
-    // now (Simplification Plan step 19 item 3), so this method keeps only
-    // that internal caller.
+    // outside a configured `[web] registration_roots` entry; this method
+    // keeps only that internal caller.
     forward_rpc! {
         Once ProjectUnregister =>
         project_unregister(path: &Path)
         -> () = project_unregister(&path);
     }
-
-    // project.list: the browser calls it through `POST /api/rpc/{method}`
-    // now (Simplification Plan step 19 item 3), so this forwarder is gone;
-    // `routes/project.rs`'s own route was its only caller.
 
     pub async fn scm_clone(
         &self,
@@ -545,13 +517,6 @@ impl ReconnectingDaemon {
         daemon.scm_clone(url, dest, name).await
     }
 
-    // fs.list_dir: the browser calls it through `POST /api/rpc/{method}` now
-    // (Simplification Plan step 19 item 3, the fs migration), so this
-    // forwarder is gone; `routes/fs.rs` (deleted) was its only caller.
-
-    // diff.get/file/comment/resolve_comment/delete_comment/comments: the
-    // browser calls them through `POST /api/rpc/{method}` now
-    // (Simplification Plan step 19), so these forwarders are gone.
     // `DaemonClient::diff_get`/`diff_file_request`/`diff_comment`/
     // `diff_resolve_comment`/`diff_delete_comment`/`diff_comments` stay
     // (item 9 is a separate pass); `daemon_retry_tests.rs` now proves the
@@ -569,15 +534,6 @@ impl ReconnectingDaemon {
         fs_write(request: &crucible_core::file_write::FileWriteRequest)
         -> serde_json::Value = fs_write(&request);
     }
-
-    // fs.move/fs.mkdir/fs.trash: the browser calls them through
-    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
-    // these forwarders are gone; `routes/fs.rs` (deleted) was their only
-    // caller.
-
-    // project.get: the browser calls it through `POST /api/rpc/{method}` now
-    // (Simplification Plan step 19 item 3), so this forwarder is gone;
-    // `routes/project.rs`'s own route was its only caller.
 
     forward_rpc! {
         Once WebhookReceive =>

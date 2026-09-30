@@ -1263,10 +1263,6 @@ export async function listProviders(): Promise<ProviderInfo[]> {
   return expectList(data.providers, 'providers', 'Failed to list providers');
 }
 
-// Agents and models: `lib/query/agents.ts` and `lib/query/models.ts` call
-// `rpc('agents.list_profiles' | 'models.list', ...)` directly. No REST route
-// forwards them any more (Simplification Plan step 19).
-
 // =============================================================================
 // Session knobs
 //
@@ -1366,9 +1362,6 @@ export async function executeCommand(sessionId: string, command: string): Promis
  * has nothing left to ask for.
  */
 export type SurfaceChangedEvent = Schemas['SurfaceChangedEvent'];
-
-// Surfaces: `lib/query/surfaces.ts` calls `rpc('surface.list', {})` directly.
-// No REST route forwards it any more (Simplification Plan step 19).
 
 /**
  * Subscribe to surface changes: the `system` topic of the shared connection
@@ -1482,13 +1475,6 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
     'Failed to remove plugin',
   );
 }
-
-// Skills: `lib/query/skills.ts` calls `rpc('skills.list' | 'skills.get' |
-// 'skills.search', ...)` directly. No REST route forwards them any more
-// (Simplification Plan step 19 item 3).
-
-// MCP: `lib/query/mcp.ts` calls `rpc('mcp.status', null)` directly. No REST
-// route forwards it any more (Simplification Plan step 19).
 
 // =============================================================================
 // Search Endpoints
