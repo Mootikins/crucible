@@ -14,12 +14,15 @@ mod proposals;
 mod session;
 mod storage;
 mod subscription;
+mod ui;
 mod workflow;
 
 #[cfg(test)]
 mod golden_reply_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod step19_gap2_wire;
 
 pub use agent::*;
 pub use common::*;
@@ -31,6 +34,7 @@ pub use proposals::*;
 pub use session::*;
 pub use storage::*;
 pub use subscription::*;
+pub use ui::*;
 pub use workflow::*;
 
 /// The payloads below are the ones that the daemon handlers accepted when

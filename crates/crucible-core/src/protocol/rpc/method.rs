@@ -134,7 +134,7 @@ macro_rules! rpc_methods {
 rpc_methods! {
     Ping = "ping": () => String,
     DaemonCapabilities = "daemon.capabilities": () => crucible_core::protocol::requests::DaemonCapabilities,
-    Shutdown = "shutdown": () => serde_json::Value,
+    Shutdown = "shutdown": () => String,
     KilnOpen = "kiln.open": crucible_core::protocol::requests::KilnOpenRequest => crucible_core::protocol::requests::KilnOpenReply,
     KilnClose = "kiln.close": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     KilnList = "kiln.list": () => Vec<crucible_core::protocol::requests::KilnRow>,
@@ -174,73 +174,63 @@ rpc_methods! {
     SessionCreate = "session.create": crucible_core::protocol::requests::SessionCreateRequest => crucible_core::session::SessionSummary,
     SessionList = "session.list": crucible_core::protocol::requests::SessionListRequest => crucible_core::protocol::requests::SessionListReply,
     SessionGet = "session.get": crucible_core::protocol::requests::Scoped<()> => crucible_core::session::SessionDetail,
-    SessionPause = "session.pause": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionResume = "session.resume": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionResumeFromStorage = "session.resume_from_storage": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Page> => serde_json::Value,
-    SessionHistory = "session.history": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Page> => serde_json::Value,
-    SessionEnd = "session.end": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionArchive = "session.archive": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionUnarchive = "session.unarchive": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionDelete = "session.delete": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionCompact = "session.compact": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionSubscribe = "session.subscribe": crucible_core::protocol::requests::SessionSubscribeRequest => serde_json::Value,
-    SessionUnsubscribe = "session.unsubscribe": crucible_core::protocol::requests::SessionSubscribeRequest => serde_json::Value,
-    SessionConfigureAgent = "session.configure_agent": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::AgentConfig> => serde_json::Value,
+    SessionPause = "session.pause": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionTransitionReply,
+    SessionResume = "session.resume": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionTransitionReply,
+    SessionResumeFromStorage = "session.resume_from_storage": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Page> => crucible_core::protocol::requests::SessionHistoryReply,
+    SessionHistory = "session.history": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Page> => crucible_core::protocol::requests::SessionHistoryReply,
+    SessionEnd = "session.end": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionEndReply,
+    SessionArchive = "session.archive": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionArchiveReply,
+    SessionUnarchive = "session.unarchive": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionArchiveReply,
+    SessionDelete = "session.delete": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionDeleteReply,
+    SessionCompact = "session.compact": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionCompactReply,
+    SessionSubscribe = "session.subscribe": crucible_core::protocol::requests::SessionSubscribeRequest => crucible_core::protocol::requests::SessionSubscribeReply,
+    SessionUnsubscribe = "session.unsubscribe": crucible_core::protocol::requests::SessionSubscribeRequest => crucible_core::protocol::requests::SessionUnsubscribeReply,
+    SessionConfigureAgent = "session.configure_agent": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::AgentConfig> => crucible_core::protocol::requests::SessionConfigureAgentReply,
     SessionSendMessage = "session.send_message": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::MessageInput> => crucible_core::types::SendOutcome,
     SessionCancel = "session.cancel": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionCancelResponse,
-    SessionClear = "session.clear": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionConnectKiln = "session.connect_kiln": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NamedKiln> => serde_json::Value,
-    SessionDisconnectKiln = "session.disconnect_kiln": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NamedKiln> => serde_json::Value,
-    SessionSetWorkspace = "session.set_workspace": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::WorkspaceChoice> => serde_json::Value,
-    // The wire reply is `{"models": [...]}` picked apart by hand.
-    SessionListModels = "session.list_models": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    SessionClear = "session.clear": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionClearReply,
+    SessionConnectKiln = "session.connect_kiln": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NamedKiln> => crucible_core::protocol::requests::SessionScopeReply,
+    SessionDisconnectKiln = "session.disconnect_kiln": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NamedKiln> => crucible_core::protocol::requests::SessionScopeReply,
+    SessionSetWorkspace = "session.set_workspace": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::WorkspaceChoice> => crucible_core::protocol::requests::SessionScopeReply,
+    SessionListModels = "session.list_models": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionListModelsReply,
     SessionListModes = "session.list_modes": crucible_core::protocol::requests::Scoped<()> => crucible_core::types::mode::SessionModes,
-    SessionCommands = "session.commands": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    SessionCommands = "session.commands": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionCommandsReply,
     SessionListKnobs = "session.list_knobs": crucible_core::protocol::requests::Scoped<()> => crucible_core::types::SessionKnobSupport,
-    SessionKnobSet = "session.knob.set": crucible_core::protocol::requests::Scoped<crucible_core::types::KnobValue> => serde_json::Value,
+    SessionKnobSet = "session.knob.set": crucible_core::protocol::requests::Scoped<crucible_core::types::KnobValue> => crucible_core::protocol::requests::SessionKnobSetReply,
     SessionKnobGet = "session.knob.get": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::KnobRef> => crucible_core::types::KnobValue,
-    SessionListAgentOptions = "session.list_agent_options": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    // Params is a function-local, lifetime-bearing struct in the client, not
-    // a named core type; the reply is discarded there too.
-    SessionSetAgentOption = "session.set_agent_option": serde_json::Value => serde_json::Value,
-    // The wire reply is `{"session_id", "hits", "misses", ...}`, hand-built.
-    SessionCacheStats = "session.cache_stats": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionAddNotification = "session.add_notification": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NewNotification> => serde_json::Value,
-    // The wire reply is `{"notifications": [...]}` picked apart by hand.
-    SessionListNotifications = "session.list_notifications": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    // The wire reply is `{"success": bool}` picked apart by hand.
-    SessionDismissNotification = "session.dismiss_notification": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NotificationKey> => serde_json::Value,
+    SessionListAgentOptions = "session.list_agent_options": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionListAgentOptionsReply,
+    SessionSetAgentOption = "session.set_agent_option": crucible_core::protocol::requests::SessionSetAgentOptionRequest => crucible_core::types::plugin_reply::PluginAck,
+    SessionCacheStats = "session.cache_stats": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionCacheStatsReply,
+    SessionAddNotification = "session.add_notification": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NewNotification> => crucible_core::protocol::requests::SessionAddNotificationReply,
+    SessionListNotifications = "session.list_notifications": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionListNotificationsReply,
+    SessionDismissNotification = "session.dismiss_notification": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::NotificationKey> => crucible_core::protocol::requests::SessionDismissNotificationReply,
     NotificationList = "notification.list": crucible_core::protocol::requests::NotificationListRequest => crucible_core::protocol::requests::NotificationListResponse,
     NotificationDismiss = "notification.dismiss": crucible_core::protocol::requests::NotificationDismissRequest => crucible_core::protocol::requests::NotificationDismissResponse,
-    SessionInteractionRespond = "session.interaction_respond": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::InteractionAnswer> => serde_json::Value,
-    SessionPendingInteractions = "session.pending_interactions": () => serde_json::Value,
-    SessionSetPluginApproval = "session.set_plugin_approval": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::PluginApprovalChange> => serde_json::Value,
-    // The wire reply is `{"approval": PluginApproval}` picked apart by hand.
-    SessionGetPluginApproval = "session.get_plugin_approval": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::PluginRef> => serde_json::Value,
-    // The wire reply is `{"approvals": {...}}` picked apart by hand.
-    SessionListPluginApprovals = "session.list_plugin_approvals": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    SessionInjectContext = "session.inject_context": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ContextInjection> => serde_json::Value,
-    SessionTestInteraction = "session.test_interaction": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::TestInteraction> => serde_json::Value,
-    SessionFork = "session.fork": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ForkPoint> => serde_json::Value,
-    SessionSetTitle = "session.set_title": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Title> => serde_json::Value,
-    SessionGenerateTitle = "session.generate_title": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    SessionInteractionRespond = "session.interaction_respond": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::InteractionAnswer> => crucible_core::protocol::requests::SessionInteractionRespondReply,
+    SessionPendingInteractions = "session.pending_interactions": () => crucible_core::protocol::requests::SessionPendingInteractionsReply,
+    SessionSetPluginApproval = "session.set_plugin_approval": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::PluginApprovalChange> => crucible_core::protocol::requests::PluginApprovalReply,
+    SessionGetPluginApproval = "session.get_plugin_approval": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::PluginRef> => crucible_core::protocol::requests::PluginApprovalReply,
+    SessionListPluginApprovals = "session.list_plugin_approvals": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionListPluginApprovalsReply,
+    SessionInjectContext = "session.inject_context": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ContextInjection> => crucible_core::protocol::requests::SessionInjectContextReply,
+    SessionTestInteraction = "session.test_interaction": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::TestInteraction> => crucible_core::protocol::requests::SessionTestInteractionReply,
+    SessionFork = "session.fork": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ForkPoint> => crucible_core::protocol::requests::SessionForkReply,
+    SessionSetTitle = "session.set_title": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::Title> => crucible_core::protocol::requests::SessionTitleReply,
+    SessionGenerateTitle = "session.generate_title": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionTitleReply,
     SessionSearch = "session.search": crucible_core::protocol::requests::SessionSearchRequest => crucible_core::session::SessionSearchResponse,
     SessionEventsAfter = "session.events_after": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::EventCursor> => Vec<crucible_core::protocol::SessionEventMessage>,
     // The wire reply is `serde_json::Value` on purpose today (`session.list_persisted`
     // answers a page of mixed session-summary shapes); see the client for the read.
     SessionListPersisted = "session.list_persisted": crucible_core::protocol::requests::SessionListPersistedRequest => serde_json::Value,
-    SessionRenderMarkdown = "session.render_markdown": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::MarkdownOptions> => serde_json::Value,
-    SessionExportToFile = "session.export_to_file": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ExportOptions> => serde_json::Value,
-    SessionReplay = "session.replay": crucible_core::protocol::requests::SessionReplayRequest => serde_json::Value,
-    SessionCleanup = "session.cleanup": crucible_core::protocol::requests::SessionCleanupRequest => serde_json::Value,
-    // Retired: always answers `METHOD_NOT_FOUND`. No params are read.
-    SessionReindex = "session.reindex": () => serde_json::Value,
-    // The wire reply is `{"undone": [...]}` picked apart by hand.
-    SessionUndo = "session.undo": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::UndoCount> => serde_json::Value,
-    // The wire reply is `{"session_id", "can_undo"}`, hand-built.
-    SessionCanUndo = "session.can_undo": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    // The wire reply is `{"session_id", "undo_depth"}`, hand-built.
-    SessionUndoDepth = "session.undo_depth": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    SessionRenderMarkdown = "session.render_markdown": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::MarkdownOptions> => crucible_core::protocol::requests::SessionRenderMarkdownResponse,
+    SessionExportToFile = "session.export_to_file": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::ExportOptions> => crucible_core::protocol::requests::SessionExportToFileResponse,
+    SessionReplay = "session.replay": crucible_core::protocol::requests::SessionReplayRequest => crucible_core::protocol::requests::SessionReplayStartedReply,
+    SessionCleanup = "session.cleanup": crucible_core::protocol::requests::SessionCleanupRequest => crucible_core::protocol::requests::SessionCleanupReply,
+    // Retired: always answers `METHOD_NOT_FOUND`. No params are read, and no
+    // reply value is ever built, so there is no shape to name beyond "nothing".
+    SessionReindex = "session.reindex": () => (),
+    SessionUndo = "session.undo": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::UndoCount> => crucible_core::protocol::requests::SessionUndoReply,
+    SessionCanUndo = "session.can_undo": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionCanUndoReply,
+    SessionUndoDepth = "session.undo_depth": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionUndoDepthReply,
     PluginReload = "plugin.reload": crucible_core::protocol::requests::NameRequest => crucible_core::types::plugin_reply::PluginReloadReply,
     PluginList = "plugin.list": () => crucible_core::types::plugin_reply::PluginListReply,
     PluginCommands = "plugin.commands": () => crucible_core::types::plugin_reply::PluginCommandsReply,
@@ -251,9 +241,7 @@ rpc_methods! {
     PluginOptionGet = "plugin.option_get": crucible_core::protocol::requests::PluginOptionCallRequest => crucible_core::types::plugin_reply::PluginOptionValue,
     PluginOptionSet = "plugin.option_set": crucible_core::protocol::requests::PluginOptionCallRequest => crucible_core::types::plugin_reply::PluginAck,
     PluginOptionExecute = "plugin.option_execute": crucible_core::protocol::requests::PluginOptionCallRequest => crucible_core::types::plugin_reply::PluginAck,
-    // The wire reply is a hand-built display-item list (`SessionStatus` on
-    // the daemon side is a projection, not yet a core reply type).
-    SessionStatus = "session.status": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    SessionStatus = "session.status": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::SessionStatusReply,
     PluginRunCommand = "plugin.run_command": crucible_core::protocol::requests::PluginRunCommandRequest => crucible_core::types::plugin_reply::PluginRunCommandReply,
     PluginInstall = "plugin.install": crucible_core::protocol::requests::PluginInstallRequest => crucible_core::types::plugin_reply::PluginInstallReply,
     PluginRemove = "plugin.remove": crucible_core::protocol::requests::PluginRemoveRequest => crucible_core::types::plugin_reply::PluginRemoveReply,
@@ -263,20 +251,36 @@ rpc_methods! {
     LuaPluginHealth = "lua.plugin_health": crucible_core::protocol::requests::LuaPluginHealthRequest => crucible_core::protocol::requests::LuaPluginHealthResponse,
     LuaGenerateStubs = "lua.generate_stubs": crucible_core::protocol::requests::LuaGenerateStubsRequest => crucible_core::protocol::requests::LuaGenerateStubsResponse,
     LuaRunPluginTests = "lua.run_plugin_tests": crucible_core::protocol::requests::LuaRunPluginTestsRequest => crucible_core::protocol::requests::LuaRunPluginTestsResponse,
-    LuaRegisterCommands = "lua.register_commands": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::LuaCommands> => serde_json::Value,
+    LuaRegisterCommands = "lua.register_commands": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::LuaCommands> => crucible_core::protocol::requests::LuaRegisterCommandsReply,
+    // The wire reply is `{"result": <whatever the evaluated Lua returned>}`;
+    // the result is arbitrary Lua data by the nature of `eval`, not a shape
+    // this table can name.
     LuaEval = "lua.eval": crucible_core::protocol::requests::LuaEvalRequest => serde_json::Value,
+    // The wire reply is `{"value": <any config value>}` or `{"config": <the
+    // whole tree>}`: the leaf or the store is any config value by nature.
     ConfigGet = "config.get": crucible_core::protocol::requests::ConfigLookupRequest => serde_json::Value,
-    ConfigSet = "config.set": crucible_core::protocol::requests::ConfigValuesRequest => serde_json::Value,
-    ConfigSave = "config.save": crucible_core::protocol::requests::ConfigValuesRequest => serde_json::Value,
+    ConfigSet = "config.set": crucible_core::protocol::requests::ConfigValuesRequest => crucible_core::protocol::requests::ConfigSetReply,
+    ConfigSave = "config.save": crucible_core::protocol::requests::ConfigValuesRequest => crucible_core::protocol::requests::ConfigSaveReply,
+    // The wire reply embeds the leaf's own value, which is any config value
+    // (`config_origin_row` in `crucible-daemon`); `config.reset`/`.pop` add
+    // `outcome`/`dropped` to that same open row.
     ConfigReset = "config.reset": crucible_core::protocol::requests::ConfigKeyRequest => serde_json::Value,
     ConfigPop = "config.pop": crucible_core::protocol::requests::ConfigKeyRequest => serde_json::Value,
     ConfigUnset = "config.unset": crucible_core::protocol::requests::ConfigKeyRequest => serde_json::Value,
+    // The wire reply is a leaf row (or every leaf row) each carrying the
+    // leaf's own value, which is any config value.
     ConfigOrigin = "config.origin": crucible_core::protocol::requests::ConfigLookupRequest => serde_json::Value,
     ConfigEffective = "config.effective": () => serde_json::Value,
+    // The wire reply is the Lua-declared app-config control tree
+    // (`crucible_lua::options::app_config`), shaped by whatever options the
+    // running init.lua declared — the same kind of openness `lua.eval` has.
     ConfigControls = "config.controls": () => serde_json::Value,
-    // `req.params` is read by hand (`session_id`/`name`), not `typed_params`.
-    UiConfig = "ui.config": serde_json::Value => serde_json::Value,
-    UiSetTheme = "ui.set_theme": serde_json::Value => serde_json::Value,
+    // `req.params` is read by hand (`session_id`), not `typed_params`; the
+    // reply is the Lua-declared theme/highlight/geometry/layout snapshot
+    // (`crucible_core::rpc::ui::style_payload`), open for the same reason
+    // `config.controls` is.
+    UiConfig = "ui.config": crucible_core::protocol::requests::UiConfigRequest => serde_json::Value,
+    UiSetTheme = "ui.set_theme": crucible_core::protocol::requests::UiSetThemeRequest => crucible_core::protocol::requests::UiSetThemeReply,
     ProjectRegister = "project.register": crucible_core::protocol::requests::PathRequest => crucible_core::project::Project,
     ProjectUnregister = "project.unregister": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     ProjectList = "project.list": () => Vec<crucible_core::project::Project>,
@@ -330,13 +334,16 @@ rpc_methods! {
     ModelsList = "models.list": crucible_core::protocol::requests::ListAllModelsRequest => crucible_core::protocol::requests::ModelsListReply,
     ProvidersList = "providers.list": crucible_core::protocol::requests::ListProvidersRequest => crucible_core::protocol::requests::ProvidersListReply,
     EmbeddingsModels = "embeddings.models": crucible_core::protocol::requests::EmbeddingModelsRequest => crucible_core::protocol::requests::EmbeddingCatalog,
+    // The wire reply is `{"results": [...]}`; each job answers with whatever
+    // shape its own tool call produced (`AgentManager::collect_jobs` answers
+    // `Vec<serde_json::Value>`), which is not one shape this table can name.
     SubagentCollect = "subagent.collect": crucible_core::protocol::requests::SubagentCollectRequest => serde_json::Value,
     WebhookReceive = "webhook.receive": crucible_core::protocol::requests::WebhookReceiveRequest => crucible_core::protocol::requests::WebhookReceiveReply,
     SuggestLinks = "suggest_links": crucible_core::protocol::requests::SuggestLinksRequest => crucible_core::protocol::requests::SuggestLinksReply,
-    WorkflowStart = "workflow.start": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::WorkflowSource> => serde_json::Value,
-    WorkflowApproveGate = "workflow.approve_gate": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::GateRef> => serde_json::Value,
-    WorkflowStatus = "workflow.status": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
-    WorkflowCancel = "workflow.cancel": crucible_core::protocol::requests::Scoped<()> => serde_json::Value,
+    WorkflowStart = "workflow.start": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::WorkflowSource> => crucible_core::protocol::requests::WorkflowRunReply,
+    WorkflowApproveGate = "workflow.approve_gate": crucible_core::protocol::requests::Scoped<crucible_core::protocol::requests::GateRef> => crucible_core::protocol::requests::WorkflowRunReply,
+    WorkflowStatus = "workflow.status": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::WorkflowStatusReply,
+    WorkflowCancel = "workflow.cancel": crucible_core::protocol::requests::Scoped<()> => crucible_core::protocol::requests::WorkflowCancelReply,
 }
 
 // Every knob now shares one write method, `session.knob.set`, and one read

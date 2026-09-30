@@ -318,6 +318,19 @@ to `crucible-core`; `crucible-daemon`'s `mcp_server.rs`, `scm.rs`,
 `server/note_refactor.rs`, `tools/autolink.rs` and `server/platform.rs`
 now `pub use` them from core instead of defining a second copy.
 
+Step 19 gap 2 closed most of that gap for the `session.*`, `lua.*`,
+`plugin.*`, `surface.*`, `config.*`, `ui.*`, `notification.*`,
+`workflow.*`, `subagent.*` and `daemon.*`/`ping`/`shutdown` rows: every
+`server/session/*.rs`, `server/lua.rs`, `server/plugins.rs`,
+`server/observe.rs`, `rpc/dispatch.rs`, `rpc/ui.rs` and
+`rpc/workflow_handlers.rs` handler that used to build its reply with
+`json!` now builds a named core type from `crucible_core::protocol::requests`
+(via `server::platform::reply` or `serde_json::to_value`) and hands that to
+the client. `session.set_agent_option`'s and `ui.config`/`ui.set_theme`'s
+params, read by hand off a raw `&Request` before this change, are now
+`typed_params::<T>` calls against a named core type too. See
+[[RPC Client#Findings]] for the row-by-row count.
+
 **`LuaSessionState`** (`crates/crucible-daemon/src/server/mod.rs`) pairs a
 per-session `LuaExecutor` with an `end_hooks_fired: bool` guard, because both
 `session.end` (`crates/crucible-daemon/src/rpc/dispatch.rs`) and

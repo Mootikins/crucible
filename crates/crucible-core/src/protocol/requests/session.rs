@@ -341,14 +341,17 @@ pub struct SessionCancelResponse {
 }
 
 /// Response from `session.render_markdown`.
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionRenderMarkdownResponse {
     pub markdown: String,
 }
 
 /// Response from `session.export_to_file`.
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionExportToFileResponse {
+    /// Always `"ok"`: the handler answers an error reply instead of this
+    /// type when the export fails.
+    pub status: String,
     pub output_path: String,
 }
 
@@ -362,4 +365,322 @@ pub struct SessionListReply {
     pub sessions: Vec<crate::session::SessionSummary>,
     /// How many sessions the reply carries.
     pub total: usize,
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step 19 gap 2: the reply types that used to be a bare `serde_json::Value`
+// built with `json!` in the daemon. Each replaces one `json!` shape; none
+// merges two shapes, so none carries an `Option` for that reason.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Reply from `session.pause` and `session.resume`: the state the session
+/// left, and the state it is in now.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionTransitionReply {
+    pub session_id: String,
+    pub previous_state: String,
+    pub state: String,
+}
+
+/// Reply from `session.history` and `session.resume_from_storage`: the
+/// session and one page of its stored events.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionHistoryReply {
+    pub session_id: crate::session::SessionId,
+    #[serde(rename = "type")]
+    pub session_type: String,
+    pub state: String,
+    pub kilns: Vec<crate::config::KilnName>,
+    /// Each event as the storage log holds it — old and new wire shapes
+    /// mixed, so the element type is not one shape. See
+    /// `crucible_core::protocol::session_events::migrate_history`.
+    pub history: Vec<serde_json::Value>,
+    pub total_events: usize,
+    pub transcript: crate::transcript::Transcript,
+}
+
+/// Reply from `session.end`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionEndReply {
+    pub session_id: crate::session::SessionId,
+    pub state: String,
+    pub kilns: Vec<crate::config::KilnName>,
+}
+
+/// Reply from `session.delete`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDeleteReply {
+    pub session_id: crate::session::SessionId,
+    pub deleted: bool,
+}
+
+/// Reply from `session.archive` and `session.unarchive`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionArchiveReply {
+    pub session_id: crate::session::SessionId,
+    pub archived: bool,
+}
+
+/// Reply from `session.replay`: the transient session it registered.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionReplayStartedReply {
+    pub session_id: String,
+    pub status: String,
+    pub speed: f64,
+}
+
+/// Reply from `session.compact`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionCompactReply {
+    pub session_id: crate::session::SessionId,
+    pub state: String,
+    pub compaction_requested: bool,
+}
+
+/// Reply from `session.subscribe`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionSubscribeReply {
+    pub subscribed: Vec<String>,
+    pub client_id: String,
+}
+
+/// Reply from `session.unsubscribe`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionUnsubscribeReply {
+    pub unsubscribed: Vec<String>,
+    pub client_id: String,
+}
+
+/// Reply from `session.set_title` and `session.generate_title`: the same
+/// shape either way.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionTitleReply {
+    pub session_id: String,
+    pub title: String,
+}
+
+/// Reply from `session.configure_agent`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionConfigureAgentReply {
+    pub session_id: String,
+    pub configured: bool,
+}
+
+/// Reply from `session.inject_context`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionInjectContextReply {
+    /// Always `"ok"`: a failed injection answers an error reply instead.
+    pub status: String,
+}
+
+/// Reply from `session.clear`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionClearReply {
+    pub session_id: String,
+}
+
+/// Reply from `session.connect_kiln`, `session.disconnect_kiln` and
+/// `session.set_workspace`: the session's scope after the change (or, for
+/// `set_workspace`, before the refusal — the workspace is fixed at
+/// creation and this method always refuses).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionScopeReply {
+    pub session_id: crate::session::SessionId,
+    pub kilns: Vec<crate::config::KilnName>,
+    pub workspace: Option<String>,
+}
+
+/// Reply from `session.list_models`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionListModelsReply {
+    pub session_id: String,
+    pub models: Vec<String>,
+}
+
+/// Reply from `session.commands`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionCommandsReply {
+    pub session_id: String,
+    pub commands: Vec<crate::types::SessionCommand>,
+}
+
+/// Reply from `session.list_agent_options`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionListAgentOptionsReply {
+    pub session_id: String,
+    pub options: Vec<crate::types::AgentConfigOption>,
+}
+
+/// Params for `session.set_agent_option`. Moved from a function-local
+/// struct in the daemon so the row can name a real type instead of
+/// `serde_json::Value`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionSetAgentOptionRequest {
+    pub session_id: String,
+    pub option_id: String,
+    pub value: String,
+}
+
+/// Reply from `session.knob.set`. The value is not echoed back — see
+/// `session.knob.get` for the read path.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionKnobSetReply {
+    pub session_id: String,
+    pub knob: String,
+    pub set: bool,
+}
+
+/// Reply from `session.add_notification`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionAddNotificationReply {
+    pub session_id: String,
+    pub success: bool,
+}
+
+/// Reply from `session.list_notifications`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionListNotificationsReply {
+    pub session_id: String,
+    pub notifications: Vec<crate::types::Notification>,
+}
+
+/// Reply from `session.dismiss_notification`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDismissNotificationReply {
+    pub session_id: String,
+    pub notification_id: String,
+    pub success: bool,
+}
+
+/// One entry of `session.pending_interactions`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PendingInteraction {
+    pub session_id: String,
+    pub request_id: String,
+    pub request: crate::interaction::InteractionRequest,
+}
+
+/// Reply from `session.pending_interactions`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionPendingInteractionsReply {
+    pub pending: Vec<PendingInteraction>,
+}
+
+/// Reply from `session.interaction_respond`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionInteractionRespondReply {
+    pub session_id: String,
+    pub request_id: String,
+}
+
+/// Reply from `session.set_plugin_approval` and `session.get_plugin_approval`:
+/// the same shape either way.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PluginApprovalReply {
+    pub plugin: String,
+    pub approval: String,
+}
+
+/// Reply from `session.list_plugin_approvals`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionListPluginApprovalsReply {
+    pub approvals: std::collections::BTreeMap<String, crate::session::PluginApproval>,
+}
+
+/// Reply from `session.test_interaction`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionTestInteractionReply {
+    pub session_id: String,
+    pub request_id: String,
+    #[serde(rename = "type")]
+    pub interaction_type: String,
+}
+
+/// Reply from `session.fork`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionForkReply {
+    pub id: crate::session::SessionId,
+    pub parent_id: String,
+    pub messages_copied: u64,
+}
+
+/// Reply from `session.cache_stats`. `hit_rate` is `null` until at least one
+/// completion has reported cache fields.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionCacheStatsReply {
+    pub session_id: String,
+    pub hits: u64,
+    pub misses: u64,
+    pub read_tokens: u64,
+    pub creation_tokens: u64,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub hit_rate: Option<f64>,
+}
+
+/// Reply from `session.undo`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionUndoReply {
+    pub session_id: String,
+    pub undone: Vec<crate::types::UndoSummary>,
+}
+
+/// Reply from `session.can_undo`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionCanUndoReply {
+    pub session_id: String,
+    pub can_undo: bool,
+}
+
+/// Reply from `session.undo_depth`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionUndoDepthReply {
+    pub session_id: String,
+    pub undo_depth: usize,
+}
+
+/// Reply from `session.status`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionStatusReply {
+    pub status: Vec<crate::types::StatusDisplayItem>,
+}
+
+/// Reply from `session.cleanup`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionCleanupReply {
+    pub deleted: Vec<crate::session::SessionId>,
+    pub total: usize,
+    pub dry_run: bool,
+    pub scope: String,
 }

@@ -1057,11 +1057,61 @@ migrate its call sites — left for a follow-up step.
 **Status: part A done (typed `rpc_methods!` rows); gap 1 of part A closed;
 the route itself (parts 1-6 of the change below) is not started.**
 
+**Status: part A done (typed `rpc_methods!` rows); gap 2 done for the
+`session.*`, `lua.*`, `plugin.*`, `surface.*`, `config.*`, `ui.*`,
+`notification.*`, `workflow.*`, `subagent.*`, `daemon.*`, `ping` and
+`shutdown` rows (below); the route itself (parts 1-6 of the change below)
+is not started.**
+
+**Gap 2, done for one row set.** Of the 97 rows in that set, 64 named
+`serde_json::Value` as their reply (plus 2 more — `ui.config` and
+`session.set_agent_option` — whose *params* were `serde_json::Value`
+because the handler read a raw `&Request` by hand). After this change, 11
+reply-`Value` rows remain, each with a row comment naming why it stays
+open:
+
+- `config.get`, `config.origin`, `config.reset`, `config.pop`,
+  `config.unset`, `config.effective`, `config.controls` — the reply
+  embeds an arbitrary config value or a Lua-declared control tree.
+- `ui.config` — the reply is the Lua-declared theme/highlight/geometry/
+  layout snapshot (`ui.config`'s *params* are now typed).
+- `lua.eval` — the reply is whatever the evaluated Lua returned.
+- `subagent.collect` — each job answers with its own tool call's shape.
+- `session.list_persisted` — already documented as deliberately open
+  (a page of mixed session-summary shapes); unchanged by this pass.
+
+Every other row in the set now names a core reply type in
+`crucible_core::protocol::requests` (`session.rs`, `lua.rs`, `config.rs`,
+`workflow.rs`, a new `ui.rs`). Two daemon-local types moved to core because
+they already named only core types (`ConfigSaveReply`, and
+`workflow_registry::WorkflowStatusSnapshot` → `WorkflowStatusReply`); one
+function-local params struct moved to core
+(`SessionSetAgentOptionRequest`). `session.reindex`, a retired stub that
+never builds a reply, is typed `()`. `shutdown`'s reply was always a bare
+JSON string, so it is typed `String`, matching `ping`. Wire compatibility
+is proved in `crucible-core/src/protocol/requests/step19_gap2_wire.rs`:
+each new type, filled with sample data, must serialize to the exact JSON
+the pre-change `json!` call built (transcribed from the daemon source
+before the type existed) and that JSON must still deserialize into the new
+type. The other row groups — kiln, note, search, fs, base, diff, proposal,
+storage, mcp, skills, agents, models, providers, embeddings, project, scm,
+webhook, llm, embed, and the bare `session.*` storage methods — are a
+separate pass.
+
 **Open after part A.** One gap stays, and the route needs it closed:
 1. 91 of 169 rows still reply `serde_json::Value`, so the generated TS map
    says `unknown` for them. Each needs a core reply type, as step 10 gave
    the other domains; a daemon-local reply type moves to core. The route is
-   only as typed as these replies.
+   only as typed as these replies. **Update:** the `session.*`/`lua.*`/
+   `plugin.*`/`surface.*`/`config.*`/`ui.*`/`notification.*`/`workflow.*`/
+   `subagent.*`/`daemon.*`/`ping`/`shutdown` slice of these rows is typed
+   (see "Gap 2, done for one row set" above); the generated TS map still
+   says `unknown` for nearly all of them regardless, because
+   `gen_rpc_methods_ts` only names a type that `api-schema.d.ts` already
+   has a schema for, and `utoipa` only emits one for a type a live web
+   route returns — which is parts 1-6 below, still not started. Typing a
+   row's Rust reply and making the browser see it are two different
+   gates; this pass closed the first for that row slice, not the second.
 
 **Gap 1, closed.** A Rust call site was not bound to its row:
 `DaemonClient::call<Req, Resp>` let the caller pick the types, so a caller

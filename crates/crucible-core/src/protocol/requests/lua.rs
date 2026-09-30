@@ -126,3 +126,11 @@ pub struct LuaRunPluginTestsResponse {
 pub struct LuaCommands {
     pub commands: Vec<serde_json::Value>,
 }
+
+/// Reply from `lua.register_commands`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LuaRegisterCommandsReply {
+    /// How many of the sent commands loaded.
+    pub registered: usize,
+}

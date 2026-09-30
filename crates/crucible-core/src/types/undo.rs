@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Result of a single undo operation, returned to the caller.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UndoSummary {
     /// How many messages were removed from history.
     pub messages_removed: usize,

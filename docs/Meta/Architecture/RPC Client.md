@@ -576,3 +576,32 @@ either; they are exercised, if at all, outside this page's file set.
   `AgentProfileEntry` moved from `crucible-daemon` to
   `crucible-core/src/protocol/requests/storage.rs` (and `agent.rs` for the
   agent/model/provider replies); the daemon crate now only re-exports them.
+
+- Step 19 gap 2 (`session.*`, `lua.*`, `plugin.*`, `surface.*`, `config.*`,
+  `ui.*`, `notification.*`, `workflow.*`, `subagent.*`, `daemon.*`, `ping`,
+  `shutdown`): gave each `json!`-built reply in this row set a named core
+  reply type in `crucible_core::protocol::requests` (`session.rs`, `lua.rs`,
+  `config.rs`, `workflow.rs`, and a new `ui.rs`), and moved
+  `ConfigSaveReply` and the `workflow.status` snapshot
+  (`WorkflowStatusSnapshot` → `WorkflowStatusReply`) from `crucible-daemon`
+  to core — both named only core types already, so the move added no cycle.
+  `session.set_agent_option`'s params moved from a function-local struct in
+  the handler to `SessionSetAgentOptionRequest`. 64 of this row set's rows
+  named `serde_json::Value` as a reply before this change; 11 remain, each
+  with a row comment naming why (an arbitrary config value, a Lua-declared
+  snapshot or control tree, an `eval` result, or a per-job result list — the
+  same openness `lua.eval` already had). `session.list_persisted` was
+  already documented as deliberately open and is unchanged.
+  `session.reindex`, a retired stub that never builds a reply, is now typed
+  `()` rather than `Value`. `crates/crucible-core/src/protocol/requests/
+  step19_gap2_wire.rs` proves each new reply type serializes to the exact
+  JSON the pre-change `json!` call built (transcribed from the source, not
+  captured as a separate fixture file — see that module's doc comment for
+  why). This step's own rows have no client-visible type gap yet: the
+  generated TS map (`rpc-methods.d.ts`) still shows `unknown` for nearly all
+  of them, because `gen_rpc_methods_ts` only names a type that already has
+  an OpenAPI schema entry, and `utoipa` only emits one for a type an actual
+  web route returns — the `/api/rpc/{method}` route is the unstarted part of
+  step 19, not gap 2. Only `shutdown` (→ `String`) and `session.reindex`
+  (→ `()`) improved in the generated map, because those two TS shapes
+  (`string`, `null`) need no schema lookup at all.
