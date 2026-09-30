@@ -379,15 +379,13 @@
   --color-shell-ink: var(--mk-nav-ink); --color-shell-body: var(--mk-nav-body);
 }
 /* The left icon strip takes a third shade, so the icons read apart from
-   the list beside them. */
+   the list beside them. The shade mixes in with the slide
+   (`--wm-edge-progress`: 0 shut, 1 open), so a closed rail is only its icons
+   on the plain ground, and the strip grows and fades with the body. */
 [data-testid='edge-host-left'] {
-  --mk-strip: color-mix(in oklab, var(--mk-nav-solid), var(--mk-main-base) 45%);
+  --mk-strip: color-mix(in oklab, var(--mk-nav-solid), var(--mk-main-base) calc(45% * var(--wm-edge-progress, 1)));
   --mk-line: var(--mk-main-solid);
 }
-/* A closed rail is only its icons, on the plain ground. `data-edge-shown`
-   comes on when the rail starts to open and goes off when it has slid shut,
-   so the strip grows out of the icon and leaves with the body. */
-[data-testid='edge-host-left']:not([data-edge-shown]) { --mk-strip: var(--mk-nav-solid); }
 [data-testid='edge-host-right'] { --mk-dir: rtl; --mk-start: right; --mk-end: left; }
 /* The toolbox "Right rail: Card": each pane is a MAIN card. The card starts
    level with the document tabs. */
@@ -460,7 +458,11 @@ body { background: var(--mk-nav); }
 .wm-ribbon { --color-shell-bg: transparent; background: var(--mk-strip); border-color: transparent; }
 .wm-ribbon-tab { direction: var(--mk-dir); }
 .wm-ribbon-tab[data-highlighted]::before,
-.wm-ribbon-tab[data-highlighted]::after { content: ''; position: absolute; z-index: -1; pointer-events: none; }
+.wm-ribbon-tab[data-highlighted]::after {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  /* The cutout fades in step with the slide, so the pane grows out of it. */
+  opacity: var(--wm-edge-progress, 1);
+}
 .wm-ribbon-tab[data-highlighted]::before { inset-block: 3px; inset-inline: 5px -2px; border-start-start-radius: 8px; border-end-start-radius: 8px; background: var(--mk-pane-bg); }
 .wm-ribbon-tab[data-highlighted]::after {
   inset-block: calc(3px - var(--mk-foot));
