@@ -1593,19 +1593,23 @@ not "Gone" ones.
    because the web's `forward_rpc!` calls them by name; the one route of
    this step removes those callers. Keep a method only where it adds
    behavior (a retry or timeout policy, a derived value, an argument
-   transform), and name the behavior. **In progress.** The web forwarders
-   of the migrated domains are gone. 166 hand-written `DaemonClient`
-   methods remain at `bfd3dc8f1`.
-10. Make a read on the RPC route replay-safe. The route treats every method
-    as `ReplayPolicy::Once`. After a daemon restart, the first read through
-    the route fails, and the old per-route `Safe` read retried. One
-    exhaustive table on `RpcMethod` must say which methods are safe to
-    replay. **In progress.**
-11. Delete the second copies that the migration left in the frontend: TS
-    functions whose body is only one `rpc(...)` call, TS aliases of
-    generated types, and comments about deleted code. **In progress.**
-12. Give `rpc(...)` the plugin caller header, and move `plugin.run_command`
-    and `plugin.publications` onto the route. **In progress.**
+   transform), and name the behavior. **Done in two passes.** The
+   hand-written methods went from 165 to 113. Each method that stays names
+   its behavior: a non-default timeout (`scm_clone`, `embedding_models`), a
+   subscription, connection management, a shared argument transform or a
+   reply decode.
+10. Make a read replay-safe. **Done.** Each `rpc_methods!` row carries the
+    word `read` or `write`. `RpcMethod::is_replay_safe` is generated from
+    that word. The generated `rpc_<variant>` method retries a `read` row and
+    calls a `write` row once. The web route uses the same answer.
+11. Delete the second copies that the migration left in the frontend.
+    **Done in part.** 21 wrapper functions left `lib/api.ts` (99 → 78). The
+    aliases in `lib/types.ts` stay, because many callers use their short
+    names.
+12. Give `rpc(...)` the plugin caller header. **Done.** `plugin.run_command`
+    and `plugin.publications` moved onto the route (routes 46 → 44). The
+    route refuses these two methods when the caller names nobody, as the
+    plugin routes did.
 
 **Findings of the migration.**
 - `ReconnectingDaemon::forward_rpc` healed the connection only for a `Safe`
