@@ -23,6 +23,8 @@ export interface RpcMethods {
   'ping': { params: null; result: string };
   'daemon.capabilities': { params: null; result: Schemas['DaemonCapabilities'] };
   'shutdown': { params: null; result: string };
+  'client_state.get': { params: Schemas['ClientStateKey']; result: Schemas['ClientStateGetReply'] };
+  'client_state.set': { params: Schemas['ClientStateSetRequest']; result: Schemas['StatusReply'] };
   'kiln.open': { params: Schemas['KilnOpenRequest']; result: Schemas['KilnOpenReply'] };
   'kiln.close': { params: Schemas['PathRequest']; result: Schemas['StatusReply'] };
   'kiln.list': { params: null; result: (Schemas['KilnRow'])[] };
@@ -139,7 +141,7 @@ export interface RpcMethods {
   'config.controls': { params: null; result: unknown };
   'ui.config': { params: Schemas['UiConfigRequest']; result: unknown };
   'ui.set_theme': { params: Schemas['UiSetThemeRequest']; result: Schemas['UiSetThemeReply'] };
-  'project.register': { params: Schemas['PathRequest']; result: Schemas['Project'] };
+  'project.register': { params: Schemas['ProjectRegisterRequest']; result: Schemas['Project'] };
   'project.unregister': { params: Schemas['PathRequest']; result: Schemas['StatusReply'] };
   'project.list': { params: null; result: (Schemas['Project'])[] };
   'project.get': { params: Schemas['PathRequest']; result: (Schemas['Project'] | null) };

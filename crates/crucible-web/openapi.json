@@ -5904,6 +5904,47 @@
         ],
         "description": "One SSE `data:` payload of `GET /api/chat/events/{session_id}`.\n\nDocumentation only — `to_sse` builds each frame from its own producer and\nnever constructs this enum. It exists so `openapi.json` can name one\nschema for the route: either a typed session event, in the same\n`{event, data}` shape [`SessionEventPayload`] itself serializes to, or a\n[`TranscriptFrame`], the second frame a live event sends when it changed\nthe transcript."
       },
+      "ClientStateGetReply": {
+        "type": "object",
+        "description": "Reply from `client_state.get`. `None` when nothing was ever stored under\nthat `(client, key)` — not an error, the common case before a first save.",
+        "properties": {
+          "value": {}
+        }
+      },
+      "ClientStateKey": {
+        "type": "object",
+        "description": "One opaque blob in the daemon's generic client-state store\n(`client_state.get`/`client_state.set`).\n\n`client` names the kind of caller (`\"web\"`, `\"web-standalone\"`); `key`\nnames one blob within it (`\"layout\"`, `\"recents\"`). The daemon stores\n`value` verbatim and never reads it — the shape belongs entirely to the\ncaller, the same way the web's own layout blob always has.",
+        "required": [
+          "client",
+          "key"
+        ],
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientStateSetRequest": {
+        "type": "object",
+        "description": "Request for `client_state.set`.",
+        "required": [
+          "client",
+          "key",
+          "value"
+        ],
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "value": {}
+        }
+      },
       "Column": {
         "type": "object",
         "required": [
@@ -13077,6 +13118,23 @@
           "path": {
             "type": "string",
             "description": "Absolute path of the project root."
+          }
+        }
+      },
+      "ProjectRegisterRequest": {
+        "type": "object",
+        "description": "What `project.register` takes.\n\n`untrusted` tells the daemon the caller is not the local user at the\nmachine — today, the web API sets it. A local caller (the CLI, the TUI, a\nLua script) already has full filesystem access to whatever it can name, so\nit omits the field and gets the plain daemon floor (the filesystem root,\nthe home directory and the system trees, refused for every caller). An\nuntrusted caller also gets the extra refusal of a personal\ncredential store or the user's config/state tree, because a registered\nroot is a read scope for every client afterward.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the project root."
+          },
+          "untrusted": {
+            "type": "boolean",
+            "description": "The caller is not the local user at the machine."
           }
         }
       },

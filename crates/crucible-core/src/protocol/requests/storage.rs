@@ -884,6 +884,7 @@ pub struct ProcessBatchReply {
 /// credential store or the user's config/state tree, because a registered
 /// root is a read scope for every client afterward.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProjectRegisterRequest {
     /// Absolute path of the project root.
     pub path: String,

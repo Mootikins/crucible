@@ -2760,6 +2760,32 @@ export interface components {
          *     the transcript.
          */
         ChatSseFrame: components["schemas"]["SessionEventPayload"] | components["schemas"]["TranscriptFrame"];
+        /**
+         * @description Reply from `client_state.get`. `None` when nothing was ever stored under
+         *     that `(client, key)` — not an error, the common case before a first save.
+         */
+        ClientStateGetReply: {
+            value?: unknown;
+        };
+        /**
+         * @description One opaque blob in the daemon's generic client-state store
+         *     (`client_state.get`/`client_state.set`).
+         *
+         *     `client` names the kind of caller (`"web"`, `"web-standalone"`); `key`
+         *     names one blob within it (`"layout"`, `"recents"`). The daemon stores
+         *     `value` verbatim and never reads it — the shape belongs entirely to the
+         *     caller, the same way the web's own layout blob always has.
+         */
+        ClientStateKey: {
+            client: string;
+            key: string;
+        };
+        /** @description Request for `client_state.set`. */
+        ClientStateSetRequest: {
+            client: string;
+            key: string;
+            value: unknown;
+        };
         Column: {
             display_name: string;
             property: string;
@@ -6009,6 +6035,24 @@ export interface components {
             path: string;
         };
         /**
+         * @description What `project.register` takes.
+         *
+         *     `untrusted` tells the daemon the caller is not the local user at the
+         *     machine — today, the web API sets it. A local caller (the CLI, the TUI, a
+         *     Lua script) already has full filesystem access to whatever it can name, so
+         *     it omits the field and gets the plain daemon floor (the filesystem root,
+         *     the home directory and the system trees, refused for every caller). An
+         *     untrusted caller also gets the extra refusal of a personal
+         *     credential store or the user's config/state tree, because a registered
+         *     root is a read scope for every client afterward.
+         */
+        ProjectRegisterRequest: {
+            /** @description Absolute path of the project root. */
+            path: string;
+            /** @description The caller is not the local user at the machine. */
+            untrusted?: boolean;
+        };
+        /**
          * @description What `POST /api/project/unregister` answers.
          *
          *     The route's own shape: the daemon reports the unregistration as `()`, so
@@ -9109,6 +9153,9 @@ export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedRespon
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaCapabilityFlags = components['schemas']['CapabilityFlags'];
 export type SchemaChatSseFrame = components['schemas']['ChatSseFrame'];
+export type SchemaClientStateGetReply = components['schemas']['ClientStateGetReply'];
+export type SchemaClientStateKey = components['schemas']['ClientStateKey'];
+export type SchemaClientStateSetRequest = components['schemas']['ClientStateSetRequest'];
 export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffect = components['schemas']['CommandEffect'];
 export type SchemaCommandKind = components['schemas']['CommandKind'];
@@ -9359,6 +9406,7 @@ export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
 export type SchemaProjectOpenKilnsNoMatch = components['schemas']['ProjectOpenKilnsNoMatch'];
 export type SchemaProjectOpenKilnsReply = components['schemas']['ProjectOpenKilnsReply'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
+export type SchemaProjectRegisterRequest = components['schemas']['ProjectRegisterRequest'];
 export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
 export type SchemaProposal = components['schemas']['Proposal'];
 export type SchemaProposalAcceptRequest = components['schemas']['ProposalAcceptRequest'];

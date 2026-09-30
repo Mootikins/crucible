@@ -229,6 +229,7 @@ where
 /// `value` verbatim and never reads it — the shape belongs entirely to the
 /// caller, the same way the web's own layout blob always has.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ClientStateKey {
     pub client: String,
     pub key: String,
@@ -236,6 +237,7 @@ pub struct ClientStateKey {
 
 /// Request for `client_state.set`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ClientStateSetRequest {
     pub client: String,
     pub key: String,
@@ -245,6 +247,7 @@ pub struct ClientStateSetRequest {
 /// Reply from `client_state.get`. `None` when nothing was ever stored under
 /// that `(client, key)` — not an error, the common case before a first save.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ClientStateGetReply {
     pub value: Option<serde_json::Value>,
 }
