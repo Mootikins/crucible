@@ -34,12 +34,31 @@ use std::time::Duration;
 
 /// The time a daemon may take to exit after SIGTERM.
 ///
-/// The daemon's own budget is 4 s at most: 2 s for its tasks, 1 s for a
-/// session write that already started, and 1 s for blocking work. An idle
-/// daemon exits in 0.04 to 0.16 s, also with 64 busy loops on 32 cores. The
-/// bound is above the worst case of the budget, so only a daemon that does not
-/// keep to its budget fails.
-const EXIT_BOUND: Duration = Duration::from_secs(5);
+/// The daemon's own shutdown budget is 4 s at most: 2 s for its tasks, 1 s
+/// for a session write that already started, and 1 s for blocking work. An
+/// idle daemon exits in 0.04 to 0.16 s, also with 64 busy loops on 32 cores.
+///
+/// Boot itself is not part of that budget and is not bounded: plugin
+/// activation, ACP agent discovery (real subprocesses, each with its own
+/// timeout) and kiln open all run after the socket starts accepting
+/// connections but before `Server::run` — the readiness this fixture waits
+/// on — so a client that connects the moment the socket is up, and signals
+/// right away, can have its signal land anywhere from just before boot
+/// finishes to well into it. `ShutdownSignals::forward_to` used to bridge
+/// that signal onto the server's shutdown channel by re-subscribing inside
+/// `run`, which raced the boot tail: a signal delivered while boot was
+/// still running, then forwarded the instant boot returned, could reach the
+/// channel before `run` subscribed to it and be dropped for good — see
+/// `server::tests::shutdown::a_shutdown_sent_before_run_is_not_lost`, which
+/// reproduces that drop without any load at all. With the receiver now held
+/// from bind onward, a caught signal is never lost; the remaining variable
+/// is purely how long boot's tail takes under load. 20 s leaves 16 s above
+/// the daemon's own 4 s budget for that boot tail, comfortably above the
+/// worst boot-tail duration seen while reproducing this (about 2.5 s, from
+/// two ACP agent version checks timing out), and still far below the wait a
+/// genuine regression (e.g. the pre-fix "more than 30 s" above) would
+/// produce.
+const EXIT_BOUND: Duration = Duration::from_secs(20);
 
 /// Send SIGTERM and require an exit with code 0 inside [`EXIT_BOUND`].
 fn assert_sigterm_exits_in_time(daemon: &mut TestDaemon) {
