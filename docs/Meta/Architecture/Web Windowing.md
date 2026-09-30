@@ -249,6 +249,12 @@ holds the controls, so each control has one implementation in every place.
 - **Not stored.** It is the user's setting: a reset and a restore keep it, and
   the serializer does not write it.
 
+
+A content that shows only some controls of its own (for example a hover
+popup with only pin and close) calls `fw.claim()` in its setup instead of
+mounting `fw.controls`: the window then draws no fallback title bar while
+that component is mounted. `fw.close()` closes the window with the same
+unsaved-changes check as its close button.
 ## Pop out and dock
 
 The right-click menu of a tab moves the tab between the layout and a floating

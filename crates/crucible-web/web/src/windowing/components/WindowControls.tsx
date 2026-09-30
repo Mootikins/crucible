@@ -42,19 +42,24 @@ export const WindowPinButton: Component<{ windowId: string }> = (props) => (
 );
 
 /** The tab bar toggle, dock, roll up, maximize or restore, and close. */
+/**
+ * Close a floating window. Closing the window closes its tabs: the same
+ * unsaved-changes contract as every other path that closes a tab
+ * (confirmTabClose per modified tab).
+ */
+function closeWindow(windowId: string): void {
+  const win = windowOf(windowId);
+  if (!win) return;
+  const tabs = windowStore.tabGroups[win.tabGroupId]?.tabs ?? [];
+  for (const tab of tabs.filter((t) => t.isModified)) {
+    if (!confirmTabClose(tab)) return;
+  }
+  windowActions.closeFloatingWindow(windowId);
+}
+
 export const WindowActionButtons: Component<{ windowId: string }> = (props) => {
   const w = () => windowOf(props.windowId);
-  // Closing the window closes its tabs: the same unsaved-changes contract as
-  // every other path that closes a tab (confirmTabClose per modified tab).
-  const handleClose = () => {
-    const win = w();
-    if (!win) return;
-    const tabs = windowStore.tabGroups[win.tabGroupId]?.tabs ?? [];
-    for (const tab of tabs.filter((t) => t.isModified)) {
-      if (!confirmTabClose(tab)) return;
-    }
-    windowActions.closeFloatingWindow(props.windowId);
-  };
+  const handleClose = () => closeWindow(props.windowId);
   return (
     <>
       <button
@@ -141,6 +146,15 @@ export interface FloatingWindowHandle {
   chrome: () => FloatingChrome;
   /** True when the window shows its tab bar. */
   hasTabBar: () => boolean;
+  /**
+   * Say that the caller shows controls of its own for this window, so the
+   * window draws no fallback title bar. Call it in a component's setup: the
+   * claim ends when that component unmounts. A content that shows a subset
+   * (for example only pin and close) uses this instead of `controls`.
+   */
+  claim: () => void;
+  /** Close the window, with the same unsaved-changes check as its close button. */
+  close: () => void;
 }
 
 const FloatingWindowCtx = createContext<FloatingWindowHandle | null>(null);
@@ -163,6 +177,8 @@ export function FloatingWindowProvider(props: {
     },
     chrome: () => windowStore.floatingChrome,
     hasTabBar: () => windowOf(id)?.showTabBar !== false,
+    claim: () => onCleanup(props.onClaim()),
+    close: () => closeWindow(id),
   };
   return <FloatingWindowCtx.Provider value={handle}>{props.children}</FloatingWindowCtx.Provider>;
 }

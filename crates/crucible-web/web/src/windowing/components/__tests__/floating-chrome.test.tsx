@@ -208,6 +208,24 @@ describe('a tabless merged window', () => {
     expect(document.querySelector('.wm-floating .wm-tabbar-actions .wm-window-controls')).not.toBeNull();
   });
 
+  it('draws no title bar when the content claims the controls and shows its own', () => {
+    const id = floatTwoTabs({ showTabBar: false });
+    const subset: WindowingContextValue['renderContent'] = (tab) => {
+      if (tab().contentType !== 'float') return neutralRenderer(tab);
+      const fw = useFloatingWindow()!;
+      fw.claim();
+      return (
+        <nav>
+          <button type="button" data-testid="own-close" onClick={() => fw.close()}>Close</button>
+        </nav>
+      );
+    };
+    const { container, getByTestId } = mount(subset);
+    expect(floating(container).querySelector('.wm-floating-titlebar')).toBeNull();
+    fireEvent.click(getByTestId('own-close'));
+    expect(win(id)).toBeUndefined();
+  });
+
   it('draws its title bar when the content does not take the controls', () => {
     floatTwoTabs({ showTabBar: false });
     const { container } = mount();
