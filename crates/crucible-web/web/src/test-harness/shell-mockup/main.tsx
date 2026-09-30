@@ -7,6 +7,10 @@
  * tabs, the splits, the floating windows and the expand are the core's; the
  * look comes from a theme stylesheet of `--cru-*` values, as a plugin theme
  * would apply it; the panel bodies are mockups with the docs kiln as content.
+ *
+ * The style and the layout are fairly solid (2026-09-30). The real app takes
+ * its look from here, region by region. To change the design, change this
+ * mockup first. See the "Shell mockup" entry in `web/AGENTS.md`.
  */
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
