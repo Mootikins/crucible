@@ -5,14 +5,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import {
-  getProject,
-  listProjects,
-  registerProject,
-  scmClone,
-  unregisterProject,
-  type ScmCloneResponse,
-} from '@/lib/api';
+import { registerProject, scmClone, type ScmCloneResponse } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
 import type { Project } from '@/lib/types';
 import { getQueryClient } from './client';
@@ -48,7 +42,7 @@ function storedProjects(): Project[] | undefined {
 
 /** The one fetch, which also refreshes what the next cold load paints. */
 async function fetchProjects(): Promise<Project[]> {
-  const projects = await listProjects();
+  const projects = await rpc('project.list', null);
   writeLocalCache(STORAGE_KEY, projects);
   return projects;
 }
@@ -136,7 +130,9 @@ export function useRegisterProject(): UseMutationResult<Project, Error, string> 
 export function useUnregisterProject(): UseMutationResult<void, Error, string> {
   return useMutation(
     () => ({
-      mutationFn: (path: string) => unregisterProject(path),
+      mutationFn: async (path: string) => {
+        await rpc('project.unregister', { path });
+      },
       onSuccess: () => invalidateRoster(seededClient(), false),
     }),
     () => seededClient(),
@@ -173,7 +169,7 @@ export function useScmClone(): UseMutationResult<ScmCloneResponse, Error, string
 export function fetchProjectOnce(path: string): Promise<Project | null> {
   return seededClient().ensureQueryData({
     queryKey: keys.project(path),
-    queryFn: () => getProject(path),
+    queryFn: () => rpc('project.get', { path }),
   });
 }
 

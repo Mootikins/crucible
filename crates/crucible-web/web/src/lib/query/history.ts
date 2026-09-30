@@ -5,7 +5,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import { getSessionHistory, sendChatMessage, type SendOutcome } from '@/lib/api';
+import { sendChatMessage, type SendOutcome } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import type { SessionHistoryResponse } from '@/lib/types';
 import type { CommentRef } from '@/lib/diffset';
 import { getQueryClient } from './client';
@@ -41,7 +42,11 @@ const HISTORY_LIMIT = 10000;
 
 /** The one fetch every reader of one session's transcript shares. */
 function fetchHistory(sessionId: string, signal?: AbortSignal): Promise<SessionHistoryResponse> {
-  return getSessionHistory(sessionId, HISTORY_LIMIT, undefined, signal);
+  return rpc(
+    'session.history',
+    { session_id: sessionId, limit: HISTORY_LIMIT, offset: undefined },
+    { signal },
+  );
 }
 
 /**

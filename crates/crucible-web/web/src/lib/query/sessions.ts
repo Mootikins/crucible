@@ -8,18 +8,15 @@ import {
 } from '@tanstack/solid-query';
 import {
   archiveSession,
-  cancelSession,
   createSession,
   deleteSession,
   endSession,
   exportSession,
-  getSession,
   listSessions,
   pauseSession,
   resumeSession,
-  setSessionTitle,
-  unarchiveSession,
 } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
 import type { CreateSessionParams, Session, SessionDetail } from '@/lib/types';
 import { getQueryClient } from './client';
@@ -103,9 +100,7 @@ function seededClient(): QueryClient {
  * the desktop rail asks for the archived rows, the phone tab does not. Passing
  * the value would pin one answer for the life of the component.
  */
-export function useSessions(
-  includeArchived: Accessor<boolean>,
-): UseQueryResult<Session[], Error> {
+export function useSessions(includeArchived: Accessor<boolean>): UseQueryResult<Session[], Error> {
   return useQuery(
     () => ({
       queryKey: keys.sessions(includeArchived()),
@@ -127,7 +122,7 @@ export function useSession(id: Accessor<string | null>): UseQueryResult<Session,
       const sessionId = id();
       return {
         queryKey: keys.session(sessionId ?? ''),
-        queryFn: () => getSession(sessionId as string),
+        queryFn: () => rpc('session.get', { session_id: sessionId as string }),
         enabled: sessionId !== null,
       };
     },
@@ -145,7 +140,7 @@ export function useSession(id: Accessor<string | null>): UseQueryResult<Session,
 export function fetchSessionOnce(id: string): Promise<SessionDetail> {
   return seededClient().ensureQueryData({
     queryKey: keys.session(id),
-    queryFn: () => getSession(id),
+    queryFn: () => rpc('session.get', { session_id: id }),
   });
 }
 
@@ -194,9 +189,7 @@ export function patchCachedSession(id: string, patch: Partial<Session>): void {
       held.map((session) => (session.session_id === id ? { ...session, ...patch } : session)),
     );
   }
-  client.setQueryData<Session>(keys.session(id), (held) =>
-    held ? { ...held, ...patch } : held,
-  );
+  client.setQueryData<Session>(keys.session(id), (held) => (held ? { ...held, ...patch } : held));
 }
 
 /**
@@ -209,7 +202,9 @@ export function patchCachedSession(id: string, patch: Partial<Session>): void {
 export function dropCachedSession(id: string): void {
   const client = seededClient();
   for (const includeArchived of [false, true]) {
-    writeList(client, includeArchived, (held) => held.filter((session) => session.session_id !== id));
+    writeList(client, includeArchived, (held) =>
+      held.filter((session) => session.session_id !== id),
+    );
   }
   client.removeQueries({ queryKey: keys.session(id) });
 }
@@ -332,7 +327,9 @@ export function useArchiveSession(): UseMutationResult<void, Error, string> {
 export function useUnarchiveSession(): UseMutationResult<void, Error, string> {
   return useMutation(
     () => ({
-      mutationFn: (id: string) => unarchiveSession(id),
+      mutationFn: async (id: string) => {
+        await rpc('session.unarchive', { session_id: id });
+      },
       onSuccess: (_result: void, id: string) => {
         const client = seededClient();
         moveBetweenLists(client, id, false);
@@ -352,7 +349,9 @@ export function useUnarchiveSession(): UseMutationResult<void, Error, string> {
  */
 export function useCancelSession(): UseMutationResult<boolean, Error, string> {
   return useMutation(
-    () => ({ mutationFn: (id: string) => cancelSession(id) }),
+    () => ({
+      mutationFn: async (id: string) => (await rpc('session.cancel', { session_id: id })).cancelled,
+    }),
     () => seededClient(),
   );
 }
@@ -379,7 +378,9 @@ export function useSetSessionTitle(): UseMutationResult<
 > {
   return useMutation(
     () => ({
-      mutationFn: ({ id, title }: { id: string; title: string }) => setSessionTitle(id, title),
+      mutationFn: async ({ id, title }: { id: string; title: string }) => {
+        await rpc('session.set_title', { session_id: id, title });
+      },
       onSuccess: (_result: void, { id, title }: { id: string; title: string }) => {
         patchCachedSession(id, { title });
         return seededClient().invalidateQueries({ queryKey: keys.session(id) });

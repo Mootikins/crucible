@@ -1,13 +1,28 @@
 import type { components } from './api-schema';
 import type { RpcMethods } from './rpc-methods';
 import type { SessionCommand } from './slash-commands';
-import { APP_CALLER, callerParam, client, decode, expectOk, rpc, type ApiError } from './api-client';
+import {
+  APP_CALLER,
+  callerParam,
+  client,
+  decode,
+  expectOk,
+  rpc,
+  type ApiError,
+} from './api-client';
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type { CommentRef } from './diffset';
 import { rawFileUrl } from './paths';
 import { assertStreamVersion } from './stream-version';
-import type { BaseRequest, BaseResult, CreateEntryParams, ReorderGroupsParams, SetPropertyParams, WriteOutcome } from './query/bases';
+import type {
+  BaseRequest,
+  BaseResult,
+  CreateEntryParams,
+  ReorderGroupsParams,
+  SetPropertyParams,
+  WriteOutcome,
+} from './query/bases';
 import type {
   AnchoredEdit,
   AppConfigNode,
@@ -23,22 +38,16 @@ import type {
   ProviderTarget,
   SemanticHit,
   Session,
-  SessionDetail,
   SessionEventName,
-  SessionHistoryResponse,
-  SessionScope,
   SessionSearchResponse,
-  SessionKnobSupport,
   SessionModes,
   TargetProvider,
   FileEntry,
   NoteEntry,
   BacklinksResponse,
   SequencedChatEvent,
-  KilnListEntry,
   FsListing,
   FsEvent,
-  AgentConfigOptions,
 } from './types';
 
 /**
@@ -477,7 +486,9 @@ function openReconnectingSource(
       source = null;
       attempts++;
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempts - 1), RECONNECT_CAP_MS);
-      console.warn(`The ${streamName} stream disconnected. Reconnect in ${delay}ms (attempt ${attempts}).`);
+      console.warn(
+        `The ${streamName} stream disconnected. Reconnect in ${delay}ms (attempt ${attempts}).`,
+      );
       hooks.onDisconnect?.();
       retry = setTimeout(connect, delay);
     };
@@ -532,7 +543,12 @@ let eventsConnectionOpen = false;
 
 /** Every SSE `event:` name any of the four domains listens for. */
 function allStreamEventNames(): readonly string[] {
-  return [...SSE_EVENT_TYPES, ...SIDE_CHANNEL_EVENTS.surface, ...SIDE_CHANNEL_EVENTS.system, ...FS_SSE_EVENT_TYPES];
+  return [
+    ...SSE_EVENT_TYPES,
+    ...SIDE_CHANNEL_EVENTS.surface,
+    ...SIDE_CHANNEL_EVENTS.system,
+    ...FS_SSE_EVENT_TYPES,
+  ];
 }
 
 /** `topics=<a>,<b>,...&after=<topic>:<seq>,...`, read fresh at each (re)connect. */
@@ -559,7 +575,10 @@ function dispatchEventsFrame(name: string, raw: string, lastEventId: string): vo
     return;
   }
   const named =
-    typeof parsed === 'object' && parsed !== null && 'topic' in parsed && typeof parsed.topic === 'string'
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'topic' in parsed &&
+    typeof parsed.topic === 'string'
       ? parsed.topic
       : undefined;
   // Every real frame the server sends names its topic (see
@@ -569,7 +588,8 @@ function dispatchEventsFrame(name: string, raw: string, lastEventId: string): vo
   // single-stream behavior every domain had before it shared this
   // connection. Two or more joined topics make the frame unroutable, and it
   // is dropped rather than guessed at.
-  const topic = named ?? (topicSubscribers.size === 1 ? [...topicSubscribers.keys()][0] : undefined);
+  const topic =
+    named ?? (topicSubscribers.size === 1 ? [...topicSubscribers.keys()][0] : undefined);
   if (topic === undefined) return;
   const subscribers = topicSubscribers.get(topic);
   if (!subscribers) return;
@@ -583,7 +603,8 @@ function dispatchEventsFrame(name: string, raw: string, lastEventId: string): vo
         topic,
         'stream_gap',
         raw,
-        (payload) => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0,
+        (payload) =>
+          'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0,
       );
     } catch {
       console.warn('Failed to parse stream gap:', raw);
@@ -1101,10 +1122,6 @@ export async function searchSessions(
   };
 }
 
-export async function getSession(id: string): Promise<SessionDetail> {
-  return rpc('session.get', { session_id: id });
-}
-
 // =============================================================================
 // Content Search (ripgrep) — search_grep
 // =============================================================================
@@ -1217,108 +1234,14 @@ export async function archiveSession(id: string): Promise<void> {
   );
 }
 
-/** Unarchive a session (restore to default listing). */
-export async function unarchiveSession(id: string): Promise<void> {
-  await rpc('session.unarchive', { session_id: id });
-}
-
-/** Cancel the current agent operation in a session. */
-export async function cancelSession(id: string): Promise<boolean> {
-  return (await rpc('session.cancel', { session_id: id })).cancelled;
-}
-
 /** List available models for a session. */
 export async function listModels(sessionId: string): Promise<string[]> {
   return (await rpc('session.list_models', { session_id: sessionId }, { notify: true })).models;
 }
 
-/**
- * The status list of a session: the items that plugins published and the
- * engine's plugin-turn items, ordered by priority.
- *
- * The `status_items_changed` event invalidates this read (see
- * `lib/query/routes/session.ts`), so a caller reads it again on a change.
- */
-export async function getSessionStatus(sessionId: string): Promise<StatusDisplayItem[]> {
-  return (await rpc('session.status', { session_id: sessionId })).status;
-}
-
-/**
- * The daemon's notifications of a session, newest first. A browser reads
- * them once when it attaches to the session (see `lib/query/sse.ts`).
- */
-export async function getSessionNotifications(
-  sessionId: string,
-): Promise<RpcMethods['session.list_notifications']['result']['notifications']> {
-  return (await rpc('session.list_notifications', { session_id: sessionId })).notifications;
-}
-
-/**
- * Close one daemon notification in one session. The daemon drops a
- * notification of the session, and hides a shared one for this session
- * only. False when the notification does not reach the session.
- */
-export async function dismissSessionNotification(
-  sessionId: string,
-  notificationId: string,
-): Promise<boolean> {
-  return (
-    await rpc('session.dismiss_notification', {
-      session_id: sessionId,
-      notification_id: notificationId,
-    })
-  ).success;
-}
-
-/** List the modes a session may enter, and the one it is in. */
-/**
- * Which settings this session can change.
- *
- * A settings panel asks before it draws: an ACP session runs its own turn
- * loop, so the daemon's caps and context policy, and offering one is a control that changes nothing.
- */
-export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
-  return rpc('session.list_knobs', { session_id: sessionId });
-}
-
 export type PluginApproval = components['schemas']['PluginApproval'];
 
-/** Read the persisted approval floors for this session's plugins. */
-export async function listPluginApprovals(sessionId: string): Promise<Record<string, PluginApproval>> {
-  return (await rpc('session.list_plugin_approvals', { session_id: sessionId })).approvals;
-}
-
-export async function setPluginApproval(
-  sessionId: string,
-  plugin: string,
-  approval: PluginApproval,
-): Promise<void> {
-  await rpc('session.set_plugin_approval', { session_id: sessionId, plugin, approval });
-}
-
-/**
- * The settings this session's external agent advertised for itself.
- *
- * Empty until the first message: an agent says what it has when the daemon
- * connects to it. Empty always for an internal agent.
- */
-export async function listAgentOptions(sessionId: string): Promise<AgentConfigOptions> {
-  return rpc('session.list_agent_options', { session_id: sessionId });
-}
-
-/** Set one of the agent's own settings. */
-export async function setAgentOption(
-  sessionId: string,
-  optionId: string,
-  value: string,
-): Promise<void> {
-  await rpc('session.set_agent_option', {
-    session_id: sessionId,
-    option_id: optionId,
-    value,
-  });
-}
-
+/** List the modes a session may enter, and the one it is in. */
 export async function listModes(sessionId: string): Promise<SessionModes> {
   return rpc('session.list_modes', { session_id: sessionId }, { notify: true });
 }
@@ -1334,37 +1257,10 @@ export async function setSessionMode(sessionId: string, mode: string): Promise<v
   await setKnob(sessionId, { knob: 'mode', value: mode });
 }
 
-/** Set the title for a session. */
-export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
-  await rpc('session.set_title', { session_id: sessionId, title });
-}
-
-export async function getSessionHistory(
-  sessionId: string,
-  limit?: number,
-  offset?: number,
-  signal?: AbortSignal,
-): Promise<SessionHistoryResponse> {
-  return rpc('session.history', { session_id: sessionId, limit, offset }, { signal });
-}
-
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
   const data = await rpc('providers.list', {});
   return expectList(data.providers, 'providers', 'Failed to list providers');
-}
-
-/** Attach a kiln to the session's kiln set. Idempotent. */
-export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
-  return rpc('session.connect_kiln', { session_id: sessionId, kiln });
-}
-
-/** Detach a kiln from the session's kiln set. Any member may be detached. */
-export async function disconnectSessionKiln(
-  sessionId: string,
-  kiln: string,
-): Promise<SessionScope> {
-  return rpc('session.disconnect_kiln', { session_id: sessionId, kiln });
 }
 
 // Agents and models: `lib/query/agents.ts` and `lib/query/models.ts` call
@@ -1454,18 +1350,6 @@ export async function executeCommand(sessionId: string, command: string): Promis
     }),
     'Failed to execute command',
   );
-}
-
-/**
- * The command catalog of one session, which the composer completes from.
- *
- * The daemon joins the built-in, mode, plugin, skill and agent commands. A
- * `commands_changed` event says when the list moved.
- */
-export async function listSessionCommands(
-  sessionId: string,
-): Promise<SessionCommand[]> {
-  return (await rpc('session.commands', { session_id: sessionId })).commands;
 }
 
 // =============================================================================
@@ -1610,17 +1494,6 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
 // Search Endpoints
 // =============================================================================
 
-/**
- * List available kilns. Returns the daemon's object shape verbatim
- * (`{ path, name, last_access_secs_ago }`) — see `KilnListEntry`.
- * `kiln.list` answers the array directly; `GET /api/kilns`, which used to
- * wrap it under `{ kilns }`, is gone ([[Simplification Plan#Step 19]]
- * item 3).
- */
-export async function listKilns(): Promise<KilnListEntry[]> {
-  return rpc('kiln.list', null);
-}
-
 export async function listNotes(kiln: string, pathFilter?: string): Promise<NoteEntry[]> {
   return rpc('list_notes', { kiln, path_filter: pathFilter });
 }
@@ -1673,16 +1546,6 @@ export async function registerProject(path: string): Promise<Project> {
   );
 }
 
-/** Unregister a project. */
-export async function unregisterProject(path: string): Promise<void> {
-  await rpc('project.unregister', { path });
-}
-
-/** List all registered projects. */
-export async function listProjects(): Promise<Project[]> {
-  return rpc('project.list', null);
-}
-
 // =============================================================================
 // SCM Endpoints (branch/worktree browsing)
 // =============================================================================
@@ -1696,18 +1559,6 @@ export async function scmClone(url: string): Promise<ScmCloneResponse> {
     await client.POST('/api/scm/clone', { body: { url } }),
     'Failed to clone repository',
   );
-}
-
-/**
- * Get project by path, or `null` if none is registered for it.
- *
- * `project.get`'s own reply is `Option<Project>` — a path with no
- * registration was a 404 back when a route translated the option into a
- * status; `GET /api/project/get` is gone ([[Simplification Plan#Step 19]]
- * item 3), so this reads the option directly.
- */
-export async function getProject(path: string): Promise<Project | null> {
-  return rpc('project.get', { path });
 }
 
 /**
@@ -1731,11 +1582,6 @@ export async function listFiles(path: string): Promise<FileEntry[]> {
 /** List kiln notes. */
 export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
   return toFileEntries(await rpc('list_notes', { kiln: kilnPath }));
-}
-
-/** Full note-link graph of a kiln (nodes + resolved/unresolved edges). */
-export async function getKilnGraph(kilnPath: string): Promise<import('./graph/types').GraphDto> {
-  return rpc('kiln.graph', { kiln: kilnPath });
 }
 
 /** Get file content by path. */
@@ -2149,7 +1995,10 @@ export function subscribeToSystemEvents(
             'publication_changed',
             raw,
             (p) =>
-              'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
+              'plugin' in p &&
+              typeof p.plugin === 'string' &&
+              'key' in p &&
+              typeof p.key === 'string',
           );
           onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
         } catch {
@@ -2220,7 +2069,14 @@ export async function fetchRawFile(path: string): Promise<Blob> {
 
 /** Bases expressions are evaluated by the daemon. */
 export async function queryBase(request: BaseRequest): Promise<BaseResult> {
-  return decode(await client.GET('/api/bases/query', { params: { query: { kiln: request.kiln, ...request.source, view: request.view, this: request.this } } }), 'Could not query base');
+  return decode(
+    await client.GET('/api/bases/query', {
+      params: {
+        query: { kiln: request.kiln, ...request.source, view: request.view, this: request.this },
+      },
+    }),
+    'Could not query base',
+  );
 }
 export async function writeBaseProperty(request: SetPropertyParams): Promise<WriteOutcome> {
   return decode(await client.PUT('/api/bases/property', { body: request }), 'Base write refused');
@@ -2229,5 +2085,8 @@ export async function createBaseEntry(request: CreateEntryParams): Promise<Write
   return decode(await client.POST('/api/bases/entries', { body: request }), 'Base write refused');
 }
 export async function reorderBaseGroups(request: ReorderGroupsParams): Promise<WriteOutcome> {
-  return decode(await client.PUT('/api/bases/group-order', { body: request }), 'Could not reorder groups');
+  return decode(
+    await client.PUT('/api/bases/group-order', { body: request }),
+    'Could not reorder groups',
+  );
 }

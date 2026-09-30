@@ -1,13 +1,7 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import {
-  getBacklinks,
-  getKilnGraph,
-  listFiles,
-  listKilnNotes,
-  listNotes,
-  resolveNotePath,
-} from '@/lib/api';
+import { getBacklinks, listFiles, listKilnNotes, listNotes, resolveNotePath } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import type { GraphDto } from '@/lib/graph/types';
 import { isMarkdownPath } from '@/lib/markdown-path';
 import type { BacklinksResponse, FileEntry, NoteEntry } from '@/lib/types';
@@ -122,7 +116,7 @@ function backlinksOptions(kiln: string, note: string) {
 
 /** The options of one kiln's link graph. */
 function graphOptions(kiln: string) {
-  return { queryKey: keys.notesGraph(kiln), queryFn: () => getKilnGraph(kiln) };
+  return { queryKey: keys.notesGraph(kiln), queryFn: () => rpc('kiln.graph', { kiln }) };
 }
 
 /** The options of one kiln's completion list. See `KILN_NOTES_STALE_MS`. */

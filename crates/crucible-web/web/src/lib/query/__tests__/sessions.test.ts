@@ -115,7 +115,8 @@ describe('useSessions', () => {
     const active = session('s-1');
     const archived = session('s-2', { archived: true });
     env = createTestQueryEnv({
-      [LIST]: async (request) => listReply((await wantsArchived(request)) ? [active, archived] : [active]),
+      [LIST]: async (request) =>
+        listReply((await wantsArchived(request)) ? [active, archived] : [active]),
     });
 
     const both = inRoot(() => ({
@@ -433,5 +434,30 @@ describe('useSession and fetchSessionOnce', () => {
     });
 
     await expect(fetchSessionOnce('s-gone')).rejects.toThrow(/session.get/);
+  });
+
+  // `session.get` answers the NESTED agent record (`agent.model`, `agent.mode`)
+  // and no top-level `agent_model` — unlike `session.list`. The row carries
+  // both spellings, so a reader that wants the model of a session it fetched
+  // reads `agent.model`.
+  it('carries the nested agent record session.get answers', async () => {
+    env = createTestQueryEnv({
+      'POST /api/rpc/session.get': () => ({
+        session_id: 'ses-get',
+        type: 'chat',
+        kiln: '/k',
+        workspace: '/w',
+        state: 'active',
+        title: null,
+        agent: { model: 'ollama:mistral', mode: 'edit' },
+        started_at: '2026-01-01T00:00:00Z',
+      }),
+    });
+
+    const answer = await fetchSessionOnce('ses-get');
+
+    expect((answer as { agent_model?: unknown }).agent_model).toBeUndefined();
+    expect((answer as { agent?: { model?: unknown } }).agent?.model).toBe('ollama:mistral');
+    expect((answer as { agent?: { mode?: unknown } }).agent?.mode).toBe('edit');
   });
 });

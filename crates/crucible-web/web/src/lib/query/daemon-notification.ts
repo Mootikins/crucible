@@ -1,9 +1,10 @@
 import type { ChatEvent } from '@/lib/types';
-import { dismissSessionNotification, getSessionNotifications } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { notificationActions } from '@/stores/notificationStore';
 
 /** A daemon notification as the wire carries it. */
-export type DaemonNotification = { id?: string; kind?: unknown; message?: string } | null | undefined;
+export type DaemonNotification =
+  { id?: string; kind?: unknown; message?: string } | null | undefined;
 
 /**
  * The sessions that show each open daemon notification, by notification id.
@@ -61,11 +62,12 @@ function closeInDaemon(id: string): void {
   const sessions = shownIn.get(id) ?? new Set<string>();
   shownIn.delete(id);
   for (const sessionId of sessions) {
-    dismissSessionNotification(sessionId, id).catch((e: unknown) =>
-      notificationActions.addNotification(
-        'warning',
-        `The daemon could not close the notification: ${e instanceof Error ? e.message : String(e)}`,
-      ),
+    rpc('session.dismiss_notification', { session_id: sessionId, notification_id: id }).catch(
+      (e: unknown) =>
+        notificationActions.addNotification(
+          'warning',
+          `The daemon could not close the notification: ${e instanceof Error ? e.message : String(e)}`,
+        ),
     );
   }
 }
@@ -84,28 +86,34 @@ export function sessionNotifications(sessionId: string) {
     const current = ++generation;
     const changes = new Map<string, DaemonNotification>();
     pending = changes;
-    void getSessionNotifications(sessionId).then((list) => {
-      if (current !== generation) return;
-      const snapshot = new Map<string, DaemonNotification>();
-      for (const n of [...list].reverse() as DaemonNotification[]) {
-        if (n?.id) snapshot.set(n.id, n);
-      }
-      for (const [id, n] of changes) {
-        if (n) snapshot.set(id, n);
-        else snapshot.delete(id);
-      }
-      // A reconnect can have missed a dismissal entirely.
-      for (const [id, sessions] of shownIn) {
-        if (sessions.has(sessionId) && !snapshot.has(id)) dropDaemonNotification(id, sessionId);
-      }
-      for (const n of snapshot.values()) showDaemonNotification(n, sessionId);
-    }).catch((e: unknown) => {
-      if (current !== generation) return;
-      notificationActions.addNotification('warning',
-        `The notifications of the session are not available: ${e instanceof Error ? e.message : String(e)}`);
-    }).finally(() => {
-      if (current === generation) pending = undefined;
-    });
+    void rpc('session.list_notifications', { session_id: sessionId })
+      .then((r) => r.notifications)
+      .then((list) => {
+        if (current !== generation) return;
+        const snapshot = new Map<string, DaemonNotification>();
+        for (const n of [...list].reverse() as DaemonNotification[]) {
+          if (n?.id) snapshot.set(n.id, n);
+        }
+        for (const [id, n] of changes) {
+          if (n) snapshot.set(id, n);
+          else snapshot.delete(id);
+        }
+        // A reconnect can have missed a dismissal entirely.
+        for (const [id, sessions] of shownIn) {
+          if (sessions.has(sessionId) && !snapshot.has(id)) dropDaemonNotification(id, sessionId);
+        }
+        for (const n of snapshot.values()) showDaemonNotification(n, sessionId);
+      })
+      .catch((e: unknown) => {
+        if (current !== generation) return;
+        notificationActions.addNotification(
+          'warning',
+          `The notifications of the session are not available: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      })
+      .finally(() => {
+        if (current === generation) pending = undefined;
+      });
   }
 
   return {

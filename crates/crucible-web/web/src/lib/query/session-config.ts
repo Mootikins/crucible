@@ -7,17 +7,12 @@ import {
 } from '@tanstack/solid-query';
 import {
   getKnob,
-  getSessionStatus,
-  listAgentOptions,
-  listKnobs,
-  listPluginApprovals,
-  setAgentOption,
   setKnob,
-  setPluginApproval,
   type KnobValue,
   type PluginApproval,
   type StatusDisplayItem,
 } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import type { AgentConfigOptions, SessionKnobSupport } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -67,7 +62,9 @@ function sessionQuery<T>(
 export function useSessionKnobs(
   id: Accessor<string | null>,
 ): UseQueryResult<SessionKnobSupport, Error> {
-  return sessionQuery(id, keys.sessionKnobs, listKnobs);
+  return sessionQuery(id, keys.sessionKnobs, (sessionId) =>
+    rpc('session.list_knobs', { session_id: sessionId }),
+  );
 }
 
 /**
@@ -82,7 +79,10 @@ export function useAgentOptions(
   id: Accessor<string | null>,
 ): UseQueryResult<AgentConfigOptions, Error> {
   return sessionQuery(id, keys.sessionAgentOptions, (sessionId) =>
-    listAgentOptions(sessionId).catch(() => ({ session_id: sessionId, options: [] })),
+    rpc('session.list_agent_options', { session_id: sessionId }).catch(() => ({
+      session_id: sessionId,
+      options: [],
+    })),
   );
 }
 
@@ -100,8 +100,17 @@ export function useSetAgentOption(): UseMutationResult<
 > {
   return useMutation(
     () => ({
-      mutationFn: ({ id, optionId, value }: { id: string; optionId: string; value: string }) =>
-        setAgentOption(id, optionId, value),
+      mutationFn: async ({
+        id,
+        optionId,
+        value,
+      }: {
+        id: string;
+        optionId: string;
+        value: string;
+      }) => {
+        await rpc('session.set_agent_option', { session_id: id, option_id: optionId, value });
+      },
       onSuccess: (_result: void, { id }: { id: string; optionId: string; value: string }) =>
         getQueryClient().invalidateQueries({ queryKey: keys.sessionAgentOptions(id) }),
     }),
@@ -183,11 +192,15 @@ export function useSetKnob(): UseMutationResult<
   );
 }
 
-
 export function usePluginApprovals(
   id: Accessor<string | null>,
 ): UseQueryResult<Record<string, PluginApproval>, Error> {
-  return sessionQuery(id, keys.sessionPluginApprovals, listPluginApprovals);
+  return sessionQuery(
+    id,
+    keys.sessionPluginApprovals,
+    async (sessionId) =>
+      (await rpc('session.list_plugin_approvals', { session_id: sessionId })).approvals,
+  );
 }
 
 export function useSetPluginApproval(): UseMutationResult<
@@ -197,10 +210,21 @@ export function useSetPluginApproval(): UseMutationResult<
 > {
   return useMutation(
     () => ({
-      mutationFn: ({ id, plugin, approval }: { id: string; plugin: string; approval: PluginApproval }) =>
-        setPluginApproval(id, plugin, approval),
-      onSuccess: (_result: void, { id }: { id: string; plugin: string; approval: PluginApproval }) =>
-        getQueryClient().invalidateQueries({ queryKey: keys.sessionPluginApprovals(id) }),
+      mutationFn: async ({
+        id,
+        plugin,
+        approval,
+      }: {
+        id: string;
+        plugin: string;
+        approval: PluginApproval;
+      }) => {
+        await rpc('session.set_plugin_approval', { session_id: id, plugin, approval });
+      },
+      onSuccess: (
+        _result: void,
+        { id }: { id: string; plugin: string; approval: PluginApproval },
+      ) => getQueryClient().invalidateQueries({ queryKey: keys.sessionPluginApprovals(id) }),
     }),
     () => getQueryClient(),
   );
@@ -219,6 +243,8 @@ export function useSessionStatus(
   id: Accessor<string | null>,
 ): UseQueryResult<StatusDisplayItem[], Error> {
   return sessionQuery(id, keys.sessionStatus, (sessionId) =>
-    getSessionStatus(sessionId).catch(() => []),
+    rpc('session.status', { session_id: sessionId })
+      .then((r) => r.status)
+      .catch(() => []),
   );
 }

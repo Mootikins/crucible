@@ -5,12 +5,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import {
-  executeCommand,
-  listSessionCommands,
-  type CommandResult,
-  type SessionCommand,
-} from '@/lib/api';
+import { executeCommand, type CommandResult, type SessionCommand } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -29,7 +25,7 @@ import { keys } from './keys';
 function commandsQueryOptions(sessionId: string) {
   return {
     queryKey: keys.slashCommands(sessionId),
-    queryFn: () => listSessionCommands(sessionId),
+    queryFn: async () => (await rpc('session.commands', { session_id: sessionId })).commands,
     staleTime: Number.POSITIVE_INFINITY,
   };
 }

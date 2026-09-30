@@ -7,7 +7,6 @@ import {
   resetEventsConnectionForTests,
   createSession,
   listSessions,
-  getSession,
   executeCommand,
   listProviders,
   switchModel,
@@ -21,16 +20,11 @@ import {
   APP_CALLER,
   getTargetProviders,
   getProviderTargets,
-  getSessionStatus,
   pauseSession,
   resumeSession,
   endSession,
   deleteSession,
   archiveSession,
-  unarchiveSession,
-  cancelSession,
-  setSessionTitle,
-  getSessionHistory,
   getPrecognition,
   setPrecognition,
   exportSession,
@@ -38,13 +32,9 @@ import {
   reloadPlugin,
   installPlugin,
   removePlugin,
-  listKilns,
   listDir,
   listNotes,
   registerProject,
-  unregisterProject,
-  listProjects,
-  getProject,
   listFiles,
   listKilnNotes,
   getFileContent,
@@ -117,7 +107,9 @@ describe('sendChatMessage', () => {
     });
     global.fetch = mockFetch;
 
-    await expect(sendChatMessage('ses-1', 'fail')).rejects.toThrow(/RPC `session.send_message` failed/);
+    await expect(sendChatMessage('ses-1', 'fail')).rejects.toThrow(
+      /RPC `session.send_message` failed/,
+    );
   });
 });
 
@@ -183,7 +175,9 @@ describe('createSession', () => {
     });
     global.fetch = mockFetch;
 
-    await expect(createSession({ kilns: ['x'] })).rejects.toThrow('Failed to create session: HTTP 422');
+    await expect(createSession({ kilns: ['x'] })).rejects.toThrow(
+      'Failed to create session: HTTP 422',
+    );
   });
 
   it('forwards isolation untouched, and omits it when unset', async () => {
@@ -228,15 +222,34 @@ describe('listSessions', () => {
   });
 
   it.each([
-    { name: 'passes filter fields when provided', args: { kiln: 'my-kiln', state: 'active' }, expectedBody: { kilns: ['my-kiln'], state: 'active' } },
-    { name: 'passes workspace, type, includeArchived filters', args: { workspace: '/w', type: 'agent', includeArchived: true }, expectedBody: { workspace: '/w', type: 'agent', include_archived: true } },
-  ])('$name', async ({ args, expectedBody }: { args: Parameters<typeof listSessions>[0]; expectedBody: Record<string, unknown> }) => {
-    const mockFetch = createMockFetch({ 'POST /api/rpc/session.list': { body: { sessions: [], total: 0 } } });
-    global.fetch = mockFetch;
-    await listSessions(args);
-    const { body } = await mockFetch.sent(0);
-    expect(body).toEqual(expect.objectContaining(expectedBody));
-  });
+    {
+      name: 'passes filter fields when provided',
+      args: { kiln: 'my-kiln', state: 'active' },
+      expectedBody: { kilns: ['my-kiln'], state: 'active' },
+    },
+    {
+      name: 'passes workspace, type, includeArchived filters',
+      args: { workspace: '/w', type: 'agent', includeArchived: true },
+      expectedBody: { workspace: '/w', type: 'agent', include_archived: true },
+    },
+  ])(
+    '$name',
+    async ({
+      args,
+      expectedBody,
+    }: {
+      args: Parameters<typeof listSessions>[0];
+      expectedBody: Record<string, unknown>;
+    }) => {
+      const mockFetch = createMockFetch({
+        'POST /api/rpc/session.list': { body: { sessions: [], total: 0 } },
+      });
+      global.fetch = mockFetch;
+      await listSessions(args);
+      const { body } = await mockFetch.sent(0);
+      expect(body).toEqual(expect.objectContaining(expectedBody));
+    },
+  );
 
   it('throws on non-ok response', async () => {
     const mockFetch = createMockFetch({
@@ -245,53 +258,6 @@ describe('listSessions', () => {
     global.fetch = mockFetch;
 
     await expect(listSessions()).rejects.toThrow(/RPC `session.list` failed/);
-  });
-});
-
-// =============================================================================
-// getSession
-// =============================================================================
-
-describe('getSession', () => {
-  it('calls session.get and maps response', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/rpc/session.get': { body: rawSession },
-    });
-    global.fetch = mockFetch;
-
-    const session = await getSession('ses-abc');
-
-    expect(session.session_id).toBe('ses-abc');
-    expect(session.type).toBe('chat');
-    expect((await mockFetch.sent(0)).body).toEqual({ session_id: 'ses-abc' });
-  });
-
-  // `session.get` answers the NESTED agent record (`agent.model`, `agent.mode`)
-  // and no top-level `agent_model` — unlike `session.list`. The row carries
-  // both spellings, so a reader that wants the model of a session it fetched
-  // reads `agent.model`.
-  it('carries the nested agent record session.get answers', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/rpc/session.get': {
-        body: {
-          session_id: 'ses-get',
-          type: 'chat',
-          kiln: '/k',
-          workspace: '/w',
-          state: 'active',
-          title: null,
-          agent: { model: 'ollama:mistral', mode: 'edit' },
-          started_at: '2026-01-01T00:00:00Z',
-        },
-      },
-    });
-    global.fetch = mockFetch;
-
-    const session = await getSession('ses-get');
-
-    expect(session.agent_model).toBeUndefined();
-    expect(session.agent?.model).toBe('ollama:mistral');
-    expect(session.agent?.mode).toBe('edit');
   });
 });
 
@@ -318,7 +284,9 @@ describe('executeCommand', () => {
     });
     global.fetch = mockFetch;
 
-    await expect(executeCommand('ses-1', 'bad')).rejects.toThrow('Failed to execute command: HTTP 400');
+    await expect(executeCommand('ses-1', 'bad')).rejects.toThrow(
+      'Failed to execute command: HTTP 400',
+    );
   });
 });
 
@@ -329,7 +297,13 @@ describe('executeCommand', () => {
 describe('listProviders', () => {
   it('calls providers.list and returns provider array', async () => {
     const providers = [
-      { name: 'ollama', provider_type: 'ollama', available: true, default_model: 'mistral', models: ['mistral'] },
+      {
+        name: 'ollama',
+        provider_type: 'ollama',
+        available: true,
+        default_model: 'mistral',
+        models: ['mistral'],
+      },
     ];
     const mockFetch = createMockFetch({
       'POST /api/rpc/providers.list': { body: { providers } },
@@ -506,7 +480,6 @@ describe('getConfig', () => {
   });
 });
 
-
 // =============================================================================
 // Target providers — the workspace and runtime axes
 // =============================================================================
@@ -531,7 +504,12 @@ describe('getTargetProviders', () => {
     );
 
     expect(await getTargetProviders('workspace')).toEqual([
-      { plugin: 'worktree', axis: 'workspace', label: 'Worktree', targets_command: 'worktree.targets' },
+      {
+        plugin: 'worktree',
+        axis: 'workspace',
+        label: 'Worktree',
+        targets_command: 'worktree.targets',
+      },
     ]);
 
     const runtime = await getTargetProviders('runtime');
@@ -672,44 +650,16 @@ describe('getProviderTargets', () => {
 });
 
 // =============================================================================
-// Plugin status slots
-// =============================================================================
-
-describe('getSessionStatus', () => {
-  it('unwraps the status array and keeps every slot verbatim', async () => {
-    const shared = { priority: 128, pinned: false, action: null, kind: 'published', progress: null };
-    const oci = { ...shared, id: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', color_group: 'hue-4' };
-    const weather = { ...shared, id: 'weather', plugin: 'weather', text: 'storm warning', color_group: 'warn' };
-    global.fetch = createMockFetch({
-      'POST /api/rpc/session.status': {
-        body: {
-          status: [
-            oci,
-            // A plugin this client has never heard of survives untouched.
-            weather,
-          ],
-        },
-      },
-    });
-    expect(await getSessionStatus('ses-1')).toEqual([oci, weather]);
-  });
-
-  it('sends the session id in the body and throws on non-ok', async () => {
-    const mockFetch = createMockFetch({ 'POST /api/rpc/session.status': { status: 502 } });
-    global.fetch = mockFetch;
-    await expect(getSessionStatus('a/b')).rejects.toThrow(/RPC `session.status` failed/);
-    expect((await mockFetch.sent(0)).body).toEqual({ session_id: 'a/b' });
-  });
-});
-
-// =============================================================================
-// Session lifecycle (pause / resume / end / delete / archive / unarchive / cancel)
+// Session lifecycle (pause / resume / end / delete / archive)
 // =============================================================================
 
 describe('session lifecycle endpoints', () => {
   it.each([
-    { name: 'pauseSession calls session.pause', fn: pauseSession as (id: string) => Promise<unknown>, route: 'POST /api/rpc/session.pause' },
-    { name: 'unarchiveSession calls session.unarchive', fn: unarchiveSession as (id: string) => Promise<unknown>, route: 'POST /api/rpc/session.unarchive' },
+    {
+      name: 'pauseSession calls session.pause',
+      fn: pauseSession as (id: string) => Promise<unknown>,
+      route: 'POST /api/rpc/session.pause',
+    },
   ])('$name', async ({ fn, route }) => {
     const mockFetch = createMockFetch({ [route]: { body: {} } });
     global.fetch = mockFetch;
@@ -760,13 +710,6 @@ describe('session lifecycle endpoints', () => {
     expect(sent.method).toBe('DELETE');
   });
 
-  it('cancelSession returns the cancelled bool', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/session.cancel': { body: { cancelled: true } },
-    });
-    expect(await cancelSession('ses-1')).toBe(true);
-  });
-
   it('pauseSession throws on error', async () => {
     global.fetch = createMockFetch({
       'POST /api/rpc/session.pause': { status: 500 },
@@ -794,65 +737,6 @@ describe('session lifecycle endpoints', () => {
     });
     await expect(deleteSession('ses-1')).rejects.toThrow('Failed to delete session: HTTP 403');
   });
-
-  it('cancelSession throws on error', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/session.cancel': { status: 500 },
-    });
-    await expect(cancelSession('ses-1')).rejects.toThrow(/RPC `session.cancel` failed/);
-  });
-});
-
-// =============================================================================
-// Session titles
-// =============================================================================
-
-describe('session title endpoints', () => {
-  it('setSessionTitle calls session.set_title', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/rpc/session.set_title': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await setSessionTitle('ses-1', 'New title');
-    const sent = await mockFetch.sent(0);
-    expect(sent.method).toBe('POST');
-    expect(sent.body).toEqual({ session_id: 'ses-1', title: 'New title' });
-  });
-
-});
-
-// =============================================================================
-// Session history
-// =============================================================================
-
-describe('getSessionHistory', () => {
-  it.each([
-    { name: 'passes limit/offset', limit: 50, offset: 100, expectedBody: { limit: 50, offset: 100 } },
-    { name: 'omits limit/offset when undefined', expectedBody: {} },
-  ])('$name', async ({ limit, offset, expectedBody }: { limit?: number; offset?: number; expectedBody: Record<string, unknown> }) => {
-    const mockFetch = createMockFetch({ 'POST /api/rpc/session.history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
-    global.fetch = mockFetch;
-    await getSessionHistory('ses-1', limit, offset);
-    const { body } = await mockFetch.sent(0);
-    expect(body).toEqual({ session_id: 'ses-1', ...expectedBody });
-  });
-
-  it('forwards AbortSignal to fetch', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/rpc/session.history': {
-        body: { session_id: 'ses-1', history: [], total_events: 0 },
-      },
-    });
-    global.fetch = mockFetch;
-    const controller = new AbortController();
-    await getSessionHistory('ses-1', undefined, undefined, controller.signal);
-    // The client builds the `Request`, so the signal it carries FOLLOWS the
-    // caller's rather than being the same object. An abort still reaches it.
-    const { signal } = await mockFetch.sent(0);
-    expect(signal.aborted).toBe(false);
-    controller.abort();
-    expect(signal.aborted).toBe(true);
-  });
 });
 
 // =============================================================================
@@ -879,7 +763,6 @@ describe('precognition endpoints', () => {
       value: false,
     });
   });
-
 });
 
 // =============================================================================
@@ -895,10 +778,13 @@ describe('exportSession', () => {
       },
     });
     // createMockFetch JSON.stringifies the body — wrap with custom Response.
-    global.fetch = vi.fn(async () => new Response('# Markdown\n\nbody', {
-      status: 200,
-      headers: { 'Content-Type': 'text/markdown' },
-    })) as typeof fetch;
+    global.fetch = vi.fn(
+      async () =>
+        new Response('# Markdown\n\nbody', {
+          status: 200,
+          headers: { 'Content-Type': 'text/markdown' },
+        }),
+    ) as typeof fetch;
     expect(await exportSession('ses-1')).toBe('# Markdown\n\nbody');
   });
 
@@ -942,7 +828,14 @@ describe('plugin endpoints', () => {
   it('reloadPlugin POSTs to /reload and returns the daemon counts', async () => {
     global.fetch = createMockFetch({
       'POST /api/plugins/my-plugin/reload': {
-        body: { name: 'my-plugin', reloaded: true, tools: 1, commands: 0, handlers: 1, services: 0 },
+        body: {
+          name: 'my-plugin',
+          reloaded: true,
+          tools: 1,
+          commands: 0,
+          handlers: 1,
+          services: 0,
+        },
       },
     });
     const result = await reloadPlugin('my-plugin');
@@ -953,7 +846,14 @@ describe('plugin endpoints', () => {
   it('reloadPlugin URL-encodes the name', async () => {
     const mockFetch = createMockFetch({
       'POST /api/plugins/weird%20name/reload': {
-        body: { name: 'weird name', reloaded: true, tools: 0, commands: 0, handlers: 0, services: 0 },
+        body: {
+          name: 'weird name',
+          reloaded: true,
+          tools: 0,
+          commands: 0,
+          handlers: 0,
+          services: 0,
+        },
       },
     });
     global.fetch = mockFetch;
@@ -989,16 +889,40 @@ describe('plugin endpoints', () => {
   });
 
   it.each([
-    { name: 'removePlugin DELETEs without purge query when purge=false', expectPresent: [] as string[], expectAbsent: ['purge='] },
-    { name: 'removePlugin appends ?purge=true when purge=true', purge: true, expectPresent: ['purge=true'], expectAbsent: [] as string[] },
-  ])('$name', async ({ purge, expectPresent, expectAbsent }: { purge?: boolean; expectPresent: string[]; expectAbsent: string[] }) => {
-    const mockFetch = createMockFetch({ 'DELETE /api/plugins/my-plugin': { body: { name: 'my-plugin', manifest: '/tmp/plugins.installed.json', purged_dir: null } } });
-    global.fetch = mockFetch;
-    await removePlugin('my-plugin', purge);
-    const url = (await mockFetch.sent(0)).url;
-    for (const p of expectPresent) expect(url).toContain(p);
-    for (const p of expectAbsent) expect(url).not.toContain(p);
-  });
+    {
+      name: 'removePlugin DELETEs without purge query when purge=false',
+      expectPresent: [] as string[],
+      expectAbsent: ['purge='],
+    },
+    {
+      name: 'removePlugin appends ?purge=true when purge=true',
+      purge: true,
+      expectPresent: ['purge=true'],
+      expectAbsent: [] as string[],
+    },
+  ])(
+    '$name',
+    async ({
+      purge,
+      expectPresent,
+      expectAbsent,
+    }: {
+      purge?: boolean;
+      expectPresent: string[];
+      expectAbsent: string[];
+    }) => {
+      const mockFetch = createMockFetch({
+        'DELETE /api/plugins/my-plugin': {
+          body: { name: 'my-plugin', manifest: '/tmp/plugins.installed.json', purged_dir: null },
+        },
+      });
+      global.fetch = mockFetch;
+      await removePlugin('my-plugin', purge);
+      const url = (await mockFetch.sent(0)).url;
+      for (const p of expectPresent) expect(url).toContain(p);
+      for (const p of expectAbsent) expect(url).not.toContain(p);
+    },
+  );
 });
 
 // Skills: covered in `lib/query/__tests__/skills.test.ts`, against
@@ -1014,31 +938,24 @@ describe('MCP / kilns / notes / search', () => {
   // directly, tested in `lib/query/__tests__/mcp.test.ts` against
   // `POST /api/rpc/mcp.status` (Simplification Plan step 19).
 
-  // Replaces a DRIFTED mock that asserted a fictional string payload
-  // (`{ kilns: ['default','docs'] }`). The real `handle_kiln_list`
-  // (crucible-daemon/src/server/kiln.rs) returns objects — path/name/
-  // last_access_secs_ago — surfaced verbatim by `kiln.list`, which the
-  // browser reaches through `POST /api/rpc/kiln.list` now
-  // ([[Simplification Plan#Step 19]] item 3; `GET /api/kilns` is gone).
-  it('listKilns returns KilnListEntry[] (object shape, matches handle_kiln_list)', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/kiln.list': {
-        body: [
-          { path: '/vault', name: 'default', last_access_secs_ago: 5 },
-          { path: '/docs', name: null, last_access_secs_ago: 99 },
-        ],
-      },
-    });
-    expect(await listKilns()).toEqual([
-      { path: '/vault', name: 'default', last_access_secs_ago: 5 },
-      { path: '/docs', name: null, last_access_secs_ago: 99 },
-    ]);
-  });
-
   it('listDir sends root/rel_path/show_ignored and returns the listing envelope', async () => {
     const entries = [
-      { name: 'web', rel_path: 'src/web', is_dir: true, size: 0, modified: 1721270400, status: null },
-      { name: 'api.ts', rel_path: 'src/web/api.ts', is_dir: false, size: 20481, modified: 1721270511, status: null },
+      {
+        name: 'web',
+        rel_path: 'src/web',
+        is_dir: true,
+        size: 0,
+        modified: 1721270400,
+        status: null,
+      },
+      {
+        name: 'api.ts',
+        rel_path: 'src/web/api.ts',
+        is_dir: false,
+        size: 20481,
+        modified: 1721270511,
+        status: null,
+      },
     ];
     // `{ entries, truncated }`, not a bare array: the daemon caps a directory at
     // 1000 entries, and a capped listing has to be distinguishable from a
@@ -1081,13 +998,15 @@ describe('MCP / kilns / notes / search', () => {
   });
 
   it('listNotes includes error text on failure', async () => {
-    global.fetch = vi.fn(async () => new Response('database locked', {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain' },
-    })) as typeof fetch;
+    global.fetch = vi.fn(
+      async () =>
+        new Response('database locked', {
+          status: 500,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+    ) as typeof fetch;
     await expect(listNotes('default')).rejects.toThrow('database locked');
   });
-
 });
 
 // =============================================================================
@@ -1110,47 +1029,6 @@ describe('project endpoints', () => {
     const result = await registerProject('/p');
     expect(result).toEqual(project);
     expect((await mockFetch.sent(0)).body).toEqual({ path: '/p' });
-  });
-
-  it('unregisterProject POSTs the path', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/rpc/project.unregister': { body: null },
-    });
-    global.fetch = mockFetch;
-    await unregisterProject('/p');
-    expect((await mockFetch.sent(0)).body).toEqual({ path: '/p' });
-  });
-
-  it('listProjects returns the array', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/project.list': { body: [project] },
-    });
-    expect(await listProjects()).toEqual([project]);
-  });
-
-  it('getProject returns the project when found', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/project.get': { body: project },
-    });
-    expect(await getProject('/p')).toEqual(project);
-  });
-
-  // `project.get`'s reply is `Option<Project>`, so a path with no
-  // registration is `null`, not a 404 — the route that used to translate
-  // the option into a status is gone ([[Simplification Plan#Step 19]]
-  // item 3).
-  it('getProject returns null for an unregistered path', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/project.get': { body: null },
-    });
-    expect(await getProject('/missing')).toBeNull();
-  });
-
-  it('getProject re-throws a real failure', async () => {
-    global.fetch = createMockFetch({
-      'POST /api/rpc/project.get': { status: 500 },
-    });
-    await expect(getProject('/p')).rejects.toThrow('RPC `project.get` failed: HTTP 500');
   });
 });
 
@@ -1208,7 +1086,9 @@ describe('file endpoints', () => {
 describe('saveFileIfUnchanged', () => {
   it('sends the base text when it is given one, and reads the merged answer', async () => {
     const mockFetch = createMockFetch({
-      'PUT /api/kiln/file': { body: { ok: true, content_hash: 'h2', merged: true, content: 'A\nB2\nC\nD\n' } },
+      'PUT /api/kiln/file': {
+        body: { ok: true, content_hash: 'h2', merged: true, content: 'A\nB2\nC\nD\n' },
+      },
     });
     global.fetch = mockFetch;
 
@@ -1220,14 +1100,24 @@ describe('saveFileIfUnchanged', () => {
       base_hash: 'h0',
       base_text: 'A\nB\nC\n',
     });
-    expect(answer).toEqual({ ok: true, content_hash: 'h2', merged: true, content: 'A\nB2\nC\nD\n' });
+    expect(answer).toEqual({
+      ok: true,
+      content_hash: 'h2',
+      merged: true,
+      content: 'A\nB2\nC\nD\n',
+    });
   });
 
   it('sends no base text when it has none', async () => {
-    const mockFetch = createMockFetch({ 'PUT /api/kiln/file': { body: { ok: true, content_hash: 'h2' } } });
+    const mockFetch = createMockFetch({
+      'PUT /api/kiln/file': { body: { ok: true, content_hash: 'h2' } },
+    });
     global.fetch = mockFetch;
 
-    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({ ok: true, content_hash: 'h2' });
+    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({
+      ok: true,
+      content_hash: 'h2',
+    });
     expect((await mockFetch.sent(0)).body).toEqual({
       path: '/k/a.md',
       content: 'mine',
@@ -1245,7 +1135,9 @@ describe('saveFileIfUnchanged', () => {
           current_hash: 'h9',
           current_content: 'A\nTHEIRS\n',
           merged_content: 'A\nMINE\n',
-          regions: [{ start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' }],
+          regions: [
+            { start_line: 2, end_line: 3, base: 'B\n', ours: 'MINE\n', theirs: 'THEIRS\n' },
+          ],
         },
       },
     });
@@ -1264,7 +1156,10 @@ describe('saveFileIfUnchanged', () => {
     global.fetch = createMockFetch({
       'PUT /api/kiln/file': { status: 409, body: { ok: false, current_hash: 'h9' } },
     });
-    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({ ok: false, current_hash: 'h9' });
+    expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({
+      ok: false,
+      current_hash: 'h9',
+    });
   });
 });
 
@@ -1350,9 +1245,7 @@ describe('generateMessageId', () => {
     // probabilistic ">15 of 20" threshold that could flake.
     const count = 50;
     let n = 0;
-    const randomSpy = vi
-      .spyOn(Math, 'random')
-      .mockImplementation(() => (n++ + 1) / (count + 1));
+    const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => (n++ + 1) / (count + 1));
     try {
       const ids = new Set<string>();
       for (let i = 0; i < count; i++) ids.add(generateMessageId());
@@ -1388,7 +1281,7 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
     warnSpy.mockRestore();
   });
 
-  it('subscribeToEvents joins the session\'s own topic and decodes its frames', () => {
+  it("subscribeToEvents joins the session's own topic and decodes its frames", () => {
     const events: unknown[] = [];
     const cleanup = subscribeToEvents('ses-1', (e) => events.push(e));
 
@@ -1414,9 +1307,7 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
 
   it('encodes a session id with reserved characters into the topics query', () => {
     subscribeToEvents('ses 1/weird', () => {});
-    expect(FakeEventSource.instances[0]!.url).toBe(
-      '/api/events?topics=ses+1%2Fweird',
-    );
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/events?topics=ses+1%2Fweird');
   });
 
   it('subscribeToSurfaceEvents and subscribeToFsEvents join the system topic together', () => {
@@ -1429,8 +1320,18 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
     const source = FakeEventSource.instances[0]!;
     expect(source.url).toBe('/api/events?topics=system');
 
-    source.emit('surface_changed', { topic: 'system', plugin: 'kanban', name: 'board', version: 1 });
-    source.emit('fs_changed', { topic: 'system', type: 'changed', path: '/a.md', kind: 'modified' });
+    source.emit('surface_changed', {
+      topic: 'system',
+      plugin: 'kanban',
+      name: 'board',
+      version: 1,
+    });
+    source.emit('fs_changed', {
+      topic: 'system',
+      type: 'changed',
+      path: '/a.md',
+      kind: 'modified',
+    });
 
     expect(surfaceEvents).toEqual([{ plugin: 'kanban', name: 'board', version: 1 }]);
     expect(fsEvents).toEqual([{ type: 'changed', path: '/a.md', kind: 'modified' }]);
@@ -1441,7 +1342,10 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
 
   it('subscribeToSystemEvents decodes publication_changed and proposal_changed', () => {
     const events: unknown[] = [];
-    const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
+    const cleanup = subscribeToSystemEvents(
+      (e) => events.push(e),
+      () => {},
+    );
 
     const source = FakeEventSource.instances[0]!;
     source.emit('publication_changed', { topic: 'system', plugin: 'kanban', key: 'board' });
@@ -1453,7 +1357,10 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
 
   it('a malformed publication frame is dropped, and the connection keeps reading', () => {
     const events: unknown[] = [];
-    const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
+    const cleanup = subscribeToSystemEvents(
+      (e) => events.push(e),
+      () => {},
+    );
     const source = FakeEventSource.instances[0]!;
 
     // The shared connection's own dispatcher parses the envelope to read the
@@ -1472,7 +1379,6 @@ describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subs
   });
 });
 
-
 // =============================================================================
 // fetchRawFile — the one raw-body read (a Blob, not a decoded document).
 // =============================================================================
@@ -1481,21 +1387,16 @@ describe('fetchRawFile', () => {
   it('throws the attachment error when the raw fetch fails', async () => {
     global.fetch = vi.fn(async () => ({ ok: false, status: 404 }) as Response);
 
-    await expect(fetchRawFile('notes/a.md')).rejects.toThrow(
-      'attachment notes/a.md: 404',
-    );
+    await expect(fetchRawFile('notes/a.md')).rejects.toThrow('attachment notes/a.md: 404');
   });
 
   it('returns the body bytes when the raw fetch succeeds', async () => {
     const blob = new Blob(['bytes']);
-    global.fetch = vi.fn(
-      async () => ({ ok: true, blob: async () => blob }) as unknown as Response,
-    );
+    global.fetch = vi.fn(async () => ({ ok: true, blob: async () => blob }) as unknown as Response);
 
     await expect(fetchRawFile('notes/a.md')).resolves.toBe(blob);
   });
 });
-
 
 // =============================================================================
 //

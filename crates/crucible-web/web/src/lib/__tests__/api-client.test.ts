@@ -10,6 +10,7 @@ import {
   errorSentence,
   expectOk,
   resetAuthThrottleForTests,
+  rpc,
   type ApiError,
 } from '../api-client';
 import { notificationActions, notificationStore } from '@/stores/notificationStore';
@@ -177,6 +178,28 @@ describe('a reply that is not the shape the document declares', () => {
     const result = await client.GET('/api/nope');
 
     expect(result.response.status).toBe(404);
+  });
+});
+
+describe('the one RPC call', () => {
+  // The abort signal a caller passes has to follow the request, not just the
+  // options object: `rpc('session.history', ..., { signal })` is how a pane
+  // that rebinds mid-fetch cancels the stale read.
+  it("forwards the caller's AbortSignal to the request", async () => {
+    const mockFetch = createMockFetch({
+      'POST /api/rpc/session.history': {
+        body: { session_id: 'ses-1', history: [], total_events: 0 },
+      },
+    });
+    global.fetch = mockFetch;
+    const controller = new AbortController();
+    await rpc('session.history', { session_id: 'ses-1' }, { signal: controller.signal });
+    // The client builds the `Request`, so the signal it carries FOLLOWS the
+    // caller's rather than being the same object. An abort still reaches it.
+    const { signal } = await mockFetch.sent(0);
+    expect(signal.aborted).toBe(false);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
   });
 });
 

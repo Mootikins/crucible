@@ -1,8 +1,5 @@
-import {
-  useMutation,
-  type UseMutationResult,
-} from '@tanstack/solid-query';
-import { connectSessionKiln, disconnectSessionKiln } from '@/lib/api';
+import { useMutation, type UseMutationResult } from '@tanstack/solid-query';
+import { rpc } from '@/lib/api-client';
 import type { SessionScope } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -58,7 +55,9 @@ export function useConnectSessionKiln(): UseMutationResult<
   Error,
   { id: string; kiln: string }
 > {
-  return useScopeMutation(connectSessionKiln);
+  return useScopeMutation((sessionId, kiln) =>
+    rpc('session.connect_kiln', { session_id: sessionId, kiln }),
+  );
 }
 
 /** Detaches one kiln from a session. Any member may be detached. */
@@ -67,5 +66,7 @@ export function useDisconnectSessionKiln(): UseMutationResult<
   Error,
   { id: string; kiln: string }
 > {
-  return useScopeMutation(disconnectSessionKiln);
+  return useScopeMutation((sessionId, kiln) =>
+    rpc('session.disconnect_kiln', { session_id: sessionId, kiln }),
+  );
 }

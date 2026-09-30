@@ -1,6 +1,11 @@
 import { createSignal, type Accessor } from 'solid-js';
-import { QueryObserver, useQuery, type QueryClient, type UseQueryResult } from '@tanstack/solid-query';
-import { listKilns } from '@/lib/api';
+import {
+  QueryObserver,
+  useQuery,
+  type QueryClient,
+  type UseQueryResult,
+} from '@tanstack/solid-query';
+import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
 import { kilnPathForName } from '@/lib/kiln-registry';
 import type { KilnListEntry } from '@/lib/types';
@@ -35,7 +40,7 @@ function storedKilns(): KilnListEntry[] | undefined {
 
 /** The one fetch, which also refreshes what the next cold load paints. */
 async function fetchKilns(): Promise<KilnListEntry[]> {
-  const kilns = await listKilns();
+  const kilns = await rpc('kiln.list', null);
   writeLocalCache(STORAGE_KEY, kilns);
   return kilns;
 }
@@ -77,7 +82,10 @@ function kilnsQueryOptions() {
  * stored list is in flight; every later mount reads the cache synchronously.
  */
 export function useKilns(): UseQueryResult<KilnListEntry[], Error> {
-  return useQuery(() => kilnsQueryOptions(), () => seededClient());
+  return useQuery(
+    () => kilnsQueryOptions(),
+    () => seededClient(),
+  );
 }
 
 /**
