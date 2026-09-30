@@ -137,7 +137,7 @@ function kilnNotesOptions(kiln: string) {
 /**
  * The options of one kiln's file list.
  *
- * `/api/kiln/files` answers every file in the kiln, notes and the rest; the
+ * `listFiles` answers every file in the kiln, notes and the rest; the
  * `@` completion offers that list, and the note list beside it. It takes the
  * short window its sibling takes, for the same reason: the list exists to
  * coalesce the burst of asks one person makes while typing, and a file that

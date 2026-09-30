@@ -242,92 +242,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/fs/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/fs/list` — one directory level inside a registered root.
-         * @description All security (registry allowlist, path containment, symlink/dotfile
-         *     handling) is enforced daemon-side; this handler is a thin passthrough of
-         *     the daemon's listing envelope.
-         */
-        get: operations["list_dir"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/fs/mkdir": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/fs/mkdir` — create a folder inside one root.
-         * @description The tree's "New folder". Missing parents are created too. Thin daemon proxy.
-         */
-        post: operations["mkdir_path"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/fs/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/fs/move` — move or rename one entry within one root.
-         * @description The file-tree drag-and-drop backend. All security (allowlist, containment,
-         *     overwrite refusal) is daemon-side; this handler is a thin passthrough. Kiln
-         *     note and canvas moves carry the link-rewrite report, so the tree can tell
-         *     the user what happened to their links.
-         */
-        post: operations["move_path"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/fs/trash": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/fs/trash` — move one entry to the root's `.crucible/trash/`.
-         * @description The tree's "Delete". Thin daemon proxy; kiln notes leave the index inline,
-         *     so backlinks re-resolve at once.
-         */
-        post: operations["trash_path"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/interaction/respond": {
         parameters: {
             query?: never;
@@ -386,78 +300,6 @@ export interface paths {
         patch: operations["patch_kiln_file"];
         trace?: never;
     };
-    "/api/kiln/files": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/kiln/files?kiln=<path>` — list notes in a kiln as file entries. */
-        get: operations["list_kiln_files"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/kiln/graph": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
-         * @description Returns the daemon's `kiln.graph` result verbatim:
-         *     `{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.
-         */
-        get: operations["kiln_graph"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/kiln/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata. */
-        get: operations["list_kiln_notes"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/kilns": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/kilns` — every kiln a client may address. */
-        get: operations["list_kilns"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/layout": {
         parameters: {
             query?: never;
@@ -492,23 +334,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata. */
-        get: operations["list_notes"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/notes/{name}": {
         parameters: {
             query?: never;
@@ -516,12 +341,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * `GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply
-         *     is core's own [`NoteByNameReply`], the same type `get_note_by_name`
-         *     answers.
-         */
-        get: operations["get_note"];
+        get?: never;
         /** `PUT /api/notes/{name}` — write a note into an open kiln. */
         put: operations["put_note"];
         post?: never;
@@ -776,44 +596,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/project/get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/project/get` — one project by its root path.
-         * @description A path no project is registered for answers 404 rather than a null body,
-         *     so a client cannot mistake "not registered" for a project with no fields.
-         */
-        get: operations["get_project"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/project/list` — every project the daemon holds registered. */
-        get: operations["list_projects"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/project/register": {
         parameters: {
             query?: never;
@@ -836,26 +618,6 @@ export interface paths {
          *     land above what was checked.
          */
         post: operations["register_project"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/unregister": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/project/unregister` — forget a registered project.
-         * @description The directory stays on disk; only the registration goes.
-         */
-        post: operations["unregister_project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -967,30 +729,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/search/grep": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/search/grep` — ripgrep-style content search over an absolute
-         *     `root`. The daemon enforces that `root` is contained within a registered
-         *     project or open kiln (a root outside every known root is rejected with
-         *     INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
-         *     (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
-         *     binary files are skipped.
-         */
-        post: operations["search_grep"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/search/semantic": {
         parameters: {
             query?: never;
@@ -1002,26 +740,6 @@ export interface paths {
         put?: never;
         /** `POST /api/search/semantic` — embed the query, then rank the kiln's notes. */
         post: operations["search_semantic"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/search/vectors": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/search/vectors` — rank a kiln's blocks against a vector the
-         *     caller already holds.
-         */
-        post: operations["search_vectors"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3112,19 +2830,6 @@ export interface components {
          * @enum {string}
          */
         FileEncoding: "text" | "base64";
-        /** @description One entry of a kiln's file listing. */
-        FileEntryRow: {
-            /**
-             * @description Always `false`: this listing walks the note index, which holds files.
-             *     The key stays because the file tree reads one entry type for every
-             *     source, and `GET /api/fs/list` does report directories.
-             */
-            is_dir: boolean;
-            /** @description The file stem, or the whole path when the stem is not UTF-8. */
-            name: string;
-            /** @description RELATIVE to the kiln root. */
-            path: string;
-        };
         /**
          * @description One file a batch or a full-kiln process step failed on: the shape
          *     `kiln.open { process: true }` and `process_batch` both answer for an
@@ -3332,16 +3037,6 @@ export interface components {
             created: boolean;
         };
         /**
-         * @description What `POST /api/fs/mkdir` answers.
-         *
-         *     The route's own shape, not the daemon's: `fs_mkdir` reports success as
-         *     `()`, so there is no daemon body to forward.
-         */
-        FsMkdirResponse: {
-            /** @description Always true. A refusal is an error status, not a `false`. */
-            created: boolean;
-        };
-        /**
          * @description What `fs.move` answers.
          *
          *     The two link-report keys are absent for a move the link index does not
@@ -3438,12 +3133,13 @@ export interface components {
             title: string;
         };
         /**
-         * @description A single content-search hit.
+         * @description A single content-search hit: one row of `search_grep`.
          *
-         *     `match_start`/`match_end` are **character** offsets into `text` (post-trim),
-         *     suitable for `<mark>` highlighting in the web UI. Only the first match on a
-         *     line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
-         *     `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
+         *     `match_start`/`match_end` are **character** offsets into `text`
+         *     (post-trim), suitable for `<mark>` highlighting in the web UI. Only the
+         *     first match on a line is reported. Wire keys (`path`/`rel_path`/`line`/
+         *     `text`/`match_start`/`match_end`) are the `search_grep` RPC + `POST
+         *     /api/search/grep` contract.
          */
         GrepHit: {
             /**
@@ -3460,8 +3156,8 @@ export interface components {
             /** @description Path relative to the search's `rel_base` (forward-slash separators). */
             rel_path: string;
             /**
-             * @description The matched line, trimmed of surrounding whitespace and capped at
-             *     [`GREP_SNIPPET_CAP`] characters.
+             * @description The matched line, trimmed of surrounding whitespace and capped at a
+             *     daemon-side length.
              */
             text: string;
         };
@@ -3488,7 +3184,7 @@ export interface components {
         };
         /**
          * @description Result of a `search_grep` call: the hits plus whether they were capped at
-         *     the requested limit. Matches the `POST /api/search/grep` response body.
+         *     the requested limit.
          */
         GrepSearchResponse: {
             hits: components["schemas"]["GrepHit"][];
@@ -3761,15 +3457,6 @@ export interface components {
              */
             content_hash: string;
         };
-        /**
-         * @description What `GET /api/kiln/files` and `GET /api/kiln/notes` both answer.
-         *
-         *     One type for two routes because they answer the same projection of the same
-         *     listing. The key is `files` on both, including on the one named for notes.
-         */
-        KilnFilesResponse: {
-            files: components["schemas"]["FileEntryRow"][];
-        };
         /** @description What `kiln.forget` answers. */
         KilnForgetReply: {
             name: string;
@@ -3805,13 +3492,6 @@ export interface components {
         KilnGraphReply: {
             links: components["schemas"]["KilnGraphLink"][];
             notes: components["schemas"]["KilnGraphNote"][];
-        };
-        /**
-         * @description What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is
-         *     core's own [`KilnRow`], the same type `kiln.list` answers.
-         */
-        KilnListResponse: {
-            kilns: components["schemas"]["KilnRow"][];
         };
         /**
          * @description A kiln name: the key of a `[kilns]` entry in the user's config.
@@ -4511,13 +4191,6 @@ export interface components {
          * @enum {string}
          */
         NoteChangeType: "content" | "frontmatter" | "links" | "tags";
-        /**
-         * @description What `GET /api/notes` answers. A thin wrapper, not a copy: the row is
-         *     core's own [`NoteListRow`], the same type `note.list` answers.
-         */
-        NoteListResponse: {
-            notes: components["schemas"]["NoteListRow"][];
-        };
         /**
          * @description One row of `list_notes`, as it crosses the RPC wire.
          *
@@ -5598,16 +5271,6 @@ export interface components {
             path: string;
             /** @description The caller is not the local user at the machine. */
             untrusted?: boolean;
-        };
-        /**
-         * @description What `POST /api/project/unregister` answers.
-         *
-         *     The route's own shape: the daemon reports the unregistration as `()`, so
-         *     there is no daemon body to forward.
-         */
-        ProjectUnregisterResponse: {
-            /** @description Always true. A refusal is an error status, not a `false`. */
-            ok: boolean;
         };
         /** @description A set of note writes that waits for the user. */
         Proposal: {
@@ -8346,28 +8009,6 @@ export interface components {
             score: number;
             snippet?: string | null;
         };
-        VectorSearchRequest: {
-            /** @description Absolute path of the kiln to search. */
-            kiln: string;
-            limit?: number;
-            /** @description The query vector, already embedded by the caller. */
-            vector: number[];
-        };
-        /** @description What `POST /api/search/vectors` answers. */
-        VectorSearchResponse: {
-            results: components["schemas"]["VectorSearchRow"][];
-        };
-        /** @description One block hit, as `search_vectors` ranked it. */
-        VectorSearchRow: {
-            block: null | components["schemas"]["BlockRef"];
-            /** @description The note's kiln-relative path. */
-            document_id: string;
-            /**
-             * Format: double
-             * @description Similarity, higher is closer.
-             */
-            score: number;
-        };
         /**
          * @description Built-in presentation options, projected from preserved Obsidian view data.
          *     Every field has its default, so clients do not repeat them.
@@ -8737,7 +8378,6 @@ export type SchemaFileChangeKind = components['schemas']['FileChangeKind'];
 export type SchemaFileConflict = components['schemas']['FileConflict'];
 export type SchemaFileDiff = components['schemas']['FileDiff'];
 export type SchemaFileEncoding = components['schemas']['FileEncoding'];
-export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
 export type SchemaFileProcessError = components['schemas']['FileProcessError'];
 export type SchemaFileReadRequest = components['schemas']['FileReadRequest'];
 export type SchemaFileStatus = components['schemas']['FileStatus'];
@@ -8751,7 +8391,6 @@ export type SchemaFsEvent = components['schemas']['FsEvent'];
 export type SchemaFsListDirRequest = components['schemas']['FsListDirRequest'];
 export type SchemaFsListing = components['schemas']['FsListing'];
 export type SchemaFsMkdirReply = components['schemas']['FsMkdirReply'];
-export type SchemaFsMkdirResponse = components['schemas']['FsMkdirResponse'];
 export type SchemaFsMoveReply = components['schemas']['FsMoveReply'];
 export type SchemaFsMoveRequest = components['schemas']['FsMoveRequest'];
 export type SchemaFsPathRequest = components['schemas']['FsPathRequest'];
@@ -8776,12 +8415,10 @@ export type SchemaInteractivePanel = components['schemas']['InteractivePanel'];
 export type SchemaItemBody = components['schemas']['ItemBody'];
 export type SchemaJobPayload = components['schemas']['JobPayload'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
-export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
 export type SchemaKilnForgetReply = components['schemas']['KilnForgetReply'];
 export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
 export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
 export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
-export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
 export type SchemaKilnName = components['schemas']['KilnName'];
 export type SchemaKilnNotesIndexedPayload = components['schemas']['KilnNotesIndexedPayload'];
 export type SchemaKilnOpenError = components['schemas']['KilnOpenError'];
@@ -8844,7 +8481,6 @@ export type SchemaNameRequest = components['schemas']['NameRequest'];
 export type SchemaNewNotification = components['schemas']['NewNotification'];
 export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
 export type SchemaNoteChangeType = components['schemas']['NoteChangeType'];
-export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
 export type SchemaNoteListRow = components['schemas']['NoteListRow'];
 export type SchemaNotePathRequest = components['schemas']['NotePathRequest'];
 export type SchemaNoteRecord = components['schemas']['NoteRecord'];
@@ -8930,7 +8566,6 @@ export type SchemaProjectOpenKilnsNoMatch = components['schemas']['ProjectOpenKi
 export type SchemaProjectOpenKilnsReply = components['schemas']['ProjectOpenKilnsReply'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
 export type SchemaProjectRegisterRequest = components['schemas']['ProjectRegisterRequest'];
-export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
 export type SchemaProposal = components['schemas']['Proposal'];
 export type SchemaProposalAcceptRequest = components['schemas']['ProposalAcceptRequest'];
 export type SchemaProposalAuthor = components['schemas']['ProposalAuthor'];
@@ -9107,9 +8742,6 @@ export type SchemaUndoCount = components['schemas']['UndoCount'];
 export type SchemaUndoSummary = components['schemas']['UndoSummary'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorHit = components['schemas']['VectorHit'];
-export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
-export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
-export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
 export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
@@ -9735,159 +9367,6 @@ export interface operations {
             };
         };
     };
-    list_dir: {
-        parameters: {
-            query: {
-                /** @description Root-relative POSIX path of the directory. Empty lists the root. */
-                rel_path?: string;
-                /** @description Absolute path of the root to list inside. */
-                root: string;
-                /** @description Include dotfiles. `.git` never lists, whatever this says. */
-                show_hidden?: boolean;
-                /** @description Include entries git ignores. The file tree sends `true`. */
-                show_ignored?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FsListing"];
-                };
-            };
-            /** @description The daemon refuses the root or the relative path, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not list the directory, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    mkdir_path: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FsPathRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FsMkdirResponse"];
-                };
-            };
-            /** @description The daemon refuses the root or the relative path, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not create the folder */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    move_path: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FsMoveRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FsMoveReply"];
-                };
-            };
-            /** @description The daemon refuses the root, either path, or an overwrite, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not move the entry, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    trash_path: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FsPathRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FsTrashReply"];
-                };
-            };
-            /** @description The daemon refuses the root or the relative path, and says why */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not trash the entry, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     interaction_respond: {
         parameters: {
             query?: never;
@@ -10152,119 +9631,6 @@ export interface operations {
             };
         };
     };
-    list_kiln_files: {
-        parameters: {
-            query: {
-                /** @description The absolute path of the kiln. */
-                kiln: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KilnFilesResponse"];
-                };
-            };
-            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    kiln_graph: {
-        parameters: {
-            query: {
-                /** @description The absolute path of the kiln. */
-                kiln: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KilnGraphReply"];
-                };
-            };
-            /** @description The daemon could not build the graph, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_kiln_notes: {
-        parameters: {
-            query: {
-                /** @description The absolute path of the kiln. */
-                kiln: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KilnFilesResponse"];
-                };
-            };
-            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_kilns: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KilnListResponse"];
-                };
-            };
-            /** @description The daemon could not list the kilns */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     get_layout: {
         parameters: {
             query?: never;
@@ -10349,83 +9715,6 @@ export interface operations {
             };
             /** @description The stored layout could not be deleted */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_notes: {
-        parameters: {
-            query: {
-                /** @description Absolute path of the kiln to list. */
-                kiln: string;
-                /** @description Keep only notes whose path holds this substring. */
-                path_filter?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteListResponse"];
-                };
-            };
-            /** @description The daemon could not list the notes */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_note: {
-        parameters: {
-            query: {
-                /** @description Absolute path of the kiln. */
-                kiln: string;
-            };
-            header?: never;
-            path: {
-                /** @description The note's name or kiln-relative path */
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteByNameReply"];
-                };
-            };
-            /** @description The name carries a traversal sequence */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The kiln holds no note of that name */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the note */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10915,68 +10204,6 @@ export interface operations {
             };
         };
     };
-    get_project: {
-        parameters: {
-            query: {
-                /** @description Absolute path of the project root. */
-                path: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project"];
-                };
-            };
-            /** @description No project is registered for this path */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the project */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_projects: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project"][];
-                };
-            };
-            /** @description The daemon could not list the projects */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     register_project: {
         parameters: {
             query?: never;
@@ -11013,36 +10240,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not register the project */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    unregister_project: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProjectPathRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProjectUnregisterResponse"];
-                };
-            };
-            /** @description The daemon could not unregister the project */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -11227,43 +10424,6 @@ export interface operations {
             };
         };
     };
-    search_grep: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GrepSearchRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GrepSearchResponse"];
-                };
-            };
-            /** @description The root sits outside every registered project and open kiln, or the query is not a valid regex */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not run the search */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     search_semantic: {
         parameters: {
             query?: never;
@@ -11286,36 +10446,6 @@ export interface operations {
                 };
             };
             /** @description The kiln has no embedding provider, or the daemon could not search it */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    search_vectors: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VectorSearchRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VectorSearchResponse"];
-                };
-            };
-            /** @description The daemon could not search the kiln */
             502: {
                 headers: {
                     [name: string]: unknown;

@@ -22,11 +22,11 @@ import {
 let commands: SessionCommand[] = [];
 let files: FileEntry[] = [];
 let notes: FileEntry[] = [];
-/** What `GET /api/fs/list` answers, by the `rel_path` it is asked for. */
+/** What `fs.list_dir` answers, by the `rel_path` it is asked for. */
 let dirs: Record<string, Array<{ name: string; rel_path: string; is_dir: boolean }>> = {};
 /** When true, `GET /api/session/s-1/commands` refuses once. */
 let refuseCommands = false;
-/** When true, `GET /api/fs/list` refuses the root, as the daemon does for a root it did not admit. */
+/** When true, `fs.list_dir` refuses the root, as the daemon does for a root it did not admit. */
 let refuseDirs = false;
 
 let env: TestQueryEnv;
@@ -40,23 +40,36 @@ function installEnv(): void {
         status: 503,
       });
     },
-    'GET /api/kiln/files': () => ({ files }),
-    'GET /api/kiln/notes': () => ({ files: notes }),
-    'GET /api/fs/list': (request: Request) => {
+    // `list_notes` reaches the browser through `POST /api/rpc/{method}`
+    // now ([[Simplification Plan#Step 19]] item 3): `useListKilnFiles`
+    // (file mentions) and `useListKilnNotes` (wikilinks) both call it,
+    // wire-identically — `GET /api/kiln/files` and `/api/kiln/notes`,
+    // which used to answer the same projection under two names, are gone.
+    // Each test below populates only one of `files`/`notes`, so one mock
+    // answers both hooks correctly; only the "once for every composer"
+    // test needs both at once, and it asserts the call count, not content.
+    'POST /api/rpc/list_notes': () =>
+      [...files, ...notes].map((e) => ({ name: e.name, path: e.path })),
+    'POST /api/rpc/fs.list_dir': (request: Request) => {
       if (refuseDirs) {
         return new Response(
           JSON.stringify({ error: { code: 422, message: 'root is not a registered project' } }),
           { status: 422 },
         );
       }
-      const rel = new URL(request.url).searchParams.get('rel_path') ?? '';
-      const entries = (dirs[rel] ?? []).map((e) => ({
-        ...e,
-        size: 0,
-        modified: null,
-        status: null,
-      }));
-      return { entries, truncated: false };
+      return request
+        .clone()
+        .json()
+        .then((body: { rel_path?: string }) => {
+          const rel = body.rel_path ?? '';
+          const entries = (dirs[rel] ?? []).map((e) => ({
+            ...e,
+            size: 0,
+            modified: null,
+            status: null,
+          }));
+          return { entries, truncated: false };
+        });
     },
   });
 }
@@ -170,21 +183,22 @@ describe('useAutocomplete slash commands', () => {
   });
 
   // The `@` list used to call `listFiles` straight through `lib/api`, so each
-  // composer held its own copy and asked the daemon again. Both lists read
-  // `lib/query/notes.ts` now, so two composers in one kiln cost one GET each.
+  // composer held its own copy and asked the daemon again. `listFiles` and
+  // `listKilnNotes` both reshape one `list_notes` row now
+  // ([[Simplification Plan#Step 19]] item 3) — the same listing serves the
+  // `@` mentions, the `[[` wikilinks and the tags — so one fetch, under one
+  // key, now serves two composers in one kiln.
   it('fetches the kiln files and notes once for every composer', async () => {
     await createRoot(async (dispose) => {
-      files = [{ name: 'One.md', path: 'One.md' } as FileEntry];
       notes = [{ name: 'Two.md', path: 'Two.md' } as FileEntry];
 
       const first = harness();
       await first.type('@');
       const second = harness();
-      await second.type('@O');
+      await second.type('@T');
 
       expect(second.auto.isOpen()).toBe(true);
-      expect(env.fetch.calls('GET /api/kiln/files')).toBe(1);
-      expect(env.fetch.calls('GET /api/kiln/notes')).toBe(1);
+      expect(env.fetch.calls('POST /api/rpc/list_notes')).toBe(1);
       dispose();
     });
   });
@@ -325,7 +339,7 @@ describe('useAutocomplete file mentions', () => {
       refuseDirs = true;
       const { auto, type } = harness('', '/ws');
       await type('@wiki');
-      expect(env.fetch.calls('GET /api/fs/list')).toBeGreaterThan(0);
+      expect(env.fetch.calls('POST /api/rpc/fs.list_dir')).toBeGreaterThan(0);
       expect(auto.isOpen()).toBe(true);
       expect(auto.items().map((i) => i.insertText)).toEqual(['Help/Wikilinks.md']);
       expect(notificationStore.notifications.filter((n) => !n.dismissed)).toEqual([]);

@@ -365,10 +365,16 @@ fn browser_may_call(method: RpcMethod) -> bool {
         // Not used by the web today.
         UiConfig | UiSetTheme => false,
 
-        // Local admin: `project.register`'s untrusted-root rule and
-        // `project.unregister`'s pairing with it live in the web's own
-        // dedicated route (step 19's own table), not in this raw passthrough.
-        ProjectRegister | ProjectUnregister => false,
+        // Local admin: `project.register`'s untrusted-root rule
+        // (`[web] registration_roots`, and the untrusted-root refusal on top
+        // of it) lives in the web's own dedicated route (step 19's own
+        // table), not in this raw passthrough.
+        ProjectRegister => false,
+        // Forgetting a registration carries no such rule — it touches
+        // nothing on disk and admits no credential-store or floor question —
+        // so it needs no dedicated route of its own; step 19 item 3 moved
+        // its own browser caller onto this passthrough.
+        ProjectUnregister => true,
         ProjectList | ProjectGet => true,
         // Not used by the web today.
         ProjectOpenKilns | ProjectRegistryList => false,
@@ -444,7 +450,6 @@ mod tests {
             "kiln.register",
             "kiln.forget",
             "project.register",
-            "project.unregister",
             "llm.register_provider",
             "webhook.receive",
             "client_state.get",
@@ -487,30 +492,15 @@ mod tests {
         );
     }
 
-    /// `POST /api/rpc/search_grep` answers the same body `POST
-    /// /api/search/grep` does: both name the row's reply (`GrepSearchResponse`)
-    /// directly.
-    #[tokio::test]
-    async fn search_grep_matches_the_existing_route() {
-        let body = json!({ "root": "/tmp/test-kiln", "query": "needle" });
-        let (_, rest) = request_json("POST", "/api/search/grep", Some(body.clone())).await;
-        let (status, rpc) = request_json("POST", "/api/rpc/search_grep", Some(body)).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(rpc, rest);
-    }
-
-    /// `GET /api/kilns` wraps the row's own reply under a `kilns` key (a
-    /// thin, documented rename); `POST /api/rpc/kiln.list` answers the row's
-    /// bare `Vec<KilnRow>` instead, since this route forwards the reply
-    /// unchanged rather than reshaping it the way a dedicated REST route may.
-    /// The data is the same; the envelope is the REST route's own addition.
-    #[tokio::test]
-    async fn kiln_list_matches_the_existing_routes_own_data() {
-        let (_, rest) = request_json("GET", "/api/kilns", None).await;
-        let (status, rpc) = request_json("POST", "/api/rpc/kiln.list", Some(json!({}))).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(rpc, rest["kilns"]);
-    }
+    // `search_grep_matches_the_existing_route` and
+    // `kiln_list_matches_the_existing_routes_own_data` are gone with the
+    // routes they compared against: `POST /api/search/grep` and
+    // `GET /api/kilns` only forwarded one RPC row each, and are deleted
+    // ([[Simplification Plan#Step 19]] item 3, the "migration") — there is
+    // no second route left to prove parity with. `search_grep`'s and
+    // `kiln.list`'s own shapes are proved directly in
+    // `routes/search.rs`'s (`search_grep_answers_the_declared_shape_through_the_rpc_route`,
+    // `kiln_list_answers_the_declared_shape_through_the_rpc_route`).
 
     /// `GET /api/plugins` renames the row's `plugin_info` field to `plugins`
     /// (documented on `PluginListResponse`); `POST /api/rpc/plugin.list`

@@ -49,8 +49,10 @@ async function setupBacklinksRoutes(page: Page) {
   );
   // The panel derives its kiln from the FOCUSED FILE's own path rather than
   // from the session or the active kiln, so it needs the kiln roster to
-  // attribute that file to a kiln.
-  await page.route('**/api/kilns**', (r) => r.fulfill({ json: { kilns: [{ path: HARNESS_KILN }] } }));
+  // attribute that file to a kiln. `kiln.list` reaches the browser through
+  // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3);
+  // `GET /api/kilns` is gone, and the reply is the array directly.
+  await page.route('**/api/rpc/kiln.list', (r) => r.fulfill({ json: [{ path: HARNESS_KILN }] }));
 
   await page.route('**/api/backlinks**', (route) => {
     const note = new URL(route.request().url()).searchParams.get('note') ?? '';

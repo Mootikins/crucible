@@ -35,11 +35,14 @@ beforeEach(() => {
   resetKilnsForTests();
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'POST /api/rpc/kiln.list': () => KILNS,
     'POST /api/rpc/agents.list_profiles': () => ({ profiles: AGENTS }),
     'POST /api/rpc/models.list': () => ({ models: ['sonnet', 'opus'] }),
     'GET /api/config': () => ({ kiln_path: '/kilns/home' }),
-    'GET /api/project/list': () => [{ path: '/work/alpha', name: 'alpha', kilns: [] }],
+    // `project.list` reaches the browser through `POST /api/rpc/{method}`
+    // now ([[Simplification Plan#Step 19]] item 3); `GET /api/project/list`
+    // is gone.
+    'POST /api/rpc/project.list': () => [{ path: '/work/alpha', name: 'alpha', kilns: [] }],
     'GET /api/plugins/publications': () => ({ publications: { targets: {} } }),
   });
   created.params = [];

@@ -85,9 +85,10 @@ daemon, so every caller of the RPC method gets them:
   same cross-instance isolation. Proved in
   `crates/crucible-daemon/tests/client_state.rs`.
 
-**Step 19's generic RPC route is done for its backend half (items 1-3 and 6);
-its typed client, the route migration and the old-route deletion are open
-(item 4 and item 9).** `POST /api/rpc/{method}` (`crates/crucible-web/src/routes/rpc.rs`)
+**Step 19's generic RPC route is done for its backend half (items 1-3 and 6)
+and for its typed client (item 4). The route migration and the old-route
+deletion (item 9) are done for the `skills`, `kiln`/`note`/`search`, `fs`
+and `project`/`scm` domains; the rest are open.** `POST /api/rpc/{method}` (`crates/crucible-web/src/routes/rpc.rs`)
 sits behind the same auth middleware, origin checks and body-size limit as
 every other route — it is merged into `api_router` beside them, not layered
 separately — and does three things in order:
@@ -101,11 +102,15 @@ separately — and does three things in order:
    each named at its arm: local-admin methods (`shutdown`, `lua.eval` and the
    Lua lifecycle, `plugin.install`/`remove`, the `config.*` writes and reads,
    `storage.*`, `mcp.start`/`stop`, `kiln.open`/`close`/`register`/`forget`,
-   `project.register`/`unregister`, `llm.register_provider`,
+   `project.register`, `llm.register_provider`,
    `webhook.receive`, `client_state.get`/`set`); methods no current web route
    forwards; and methods whose existing REST route applies a check this raw
    passthrough would skip (`project.register`'s untrusted-root rule,
-   `/api/config`'s credential redaction).
+   `/api/config`'s credential redaction). `project.unregister` is NOT
+   local-admin: it only forgets a registration, touches no disk and carries
+   no credential-store or floor question, so it is browser-allowed —
+   `routes/project.rs`'s own dedicated route forwarded it before the
+   migration, and now `rpc()` does.
 3. Check `plugin_may_call`, the stricter per-caller list from
    `routes/plugin_caller.rs`'s `PluginCaller` (read the same way — same
    header, same three-valued identity — except that an absent header is the
@@ -135,31 +140,31 @@ params)` (`crates/crucible-web/web/src/lib/api-client.ts`, step 19 item 4):
 it reads its params and reply types off the generated `RpcMethods[M]`, and
 one error mapping, `expectOk`, covers every method. The migration moving
 each domain's callers onto `rpc(...)` and deleting the REST route that only
-forwarded one RPC (item 9) is per-domain and in progress: the `skills`
-domain is done (`GET /api/skills`, `/api/skills/{name}` and
-`/api/skills/search` are gone, and `lib/query/skills.ts` calls
-`rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly); done
-too for `mcp.status` (`GET /api/mcp/status`, `routes/mcp.rs`, gone),
-`agents.list_profiles`/`models.list` (`GET /api/agents`, `GET /api/models`,
-`routes/agents.rs`, gone), `surface.list` (`GET /api/surfaces`,
-`routes/surface.rs` — `SurfaceChangedEvent`, the push frame's own type,
-stays in that file),
-`proposal.list`/`get`/`accept`/`reject`/`dismiss`/`resolve`
-(`/api/proposals*`, `routes/proposals.rs` and
-`services/daemon_proposals.rs`, both gone) and
-`diff.get`/`file`/`comment`/`resolve_comment`/`delete_comment`/`comments`
-(`/api/diff*`, `routes/diff.rs`, gone) — the browser now builds the tagged
-`DiffsetSource` directly and sends it as the row's own JSON body, so the
-web-side query-string flattening and its "exactly one of root, session and
-proposal" pre-check (which the tagged union already enforces at the type
-level) went with it. `routes/config.rs` (`GET`/`POST /api/config`) stays: the
-`config.*` RPC rows are off `browser_may_call` entirely (credential
-redaction only this route applies), so there is no generic path to move onto.
-`routes/plugin.rs` stays whole, for now: two of its ten routes already have
-an exact generic-path equivalent, but moving their frontend callers needs
-`rpc(...)` to carry the `x-crucible-plugin` header first — see the
-`routes/plugin.rs` table row above. The other domains still keep their REST
-route and forwarder.
+forwarded one RPC (item 9) is per-domain and in progress. The browser calls
+these domains through `rpc(...)`, and their routes are gone: `skills`,
+`mcp.status`, `agents.list_profiles`, `models.list`, `surface.list`,
+`proposal.*`, `diff.*`, `kiln.list`, `kiln.graph`, `list_notes`,
+`get_note_by_name`, `search_vectors`, `search_grep`, `fs.*` except
+`fs.read`/`fs.write`, `project.list`, `project.get` and `project.unregister`.
+`project.get` answers `null` for an unknown project, not a 404. The routes in
+the table below stay, because each one does more than a forward:
+
+- `GET/PUT/PATCH /api/kiln/file` and `GET /api/file/raw` translate the
+  untyped `fs.read`/`fs.write` reply into status codes, and serve raw bytes
+  with content-type and CSP rules.
+- `GET /api/notes/resolve` walks the file system. `PUT /api/notes/{name}`
+  builds the file name, the title and `updated_at`.
+- `GET /api/backlinks` and `POST /api/search/semantic` compose two daemon
+  calls. Both clients need these compositions, so they belong in the daemon.
+- `POST /api/project/register` applies `[web] registration_roots` and rolls
+  back an escaped registration.
+- `/api/bases/*` and `/api/canvas` translate untyped rows, and canvas redacts
+  its reads.
+- `POST /api/scm/clone` needs the ten-minute timeout of `scm_clone`.
+- `/api/config` redacts credentials. No `config.*` row is on the browser
+  allow list.
+- `routes/plugin.rs` stays until `rpc(...)` carries the `x-crucible-plugin`
+  header.
 
 `crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
 filesystem directly (a walk that deliberately bypasses the note index), but
@@ -211,17 +216,17 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/chat.rs` | 527 | Chat turn intake (with attached diff comments) and pending-interaction routes. The session SSE stream moved to `routes/events.rs` in Simplification Plan step 19. |
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. Kept (not migrated onto `rpc(...)`): every `config.*` RPC row is off `browser_may_call`, so this curated, credential-redacting composition is the only path a browser has to any of it. |
 | `crates/crucible-web/src/routes/events.rs` | 550 | `GET /api/events` — the one SSE route (Simplification Plan step 19). A client names as many topics as it wants in `?topics=a,b,...`: a session id for the chat stream, or `system` for publications, proposals, surface changes and filesystem changes. Every frame's JSON body gains a `topic` field; the payload types are unchanged (`SessionEventPayload`, `FsEvent`, `SurfaceChangedEvent`, `PublicationChangedEvent`, `ProposalChangedEvent`). Replaces the four routes `chat.rs::event_stream`, `fs.rs::fs_event_stream`, `surface.rs::surface_event_stream` and this file's own former `system_event_stream` used to serve separately. |
-| `crates/crucible-web/src/routes/fs.rs` | 398 | File-tree explorer routes: list, move, mkdir, trash. The live SSE stream moved to `routes/events.rs` (the `system` topic) in step 19. `fs_list_dir`/`fs_move`/`fs_trash` return the daemon's typed `FsListing`/`FsMoveReply`/`FsTrashReply` directly, with no `daemon_shape` decode. |
+| `routes/fs.rs` (deleted) | — | Gone (step 19 item 3): `fs.list_dir`/`fs.move`/`fs.mkdir`/`fs.trash` only forwarded one RPC row each. The browser reaches them through `POST /api/rpc/{method}`; the live SSE stream had already moved to `routes/events.rs` (the `system` topic). |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
 | `crates/crucible-web/src/routes/helpers.rs` | 115 | Shared stream-versioning, note-projection, and note-name-validation helpers. |
-| `crates/crucible-web/src/routes/kiln.rs` | 1300 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. `kiln_graph` returns core's own `KilnGraphReply` unchanged. |
+| `crates/crucible-web/src/routes/kiln.rs` | 1195 | Text/raw file read-write (`GET/PUT/PATCH /api/kiln/file`, `GET /api/file/raw`) through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers, which translate the daemon's untyped `fs.read`/`fs.write` reply into REST status codes — real web-owned behavior a generic RPC passthrough cannot do, so these routes stay. `GET /api/kiln/files`/`/notes`/`/graph` are gone (step 19 item 3): the browser reaches `list_notes`/`kiln.graph` through `POST /api/rpc/{method}` and reshapes the narrowed `{name, path, is_dir}` view itself now (`lib/api.ts`'s `toFileEntries`). |
 | `crates/crucible-web/src/routes/layout.rs` | 470 | Web UI layout persistence and the recently-opened-files list. |
 | `crates/crucible-web/src/routes/plugin.rs` | 964 | The ten plugin HTTP endpoints: list, install, remove, reload, option, options, commands, publications, run-command. Each reply is a `crucible_core::types::Plugin*` type, forwarded unchanged. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. Kept whole rather than migrated onto `rpc(...)` (Simplification Plan step 19): `POST /api/rpc/plugin.publications`/`plugin.run_command` already apply this file's own per-caller narrowing generically (`plugin_may_call`/`narrow_reply_for_caller` in `routes/rpc.rs`, reusing `narrow_to_caller`/`refuse_another_plugins_command`) and could migrate, but a caller here also needs `x-crucible-plugin`, which `rpc(...)` (`lib/api-client.ts`) does not yet carry — moving `list_publications`/`run_command`'s frontend callers means extending it first, left to a follow-up. `option_call` additionally lets a plugin read/write its own settings tree, which `plugin_may_call` does not yet allow for any method but those two; `install_plugin`/`remove_plugin` are off `browser_may_call` outright (local admin); `list_plugins`/`list_commands`/`list_options` are deliberately ungated, a property the generic route's allow list does not preserve for a caller that honestly declares itself a plugin. |
 | `crates/crucible-web/src/routes/plugin_caller.rs` | 144 | `PluginCaller` — the caller-identity extractor gating six plugin routes. |
-| `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
+| `crates/crucible-web/src/routes/project.rs` | 493 | `POST /api/project/register` and the untrusted-caller root-safety policy. |
 | `crates/crucible-web/src/routes/rpc.rs` | 642 | `POST /api/rpc/{method}` — the one generic RPC route (Simplification Plan step 19 item 1): `browser_may_call`'s exhaustive allow list, `plugin_may_call`'s stricter per-caller list, and the daemon-error-to-HTTP-status mapping. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
-| `crates/crucible-web/src/routes/search.rs` | 1506 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. `list_kilns`, `list_notes`, `get_note` and `get_backlinks` return core's own reply types (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`) unchanged, rather than a local row type decoded through `daemon_shape`. |
+| `crates/crucible-web/src/routes/search.rs` | 1297 | `GET /api/notes/resolve` (filesystem walk), `PUT /api/notes/{name}` (`put_note`, which builds the file name, extracts a title and stamps `updated_at`), `GET /api/backlinks` (composes `get_backlinks` with a second read for unlinked mentions) and `POST /api/search/semantic` (composes `embed.query` with `search_vectors`, folds to one row per note) — real web-owned behavior, so these routes stay. `GET /api/kilns`, `/api/notes`, `/api/notes/{name}`'s `GET` arm, and `POST /api/search/vectors`/`/grep` are gone (step 19 item 3): each only forwarded one RPC row. The browser reaches `kiln.list`/`list_notes`/`get_note_by_name`/`search_vectors`/`search_grep` through `POST /api/rpc/{method}`. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
 | `crates/crucible-web/src/routes/surface.rs` | 126 | `SurfaceChangedEvent`, the push frame `routes/events.rs`'s `system` topic carries. `GET /api/surfaces` (`surface.list`, forwarded) is gone: the browser calls `rpc('surface.list', {})` directly. |

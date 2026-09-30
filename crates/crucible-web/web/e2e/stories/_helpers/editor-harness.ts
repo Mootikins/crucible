@@ -67,7 +67,9 @@ export async function setupEditorHarness(
   const saves: SavedNote[] = [];
   const byPath = new Map(files.map((f) => [f.path, f]));
 
-  await page.route('**/api/project/list', (r) => r.fulfill({ json: [project] }));
+  // `project.list` reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/project/list` is gone.
+  await page.route('**/api/rpc/project.list', (r) => r.fulfill({ json: [project] }));
 
   // Editor load + save both go through /api/kiln/file by absolute path:
   //   GET  → return the seeded bytes (get_note_by_name has no content)

@@ -11,7 +11,9 @@ use base64::Engine as _;
 use crucible_core::file_write::{FileContent, FileEncoding, FileReadReply, FileReadRequest};
 use crucible_core::note_edit::{AnchoredEdit, EditRefusal};
 use crucible_core::note_merge::Region;
-use crucible_core::protocol::requests::{KilnGraphReply, KilnPathRequest, PathRequest};
+#[cfg(test)]
+use crucible_core::protocol::requests::KilnGraphReply;
+use crucible_core::protocol::requests::PathRequest;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use utoipa::ToSchema;
@@ -19,9 +21,6 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn kiln_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(list_kiln_files))
-        .routes(routes!(list_kiln_notes))
-        .routes(routes!(kiln_graph))
         .routes(routes!(get_kiln_file, put_kiln_file, patch_kiln_file))
         .routes(routes!(get_raw_file))
 }
@@ -62,108 +61,13 @@ struct PatchFileRequest {
 // =========================================================================
 // Handlers
 // =========================================================================
-
-/// One entry of a kiln's file listing.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct FileEntryRow {
-    /// The file stem, or the whole path when the stem is not UTF-8.
-    name: String,
-    /// RELATIVE to the kiln root.
-    path: String,
-    /// Always `false`: this listing walks the note index, which holds files.
-    /// The key stays because the file tree reads one entry type for every
-    /// source, and `GET /api/fs/list` does report directories.
-    is_dir: bool,
-}
-
-/// What `GET /api/kiln/files` and `GET /api/kiln/notes` both answer.
-///
-/// One type for two routes because they answer the same projection of the same
-/// listing. The key is `files` on both, including on the one named for notes.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct KilnFilesResponse {
-    files: Vec<FileEntryRow>,
-}
-
-/// `GET /api/kiln/files?kiln=<path>` — list notes in a kiln as file entries.
-#[utoipa::path(
-    get,
-    path = "/api/kiln/files",
-    params(KilnPathRequest),
-    responses(
-        (status = 200, body = KilnFilesResponse),
-        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
-    )
-)]
-async fn list_kiln_files(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
-) -> Result<Json<KilnFilesResponse>, WebError> {
-    Ok(Json(
-        kiln_file_listing(&state, Path::new(&query.kiln)).await?,
-    ))
-}
-
-/// `GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata.
-#[utoipa::path(
-    get,
-    path = "/api/kiln/notes",
-    params(KilnPathRequest),
-    responses(
-        (status = 200, body = KilnFilesResponse),
-        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
-    )
-)]
-async fn list_kiln_notes(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
-) -> Result<Json<KilnFilesResponse>, WebError> {
-    Ok(Json(
-        kiln_file_listing(&state, Path::new(&query.kiln)).await?,
-    ))
-}
-
-/// The listing both routes answer. One body, so the two cannot drift apart
-/// the way two copies of the same projection did.
-async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesResponse, WebError> {
-    let notes = state.daemon.list_notes(kiln, None).await.daemon_err()?;
-
-    let files: Vec<FileEntryRow> = notes
-        .into_iter()
-        .map(|n| FileEntryRow {
-            name: n.name,
-            path: n.path,
-            is_dir: false,
-        })
-        .collect();
-
-    Ok(KilnFilesResponse { files })
-}
-
-/// `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
-///
-/// Returns the daemon's `kiln.graph` result verbatim:
-/// `{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.
-#[utoipa::path(
-    get,
-    path = "/api/kiln/graph",
-    params(KilnPathRequest),
-    responses(
-        (status = 200, body = KilnGraphReply),
-        (status = 502, description = "The daemon could not build the graph, or answered a shape this route cannot read"),
-    )
-)]
-async fn kiln_graph(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
-) -> Result<Json<KilnGraphReply>, WebError> {
-    let graph = state
-        .daemon
-        .kiln_graph(Path::new(&query.kiln))
-        .await
-        .daemon_err()?;
-    Ok(Json(graph))
-}
+//
+// `GET /api/kiln/files`, `/api/kiln/notes` and `/api/kiln/graph` are gone
+// ([[Simplification Plan#Step 19]] item 3, the "migration"): each only
+// forwarded one RPC row (`list_notes`, `kiln.graph`) with a reshape a
+// frontend map can do as well. The browser reaches `list_notes` and
+// `kiln.graph` through `POST /api/rpc/{method}` now
+// (`lib/query/notes.ts`).
 
 /// `GET /api/kiln/file?path=<path>` — read a file's content.
 ///
@@ -639,38 +543,38 @@ mod tests {
         (kiln, note.to_string_lossy().into_owned(), disk_hash(text))
     }
 
+    // `list_notes` and `kiln.graph` reach the browser through
+    // `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3):
+    // `GET /api/kiln/files`, `/api/kiln/notes` and `/api/kiln/graph` only
+    // forwarded (and, for the first two, reshaped) one RPC row each. The
+    // reshape into `{name, path, is_dir}` now lives in `lib/query/notes.ts`,
+    // and the fixture these two tests read
+    // (`crate::test_support`'s mock for `RpcMethod::ListNotes`/`KilnGraph`)
+    // is keyed by the RPC method, not by the route, so the same daemon
+    // answer proves the RPC path.
+
     #[tokio::test]
-    async fn list_kiln_files_answers_the_declared_shape() {
-        let listing: KilnFilesResponse =
-            shape("GET", "/api/kiln/files?kiln=/daemon/kiln", None).await;
+    async fn list_notes_answers_the_declared_shape_through_the_rpc_route() {
+        let notes: Vec<crucible_core::protocol::requests::NoteListRow> = shape(
+            "POST",
+            "/api/rpc/list_notes",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln" })),
+        )
+        .await;
 
-        assert_eq!(listing.files.len(), 2);
-        assert_eq!(listing.files[0].name, "Kilns");
-        assert_eq!(listing.files[0].path, "notes/kilns.md");
-        assert!(
-            !listing.files[0].is_dir,
-            "this listing walks the note index, which holds no directories"
-        );
-    }
-
-    /// The notes route answers the same projection under the same key, so one
-    /// reply type serves both. A change to either must therefore move both.
-    #[tokio::test]
-    async fn list_kiln_notes_answers_the_same_shape_under_the_same_key() {
-        let files: KilnFilesResponse =
-            shape("GET", "/api/kiln/files?kiln=/daemon/kiln", None).await;
-        let notes: KilnFilesResponse =
-            shape("GET", "/api/kiln/notes?kiln=/daemon/kiln", None).await;
-
-        assert_eq!(
-            serde_json::to_value(&files).unwrap(),
-            serde_json::to_value(&notes).unwrap()
-        );
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].name, "Kilns");
+        assert_eq!(notes[0].path, "notes/kilns.md");
     }
 
     #[tokio::test]
-    async fn kiln_graph_answers_the_declared_shape() {
-        let graph: KilnGraphReply = shape("GET", "/api/kiln/graph?kiln=/daemon/kiln", None).await;
+    async fn kiln_graph_answers_the_declared_shape_through_the_rpc_route() {
+        let graph: KilnGraphReply = shape(
+            "POST",
+            "/api/rpc/kiln.graph",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln" })),
+        )
+        .await;
 
         assert_eq!(graph.notes.len(), 2);
         assert_eq!(graph.notes[0].path, "Alpha.md");

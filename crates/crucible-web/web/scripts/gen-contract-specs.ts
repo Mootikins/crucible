@@ -108,9 +108,7 @@ const BY_OPERATION: Record<string, Record<string, (v: ProbeValues) => string>> =
   'GET /api/canvas': { path: (v) => v.canvasPath },
   'GET /api/file/raw': { path: (v) => v.filePath },
   'GET /api/kiln/file': { path: (v) => v.filePath },
-  'GET /api/project/get': { path: (v) => v.projectPath },
   'GET /api/notes/resolve': { name: (v) => v.noteName },
-  'GET /api/notes/{name}': { name: (v) => v.noteName },
   'GET /api/skills/{name}': { name: (v) => v.skillName },
 };
 

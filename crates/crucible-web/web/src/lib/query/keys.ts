@@ -73,9 +73,11 @@ export const keys = {
   notesBacklinks: (kiln: string, note: string) => ['notes', 'backlinks', kiln, note] as const,
   notesGraph: (kiln: string) => ['notes', 'graph', kiln] as const,
   notesKiln: (kiln: string) => ['notes', 'kiln', kiln] as const,
-  // `/api/kiln/files` is the sibling of `/api/kiln/notes`, so it keys into
-  // the `notes` family: the filesystem stream drops a kiln's held answers
-  // by walking that family, and a key outside it would never be dropped.
+  // `listFiles` is the sibling of `listKilnNotes` (both reshape one
+  // `list_notes` row, [[Simplification Plan#Step 19]] item 3), so it keys
+  // into the `notes` family: the filesystem stream drops a kiln's held
+  // answers by walking that family, and a key outside it would never be
+  // dropped.
   kilnFiles: (kiln: string) => ['notes', 'kiln-files', kiln] as const,
   canvas: (path: string) => ['canvas', path] as const,
   searchSemantic: (kiln: string, q: string) => ['search', 'semantic', kiln, q] as const,

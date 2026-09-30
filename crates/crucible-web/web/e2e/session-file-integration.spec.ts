@@ -29,12 +29,12 @@ test.describe('Session and file tab integration', () => {
   test('session and file tabs coexist in center pane', async ({ page }) => {
     await setupBasicMocks(page);
 
-    // Mock notes API
-    await page.route('**/api/notes**', (route) => {
+    // Mock the notes API. `list_notes` reaches the browser through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3);
+    // `GET /api/notes` is gone, and the reply is the array directly.
+    await page.route('**/api/rpc/list_notes', (route) => {
       route.fulfill({
-        json: [
-          { name: 'My Note', path: '/home/user/notes/My Note.md', is_dir: false },
-        ],
+        json: [{ name: 'My Note', path: '/home/user/notes/My Note.md' }],
       });
     });
 

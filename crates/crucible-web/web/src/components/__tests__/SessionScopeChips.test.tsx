@@ -57,7 +57,7 @@ beforeEach(() => {
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
   sent.length = 0;
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'POST /api/rpc/kiln.list': () => KILNS,
     [CONNECT]: async (request) => {
       const { kiln } = (await request.json()) as { kiln: string };
       sent.push({ route: CONNECT, kiln });

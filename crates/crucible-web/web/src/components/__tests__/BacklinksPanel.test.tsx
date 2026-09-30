@@ -70,7 +70,9 @@ beforeEach(() => {
   backlinksAsked = [];
   backlinksAnswer = () => RESPONSE;
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [{ path: '/kiln', name: 'kiln' }] }),
+    // `kiln.list` reaches the browser through `POST /api/rpc/{method}` now
+    // ([[Simplification Plan#Step 19]] item 3); `GET /api/kilns` is gone.
+    'POST /api/rpc/kiln.list': () => [{ path: '/kiln', name: 'kiln' }],
     'GET /api/config': () => ({ kiln_path: '/kiln' }),
     // The mentions themselves, on the wire: a panel that went around the cache
     // would still count as one call against a mocked module.

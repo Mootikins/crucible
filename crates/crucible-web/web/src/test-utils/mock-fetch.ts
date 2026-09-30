@@ -136,11 +136,11 @@ async function sentPartsOf(request: Request): Promise<SentRequest> {
  * @example
  * const mockFetch = createMockFetch({
  *   'POST /api/chat/send': { body: { outcome: 'turn', message_id: 'msg-001' } },
- *   'GET /api/kilns': (req) => [{ name: 'main', path: '/kilns/main' }],
- *   'GET /api/fs/list': apiError(422, 'root is not a registered project'),
+ *   'POST /api/rpc/kiln.list': (req) => [{ name: 'main', path: '/kilns/main' }],
+ *   'POST /api/rpc/fs.list_dir': apiError(422, 'root is not a registered project'),
  * });
  * global.fetch = mockFetch;
- * expect(mockFetch.calls('GET /api/kilns')).toBe(1);
+ * expect(mockFetch.calls('POST /api/rpc/kiln.list')).toBe(1);
  */
 export function createMockFetch(handlers: Record<string, MockFetchAnswer>): MockFetch {
   const counts = new Map<string, number>();

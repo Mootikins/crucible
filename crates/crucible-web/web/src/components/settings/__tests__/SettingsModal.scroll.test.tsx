@@ -53,7 +53,7 @@ beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [] }),
+    'POST /api/rpc/kiln.list': () => [],
     // `useMcpStatus` is NOT stubbed: the MCP section reads it through the real
     // hook, which calls `rpc('mcp.status', null)` against this route.
     'POST /api/rpc/mcp.status': () => ({ servers: [] }),

@@ -1,5 +1,5 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
-import { fetchKilnFilesOnce, fetchKilnNotesOnce } from '@/lib/query/notes';
+import { fetchKilnNotesOnce } from '@/lib/query/notes';
 import { fetchDirOnce } from '@/lib/query/fs';
 import { fetchSlashCommandsOnce } from '@/lib/query/commands';
 import { fuzzyScore } from '@/lib/fuzzy';
@@ -212,14 +212,16 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     }
     if (loadedKiln() === kiln) return;
 
-    // Both lists come from the shared entries the link completion reads, so a
-    // composer and an open editor in one kiln ask the daemon once between
-    // them, and a second trigger inside the freshness window asks for neither.
-    const [files, notes] = await Promise.all([fetchKilnFilesOnce(kiln), fetchKilnNotesOnce(kiln)]);
-    const noteOptions = toAutocompleteItems(notes, 'note');
-    setFileItems(toMentionItems([...files, ...notes]));
+    // `listFiles` and `listKilnNotes` both reshape one `list_notes` row now
+    // ([[Simplification Plan#Step 19]] item 3) — the daemon answers the
+    // same listing either way, so one fetch serves the `@` mentions, the
+    // `[[` wikilinks and the tag extraction alike; a second call would only
+    // ask the same question twice.
+    const entries = await fetchKilnNotesOnce(kiln);
+    const noteOptions = toAutocompleteItems(entries, 'note');
+    setFileItems(toMentionItems(entries));
     setNoteItems(noteOptions);
-    setTagItems(extractTagItems(notes));
+    setTagItems(extractTagItems(entries));
     setLoadedKiln(kiln);
   };
 

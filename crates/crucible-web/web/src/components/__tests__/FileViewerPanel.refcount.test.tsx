@@ -56,13 +56,13 @@ describe('FileViewerPanel — open refcount does not leak', () => {
     installFakeEventSource();
     resetKilnsForTests();
     kilnEnv = createTestQueryEnv({
-      'GET /api/kilns': () => ({ kilns: [] }),
+      'POST /api/rpc/kiln.list': () => [],
       // The same route answers the plain-text read and the hashed one the
       // offline layer asks for.
       'GET /api/kiln/file': () => ({ content: 'content\n', content_hash: 'h' }),
       'PUT /api/kiln/file': () => ({}),
       'GET /api/config': () => ({ kiln_path: '/kiln', config_root: '/etc/crucible' }),
-      'GET /api/notes': () => ({ notes: [] }),
+      'POST /api/rpc/list_notes': () => [],
     });
   });
 

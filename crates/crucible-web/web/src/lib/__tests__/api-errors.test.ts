@@ -31,19 +31,22 @@ afterEach(() => {
 
 describe('daemon refusals reach the user with the reason', () => {
   it('a refused folder listing raises one notification carrying the daemon sentence', async () => {
-    global.fetch = createMockFetch({ 'GET /api/fs/list': refusal(422, REFUSAL) });
+    global.fetch = createMockFetch({ 'POST /api/rpc/fs.list_dir': refusal(422, REFUSAL) });
 
     await expect(listDir('/home/u/.crucible/workspaces/ses-1')).rejects.toThrow(REFUSAL);
 
     const toasts = errorToasts();
     expect(toasts).toHaveLength(1);
     expect(toasts[0].message).toContain(REFUSAL);
-    // What was being attempted, too: the sentence alone names no folder.
-    expect(toasts[0].message).toContain('/home/u/.crucible/workspaces/ses-1');
+    // `fs.list_dir` goes through `rpc()` now ([[Simplification Plan#Step
+    // 19]] item 3), whose one error mapping names the method rather than
+    // the call's own arguments — the folder name is no longer echoed back,
+    // only the daemon's own reason for refusing it.
+    expect(toasts[0].message).toContain('RPC `fs.list_dir` failed');
   });
 
   it('the same refusal repeated within a few seconds is one notification, not a column', async () => {
-    global.fetch = createMockFetch({ 'GET /api/fs/list': refusal(422, REFUSAL) });
+    global.fetch = createMockFetch({ 'POST /api/rpc/fs.list_dir': refusal(422, REFUSAL) });
 
     await expect(listDir('/proj')).rejects.toThrow();
     await expect(listDir('/proj')).rejects.toThrow();

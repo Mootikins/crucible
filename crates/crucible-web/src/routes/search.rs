@@ -1,11 +1,4 @@
-use super::helpers::{validate_note_name, KilnPathQuery};
-use crucible_core::protocol::requests::{
-    BacklinkEntry, KilnRow, NoteByNameReply, NoteListRow, VectorHit,
-};
-// The daemon owns the grep request shape. The copy that used to live in
-// this file had the same six fields and its own `default_grep_limit`
-// hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
-// change to that constant moved the RPC default and left the HTTP one behind.
+use super::helpers::validate_note_name;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -13,87 +6,35 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use crucible_core::protocol::requests::GrepSearchRequest;
+use crucible_core::protocol::requests::{BacklinkEntry, VectorHit};
 use crucible_core::types::database::BlockRef;
-use crucible_daemon::GrepSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+#[cfg(test)]
+use crucible_core::protocol::requests::{KilnRow, NoteByNameReply, NoteListRow};
+#[cfg(test)]
+use crucible_daemon::GrepSearchResponse;
+
 pub fn search_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(list_kilns))
-        .routes(routes!(list_notes))
         .routes(routes!(resolve_note))
-        .routes(routes!(get_note, put_note))
+        .routes(routes!(put_note))
         .routes(routes!(get_backlinks))
-        .routes(routes!(search_vectors))
         .routes(routes!(search_semantic))
-        .routes(routes!(search_grep))
 }
 
-/// What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is
-/// core's own [`KilnRow`], the same type `kiln.list` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct KilnListResponse {
-    kilns: Vec<KilnRow>,
-}
-
-/// `GET /api/kilns` — every kiln a client may address.
-#[utoipa::path(
-    get,
-    path = "/api/kilns",
-    responses(
-        (status = 200, body = KilnListResponse),
-        (status = 502, description = "The daemon could not list the kilns"),
-    )
-)]
-async fn list_kilns(State(state): State<AppState>) -> Result<Json<KilnListResponse>, WebError> {
-    let kilns = state.daemon.kiln_list().await.daemon_err()?;
-
-    Ok(Json(KilnListResponse { kilns }))
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct ListNotesQuery {
-    /// Absolute path of the kiln to list.
-    #[param(value_type = String)]
-    kiln: PathBuf,
-    /// Keep only notes whose path holds this substring.
-    path_filter: Option<String>,
-}
-
-/// What `GET /api/notes` answers. A thin wrapper, not a copy: the row is
-/// core's own [`NoteListRow`], the same type `note.list` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct NoteListResponse {
-    notes: Vec<NoteListRow>,
-}
-
-/// `GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata.
-#[utoipa::path(
-    get,
-    path = "/api/notes",
-    params(ListNotesQuery),
-    responses(
-        (status = 200, body = NoteListResponse),
-        (status = 502, description = "The daemon could not list the notes"),
-    )
-)]
-async fn list_notes(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<ListNotesQuery>,
-) -> Result<Json<NoteListResponse>, WebError> {
-    let notes = state
-        .daemon
-        .list_notes(&query.kiln, query.path_filter.as_deref())
-        .await
-        .daemon_err()?;
-
-    Ok(Json(NoteListResponse { notes }))
-}
+// `GET /api/kilns`, `/api/notes`, `/api/notes/{name}` (its `GET` arm),
+// `POST /api/search/vectors` and `POST /api/search/grep` are gone
+// ([[Simplification Plan#Step 19]] item 3, the "migration"): each only
+// forwarded one RPC row (`kiln.list`, `list_notes`, `get_note_by_name`,
+// `search_vectors`, `search_grep`), with no reshape `search_vectors`'s own
+// row does not already answer. The browser reaches them through
+// `POST /api/rpc/{method}` now. `GET /api/notes/{name}`'s `PUT` arm
+// (`put_note`) stays: it builds the file name, extracts a title and stamps
+// `updated_at`, none of which the daemon's `fs.write` reply carries.
 
 /// `GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink
 /// target to a file, **by walking the kiln**.
@@ -279,43 +220,6 @@ struct ResolveQuery {
     kiln: PathBuf,
     /// The wikilink target, alias and heading suffixes included.
     name: String,
-}
-
-/// `GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply
-/// is core's own [`NoteByNameReply`], the same type `get_note_by_name`
-/// answers.
-#[utoipa::path(
-    get,
-    path = "/api/notes/{name}",
-    params(
-        ("name" = String, Path, description = "The note's name or kiln-relative path"),
-        KilnPathQuery,
-    ),
-    responses(
-        (status = 200, body = NoteByNameReply),
-        (status = 400, description = "The name carries a traversal sequence"),
-        (status = 404, description = "The kiln holds no note of that name"),
-        (status = 502, description = "The daemon could not read the note"),
-    )
-)]
-async fn get_note(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
-) -> Result<Json<NoteByNameReply>, WebError> {
-    // Security: Validate note name doesn't contain path traversal
-    validate_note_name(&name)?;
-
-    let note = state
-        .daemon
-        .get_note_by_name(&query.kiln, &name)
-        .await
-        .daemon_err()?;
-
-    match note {
-        Some(n) => Ok(Json(n)),
-        None => Err(WebError::NotFound(format!("Note '{name}' not found"))),
-    }
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -574,72 +478,15 @@ fn extract_title(content: &str) -> String {
         .unwrap_or_else(|| content.lines().next().unwrap_or("Untitled").to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct VectorSearchRequest {
-    /// Absolute path of the kiln to search.
-    #[schema(value_type = String)]
-    kiln: PathBuf,
-    /// The query vector, already embedded by the caller.
-    vector: Vec<f32>,
-    #[serde(default = "default_limit")]
-    limit: usize,
-}
+// `POST /api/search/vectors` is gone ([[Simplification Plan#Step 19]] item
+// 3): its route answered core's own `VectorHit` shape verbatim (renamed
+// field-for-field), with no frontend caller in `web/src` either. The browser
+// reaches `search_vectors` through `POST /api/rpc/{method}` now; this file's
+// own `search_semantic` below still calls it as a `DaemonClient` method,
+// because it composes two RPCs into one row per note.
 
 fn default_limit() -> usize {
     10
-}
-
-/// One block hit, as `search_vectors` ranked it.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct VectorSearchRow {
-    /// The note's kiln-relative path.
-    document_id: String,
-    /// Similarity, higher is closer.
-    score: f64,
-    /// Where in the note the hit sits, or `null` when the hit names the whole
-    /// note. Always written, so `null` reads as "the whole note" and never as
-    /// "unknown".
-    #[schema(required = true)]
-    block: Option<BlockRef>,
-}
-
-/// What `POST /api/search/vectors` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct VectorSearchResponse {
-    results: Vec<VectorSearchRow>,
-}
-
-/// `POST /api/search/vectors` — rank a kiln's blocks against a vector the
-/// caller already holds.
-#[utoipa::path(
-    post,
-    path = "/api/search/vectors",
-    request_body = VectorSearchRequest,
-    responses(
-        (status = 200, body = VectorSearchResponse),
-        (status = 502, description = "The daemon could not search the kiln"),
-    )
-)]
-async fn search_vectors(
-    State(state): State<AppState>,
-    Json(req): Json<VectorSearchRequest>,
-) -> Result<Json<VectorSearchResponse>, WebError> {
-    let results = state
-        .daemon
-        .search_vectors(&req.kiln, &req.vector, req.limit)
-        .await
-        .daemon_err()?;
-
-    Ok(Json(VectorSearchResponse {
-        results: results
-            .into_iter()
-            .map(|hit| VectorSearchRow {
-                document_id: hit.document_id,
-                score: hit.score,
-                block: hit.block,
-            })
-            .collect(),
-    }))
 }
 
 /// `POST /api/search/semantic` — text semantic search over a kiln's notes.
@@ -746,53 +593,13 @@ fn one_row_per_note(hits: Vec<VectorHit>) -> Vec<VectorHit> {
         .collect()
 }
 
-/// `POST /api/search/grep` — ripgrep-style content search over an absolute
-/// `root`. The daemon enforces that `root` is contained within a registered
-/// project or open kiln (a root outside every known root is rejected with
-/// INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
-/// (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
-/// binary files are skipped.
-#[utoipa::path(
-    post,
-    path = "/api/search/grep",
-    request_body = GrepSearchRequest,
-    responses(
-        (status = 200, body = GrepSearchResponse),
-        (status = 400, description = "The root sits outside every registered project and open kiln, or the query is not a valid regex"),
-        (status = 502, description = "The daemon could not run the search"),
-    )
-)]
-async fn search_grep(
-    State(state): State<AppState>,
-    Json(req): Json<GrepSearchRequest>,
-) -> Result<Json<GrepSearchResponse>, WebError> {
-    let resp = state
-        .daemon
-        .search_grep(
-            &req.root,
-            &req.query,
-            req.regex,
-            req.glob.as_deref(),
-            req.limit,
-            req.case_insensitive,
-        )
-        .await
-        .map_err(map_grep_err)?;
-
-    Ok(Json(resp))
-}
-
-/// Map a `search_grep` daemon error. Containment/parameter rejections come back
-/// as JSON-RPC `INVALID_PARAMS` (-32602) — surface those as 400 Bad Request
-/// rather than a 502; everything else is a genuine upstream/daemon failure.
-fn map_grep_err(e: impl std::fmt::Display) -> WebError {
-    let msg = e.to_string();
-    if msg.contains("-32602") {
-        WebError::Chat(msg)
-    } else {
-        WebError::Daemon(msg)
-    }
-}
+// `POST /api/search/grep` is gone ([[Simplification Plan#Step 19]] item 3):
+// it only forwarded `search_grep`, remapping the daemon's INVALID_PARAMS to
+// 400 instead of the 422 `WebResultExt::daemon_err` gives every other
+// route (`error.rs`'s shared mapping, item 6) — a distinction the frontend
+// never branched on (`grepSearch` in `lib/api.ts` reads the error's
+// sentence, not its status). The browser reaches `search_grep` through
+// `POST /api/rpc/{method}` now, under the one mapping.
 
 #[cfg(test)]
 mod tests {
@@ -808,43 +615,52 @@ mod tests {
     // Each route answers the shape it declares
     // =====================================================================
 
-    #[tokio::test]
-    async fn list_kilns_answers_the_declared_shape() {
-        let listing: KilnListResponse = shape("GET", "/api/kilns", None).await;
+    // `kiln.list`, `list_notes` and `get_note_by_name` reach the browser
+    // through `POST /api/rpc/{method}` now ([[Simplification Plan#Step
+    // 19]] item 3): `GET /api/kilns`, `/api/notes` and `/api/notes/{name}`
+    // only forwarded (and, for the first two, wrapped under one key) one RPC
+    // row each. The mock fixture these tests read
+    // (`crate::test_support`'s canned answer for `RpcMethod::KilnList`/
+    // `ListNotes`/`GetNoteByName`) is keyed by the RPC method, not by the
+    // route, so the same daemon answer proves the RPC path.
 
-        let registered = &listing.kilns[0];
+    #[tokio::test]
+    async fn kiln_list_answers_the_declared_shape_through_the_rpc_route() {
+        let kilns: Vec<KilnRow> =
+            shape("POST", "/api/rpc/kiln.list", Some(serde_json::json!(null))).await;
+
+        let registered = &kilns[0];
         assert_eq!(registered.path, MOCK_DAEMON_KILN_PATH);
         assert_eq!(registered.name, "daemon-kiln");
         assert!(registered.registered);
         assert!(registered.open);
         assert_eq!(registered.last_access_secs_ago, Some(12));
+        assert!(
+            registered.git,
+            "the mock names the first kiln a git top level"
+        );
 
         // A directory the daemon holds open that the registry cannot name. It
         // carries the empty string, never `null`, and no picker may offer it.
-        let unnamed = &listing.kilns[1];
+        let unnamed = &kilns[1];
         assert_eq!(unnamed.name, "");
         assert!(!unnamed.registered);
-    }
-
-    #[tokio::test]
-    async fn a_kiln_row_says_if_it_is_a_git_repository() {
-        let listing: KilnListResponse = shape("GET", "/api/kilns", None).await;
-
         assert!(
-            listing.kilns[0].git,
-            "the mock names the first kiln a git top level"
-        );
-        assert!(
-            !listing.kilns[1].git,
+            !unnamed.git,
             "the mock names the second kiln a plain folder"
         );
     }
 
     #[tokio::test]
-    async fn list_notes_answers_the_declared_shape() {
-        let listing: NoteListResponse = shape("GET", "/api/notes?kiln=/daemon/kiln", None).await;
+    async fn list_notes_answers_the_declared_shape_through_the_rpc_route() {
+        let notes: Vec<NoteListRow> = shape(
+            "POST",
+            "/api/rpc/list_notes",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln" })),
+        )
+        .await;
 
-        let titled = &listing.notes[0];
+        let titled = &notes[0];
         assert_eq!(titled.name, "Kilns");
         assert_eq!(titled.path, "notes/kilns.md");
         assert_eq!(titled.title.as_deref(), Some("Kilns"));
@@ -857,15 +673,20 @@ mod tests {
 
         // A note the index has no title or timestamp for. `null` is the value,
         // never an absent key.
-        let bare = &listing.notes[1];
+        let bare = &notes[1];
         assert_eq!(bare.title, None);
         assert_eq!(bare.updated_at, None);
         assert!(bare.properties.is_empty());
     }
 
     #[tokio::test]
-    async fn get_note_answers_the_declared_shape() {
-        let note: NoteByNameReply = shape("GET", "/api/notes/Kilns?kiln=/daemon/kiln", None).await;
+    async fn get_note_by_name_answers_the_declared_shape_through_the_rpc_route() {
+        let note: NoteByNameReply = shape(
+            "POST",
+            "/api/rpc/get_note_by_name",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln", "name": "Kilns" })),
+        )
+        .await;
 
         assert_eq!(note.path, "notes/kilns.md");
         assert_eq!(note.title, "Kilns");
@@ -876,11 +697,21 @@ mod tests {
         assert_eq!(note.content_hash.len(), 64);
     }
 
+    /// A note the kiln does not hold answers `null`, not a 404: the RPC row
+    /// is `Option<NoteByNameReply>`, and it is `rpc()`'s own caller in
+    /// `lib/query/notes.ts` that reads the option now — no route stands
+    /// between them to translate it into a status code any more.
     #[tokio::test]
-    async fn a_note_the_kiln_does_not_hold_is_a_404() {
-        let (status, _) = request_json("GET", "/api/notes/missing?kiln=/daemon/kiln", None).await;
+    async fn get_note_by_name_answers_null_for_a_note_the_kiln_does_not_hold() {
+        let (status, body) = request_json(
+            "POST",
+            "/api/rpc/get_note_by_name",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln", "name": "missing" })),
+        )
+        .await;
 
-        assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert!(body.is_null(), "{body}");
     }
 
     /// The real daemon indexes three notes. The linker note links to the
@@ -951,18 +782,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_vectors_answers_the_declared_shape() {
-        let answer: VectorSearchResponse = shape(
+    async fn search_vectors_answers_the_declared_shape_through_the_rpc_route() {
+        let answer: Vec<VectorHit> = shape(
             "POST",
-            "/api/search/vectors",
+            "/api/rpc/search_vectors",
             Some(serde_json::json!({ "kiln": "/daemon/kiln", "vector": [0.1, 0.2] })),
         )
         .await;
 
-        // Every block row the daemon ranked, not one per note: folding is the
-        // semantic route's job, not this one's.
-        assert_eq!(answer.results.len(), 3);
-        let best = &answer.results[0];
+        // Every block row the daemon ranked, not one per note: folding is
+        // `search_semantic`'s own job, not this row's.
+        assert_eq!(answer.len(), 3);
+        let best = &answer[0];
         assert_eq!(best.document_id, "notes/kilns.md");
         let block = best.block.as_ref().expect("the hit names a block");
         assert_eq!(block.span_start, 40);
@@ -993,10 +824,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_grep_answers_the_declared_shape() {
+    async fn search_grep_answers_the_declared_shape_through_the_rpc_route() {
         let answer: GrepSearchResponse = shape(
             "POST",
-            "/api/search/grep",
+            "/api/rpc/search_grep",
             Some(serde_json::json!({ "root": "/tmp/test-kiln", "query": "needle" })),
         )
         .await;
@@ -1152,33 +983,6 @@ mod tests {
         survives::<NoteListRow>(&wire);
     }
 
-    /// A hit's block survives [`VectorSearchRow`].
-    ///
-    /// The block is the structured part, and it comes from the daemon's own
-    /// [`VectorHit`] rather than a literal. The row drops `snippet` on
-    /// purpose — `POST /api/search/vectors` never carried it — so the object
-    /// is assembled the way the handler assembles it.
-    #[test]
-    fn a_vector_hit_writes_back_the_block_search_vectors_sent() {
-        let hit = VectorHit {
-            document_id: "notes/kilns.md".to_string(),
-            score: 0.91,
-            block: Some(crucible_core::types::database::BlockRef {
-                span_start: 40,
-                span_end: 90,
-                kind: "paragraph".to_string(),
-                cited: vec![(40, 55)],
-            }),
-            snippet: Some("A kiln is where knowledge goes.".to_string()),
-        };
-
-        survives::<VectorSearchRow>(&serde_json::json!({
-            "document_id": hit.document_id,
-            "score": hit.score,
-            "block": hit.block,
-        }));
-    }
-
     /// A legacy index row has no span. The row leaves both keys out and does
     /// not send `null`.
     #[test]
@@ -1197,7 +1001,7 @@ mod tests {
     async fn grep_search_maps_hits_to_wire_shape() {
         let (status, json) = request_json(
             "POST",
-            "/api/search/grep",
+            "/api/rpc/search_grep",
             Some(serde_json::json!({ "root": "/tmp/test-kiln", "query": "needle" })),
         )
         .await;

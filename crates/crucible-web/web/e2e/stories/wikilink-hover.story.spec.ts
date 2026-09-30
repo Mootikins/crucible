@@ -59,38 +59,40 @@ const STREAM: Frame[] = [
 ];
 
 async function setupNoteRoutes(page: Page) {
-  await page.route('**/api/notes/**', (route) => {
+  // Link resolution is a path lookup against the kiln, not an index query.
+  // `GET /api/notes/resolve` stays a REST route (it walks the filesystem,
+  // not a bare RPC forward).
+  await page.route('**/api/notes/resolve**', (route) => {
     const url = new URL(route.request().url());
-
-    // Link resolution is a path lookup against the kiln, not an index query.
-    // Handled inside this catch-all rather than as its own route: Playwright
-    // matches the most recently registered handler first, so a separate
-    // `/api/notes/resolve` route would be shadowed by this one.
-    if (url.pathname.endsWith('/api/notes/resolve')) {
-      const target = url.searchParams.get('name') ?? '';
-      if (target.toLowerCase() !== 'kiln note') {
-        return route.fulfill({ status: 404, body: 'not found' });
-      }
-      return route.fulfill({
-        json: {
-          path: 'Kiln Note.md',
-          absolutePath: `${KILN}/Kiln Note.md`,
-          title: 'Kiln Note',
-        },
-      });
-    }
-
-    const name = decodeURIComponent(url.pathname.replace('/api/notes/', ''));
-    if (name.toLowerCase() !== 'kiln note') {
+    const target = url.searchParams.get('name') ?? '';
+    if (target.toLowerCase() !== 'kiln note') {
       return route.fulfill({ status: 404, body: 'not found' });
     }
     return route.fulfill({
       json: {
-        name: 'Kiln Note',
+        path: 'Kiln Note.md',
+        absolutePath: `${KILN}/Kiln Note.md`,
+        title: 'Kiln Note',
+      },
+    });
+  });
+
+  // `get_note_by_name` reaches the browser through `POST /api/rpc/{method}`
+  // now (Simplification Plan step 19 item 3); `GET /api/notes/{name}` is
+  // gone.
+  await page.route('**/api/rpc/get_note_by_name', (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { name?: string };
+    if ((body.name ?? '').toLowerCase() !== 'kiln note') {
+      return route.fulfill({ json: null });
+    }
+    return route.fulfill({
+      json: {
         path: `${KILN}/Kiln Note.md`,
         title: 'Kiln Note',
         tags: [],
-        updated_at: '2026-01-01T00:00:00Z',
+        links_to: [],
+        wikilinks: [],
+        content_hash: '0'.repeat(64),
       },
     });
   });

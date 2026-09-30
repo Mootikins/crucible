@@ -55,17 +55,21 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
         "/api/chat/send",
         "/api/config",
         "/api/session/list",
-        "/api/project/list",
         "/api/scm/clone",
-        "/api/fs/move",
-        "/api/search/vectors",
         "/api/plugins",
         "/api/rpc/surface.list",
         "/api/rpc/mcp.status",
-        "/api/kiln/notes",
         "/api/canvas",
         "/api/layout",
+        // `project.list`, `fs.move`, `search_vectors` and `list_notes` reach
+        // the browser through this one route now (Simplification Plan step
+        // 19 item 3): `GET /api/project/list`, `POST /api/fs/move`,
+        // `POST /api/search/vectors` and `GET /api/kiln/notes` are gone.
         "/api/rpc/skills.list",
+        "/api/rpc/project.list",
+        "/api/rpc/fs.move",
+        "/api/rpc/search_vectors",
+        "/api/rpc/list_notes",
         "/api/webhook/probe",
         "/api/terminal/ws",
     ] {

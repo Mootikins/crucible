@@ -115,8 +115,8 @@ beforeEach(() => {
   resetKilnsForTests();
   installFakeEventSource();
   kilnEnv = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [] }),
-    'GET /api/project/list': () => [],
+    'POST /api/rpc/kiln.list': () => [],
+    'POST /api/rpc/project.list': () => [],
     'GET /api/session/test-session/modes': () => ({ current_mode_id: 'ask', modes: [] }),
     'GET /api/session/test-session/status': () => ({ status: [] }),
     'POST /api/session/test-session/command': () => ({ result: 'Context cleared', type: 'success' }),

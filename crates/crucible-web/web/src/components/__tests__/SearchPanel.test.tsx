@@ -34,9 +34,12 @@ beforeEach(() => {
   greps = [];
   sessionSearches = [];
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [{ path: '/kilns/main', name: 'main' }] }),
+    // `kiln.list` and `search_grep` reach the browser through
+    // `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]]
+    // item 3); `GET /api/kilns` and `POST /api/search/grep` are gone.
+    'POST /api/rpc/kiln.list': () => [{ path: '/kilns/main', name: 'main' }],
     'GET /api/config': () => ({ kiln_path: '/kilns/main' }),
-    'POST /api/search/grep': async (request: Request) => {
+    'POST /api/rpc/search_grep': async (request: Request) => {
       const body = (await request.json()) as { root: string; query: string; glob: string | null };
       greps.push(body);
       // The notes call carries the markdown glob; the files call does not.

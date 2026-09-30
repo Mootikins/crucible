@@ -61,19 +61,20 @@ export const MOCK_PROVIDERS = {
   ],
 };
 
-// Real wire shape: kiln.list returns entries, not bare path strings.
-export const MOCK_KILNS = {
-  kilns: [
-    {
-      path: '/home/user/notes',
-      name: 'my-kiln',
-      registered: true,
-      open: true,
-      last_access_secs_ago: 0,
-      git: false,
-    },
-  ],
-};
+// Real wire shape: `kiln.list` answers the array directly, not bare path
+// strings and not wrapped under `{ kilns }` — the route that used to wrap it
+// (`GET /api/kilns`) is gone (Simplification Plan step 19 item 3); the
+// browser reaches `kiln.list` through `POST /api/rpc/{method}` now.
+export const MOCK_KILNS = [
+  {
+    path: '/home/user/notes',
+    name: 'my-kiln',
+    registered: true,
+    open: true,
+    last_access_secs_ago: 0,
+    git: false,
+  },
+];
 
 /**
  * The files of the mock branch diff. `diff.get` answers them for any root,

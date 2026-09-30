@@ -34,10 +34,14 @@ test.describe.configure({ timeout: 180_000 });
 const PROBE_PREFIX = 'C4Probe-';
 let probeNote = '';
 
+// `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+// (Simplification Plan step 19 item 3), so its params ride the body rather
+// than the query string.
 function notesFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
   return log
-    .matching('/api/notes')
-    .filter((r) => r.method === 'GET' && r.query === `kiln=${encodeURIComponent(kilnDir)}`).length;
+    .matching('/api/rpc/list_notes')
+    .filter((r) => r.method === 'POST' && (JSON.parse(r.body ?? '{}') as { kiln?: string }).kiln === kilnDir)
+    .length;
 }
 
 test.describe('live C4 entities', () => {
@@ -77,14 +81,14 @@ test.describe('live C4 entities', () => {
     await selectRoot(page, 'alpha');
     await apiQuiet(log);
 
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
 
     // A second tree, mounted on the other rail, drawing the same corpus.
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
     await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
 
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
   });
 
   // The tree redraws for a file written into the kiln it browses, without a
@@ -112,7 +116,7 @@ test.describe('live C4 entities', () => {
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
     await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
 
     // Count from zero across the write, so an event still in flight from an
     // earlier spec cannot be mistaken for this one's.
@@ -141,7 +145,7 @@ test.describe('live C4 entities', () => {
     // ONE refetch for two mounted trees, not one each. Two caches would make
     // two, and a tree that polled would keep making more.
     await apiQuiet(log, 3000);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
   });
 
   test('a repeated search asks the daemon once', async ({ page }) => {
@@ -154,18 +158,18 @@ test.describe('live C4 entities', () => {
     await apiQuiet(log);
 
     // An empty box asks nothing: there is no question yet.
-    expect(log.count('POST', '/api/search/grep')).toBe(0);
+    expect(log.count('POST', '/api/rpc/search_grep')).toBe(0);
     expect(log.count('POST', '/api/search/semantic')).toBe(0);
 
     await input.fill('seeded');
     await expect
-      .poll(() => log.count('POST', '/api/search/grep'), {
+      .poll(() => log.count('POST', '/api/rpc/search_grep'), {
         timeout: 20_000,
         message: 'the typed query reached no search',
       })
       .toBeGreaterThanOrEqual(1);
     await apiQuiet(log);
-    const asked = log.count('POST', '/api/search/grep');
+    const asked = log.count('POST', '/api/rpc/search_grep');
 
     // Clear, then ask the SAME question again. The answer is held under the
     // query that produced it, so the daemon is not asked twice for one
@@ -175,7 +179,7 @@ test.describe('live C4 entities', () => {
     await apiQuiet(log);
     await input.fill('seeded');
     await apiQuiet(log);
-    expect(log.count('POST', '/api/search/grep'), describeRequests(log, '/api/search/grep')).toBe(
+    expect(log.count('POST', '/api/rpc/search_grep'), describeRequests(log, '/api/rpc/search_grep')).toBe(
       asked,
     );
   });

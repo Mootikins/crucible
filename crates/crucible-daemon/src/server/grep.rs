@@ -1,6 +1,6 @@
 //! Content-search (ripgrep-style) RPC: `search_grep`.
 //!
-//! Backs the web `POST /api/search/grep` endpoint. Walks an absolute `root`,
+//! Backs the browser's `POST /api/rpc/search_grep` call. Walks an absolute `root`,
 //! matching file contents — literal substring by default, regex when the
 //! `regex` param is set (honoring `.gitignore`, skipping binaries) — via the
 //! shared [`grep_search`](crate::tools::grep_engine::grep_search) engine (ripgrep's

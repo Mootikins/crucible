@@ -84,7 +84,7 @@ export type SessionType = Schemas['SessionSummary']['type'];
  * both through `mapSession`, and the two spellings disagreed about which
  * fields a create reply carries. `kilns` holds registry NAMES, not paths —
  * anything that needs a DIRECTORY joins through `kilnPathForName()` against
- * `GET /api/kilns`, and treats an unresolved name as no directory rather than
+ * `kiln.list`, and treats an unresolved name as no directory rather than
  * as the root. `workspace` is `null` when the session has none at all; read it
  * through `sessionWorkspace()`, which also folds the empty string a
  * pre-nullable payload carries.
@@ -134,10 +134,27 @@ export type ProviderInfo = Schemas['ProviderInfo'];
 // File Entry Types
 // =============================================================================
 
-export type FileEntry = Schemas['FileEntryRow'];
+/**
+ * One entry of a kiln's file listing: `listFiles`/`listKilnNotes` in
+ * `lib/api.ts` reshape a `list_notes` row into this narrower view.
+ *
+ * Hand-written, not a `Schemas[...]` alias: `GET /api/kiln/files` and
+ * `/api/kiln/notes`, which used to answer this exact shape as
+ * `FileEntryRow`, are gone ([[Simplification Plan#Step 19]] item 3) — the
+ * browser calls `rpc('list_notes', ...)` and reshapes the reply itself now,
+ * so there is no route type left to alias.
+ */
+export interface FileEntry {
+  /** The file stem, or the whole path when the stem is not UTF-8. */
+  name: string;
+  /** RELATIVE to the kiln root. */
+  path: string;
+  /** Always `false`: this listing walks the note index, which holds files. */
+  is_dir: boolean;
+}
 
 /**
- * One note's metadata, from `GET /api/notes`.
+ * One note's metadata, from `list_notes`.
  *
  * `path` is RELATIVE to the kiln root, not absolute. Every consumer joins it:
  * `notesToTree(notes, kilnAbsRoot)` strips a leading slash and rebuilds from
@@ -160,7 +177,7 @@ export type BacklinksResponse = Schemas['BacklinksResponse'];
 export type Project = Schemas['Project'];
 
 /**
- * One entry of `GET /api/kilns`.
+ * One entry of `kiln.list`.
  *
  * `registered` says whether the kiln registry answers for this directory, and
  * therefore whether `name` is a name `POST /kilns/connect` accepts. The daemon
@@ -179,7 +196,7 @@ export type KilnListEntry = Schemas['KilnRow'];
 // =============================================================================
 
 /**
- * One directory entry from `GET /api/fs/list` (daemon `fs.list_dir`).
+ * One directory entry from `fs.list_dir`.
  *
  * `status` is the git/diff decoration seam and is `unknown` on the wire: the
  * daemon forwards whatever the decorator put there, so a reader narrows it

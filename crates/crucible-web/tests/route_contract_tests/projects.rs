@@ -1,4 +1,12 @@
 //! Project Route Contract Tests (with mock daemon)
+//!
+//! `GET /api/project/list`, `POST /api/project/unregister` and
+//! `GET /api/project/get` are gone ([[Simplification Plan#Step 19]] item 3,
+//! the "migration"): each only forwarded one RPC row. The browser reaches
+//! `project.list`, `project.unregister` and `project.get` through
+//! `POST /api/rpc/{method}` now. `POST /api/project/register` stays: its
+//! `[web] registration_roots` check and its rollback are web-owned
+//! behavior.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -7,28 +15,35 @@ use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon};
 
-#[tokio::test]
-async fn list_projects_returns_200_with_array() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
+async fn call_rpc(app: axum::Router, method: &str, body: Value) -> (StatusCode, Value) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/project/list")
-                .body(Body::empty())
+                .method("POST")
+                .uri(format!("/api/rpc/{method}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+#[tokio::test]
+async fn project_list_returns_200_with_array() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_state(client);
+    let app = build_test_app(state);
+
+    let (status, json) = call_rpc(app, "project.list", json!(null)).await;
+
+    assert_eq!(status, StatusCode::OK);
     assert!(json.is_array(), "Response must be an array of projects");
 }
 
@@ -109,41 +124,32 @@ async fn register_project_returns_403_for_the_filesystem_root() {
 }
 
 #[tokio::test]
-async fn unregister_project_returns_200() {
+async fn project_unregister_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/project/unregister")
-                .header("content-type", "application/json")
-                .body(Body::from(json!({"path": "/tmp/test-project"}).to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, _) = call_rpc(
+        app,
+        "project.unregister",
+        json!({ "path": "/tmp/test-project" }),
+    )
+    .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status, StatusCode::OK);
 }
 
+/// `project.get`'s reply is `Option<Project>`, so a path with no
+/// registration is `null`, not a 404 — the route that used to translate
+/// the option into a status is gone (Simplification Plan step 19 item 3).
 #[tokio::test]
-async fn get_project_missing_returns_404() {
+async fn project_get_missing_returns_null() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/project/get?path=/nonexistent")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(app, "project.get", json!({ "path": "/nonexistent" })).await;
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.is_null(), "{json}");
 }

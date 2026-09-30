@@ -23,6 +23,15 @@ interface ApiRequest {
   path: string;
   /** The query string without its `?`, so a spec can tell two keys apart. */
   query: string;
+  /**
+   * The raw POST body, or `null` for a request that sent none.
+   *
+   * `POST /api/rpc/{method}` (Simplification Plan step 19) carries every
+   * row's params here instead of in the query string, so a spec that used
+   * to tell two `list_notes`/`kiln.graph`/… calls apart by `query` now
+   * reads this.
+   */
+  body: string | null;
   /** Playwright's resource type. An `EventSource` reports `eventsource`. */
   resourceType: string;
 }
@@ -63,6 +72,7 @@ export function captureApiRequests(page: Page): ApiRequestLog {
       method: req.method(),
       path: url.pathname,
       query: url.search.replace(/^\?/, ''),
+      body: req.postData(),
       resourceType: req.resourceType(),
     });
   });

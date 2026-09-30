@@ -6,15 +6,6 @@
 
 use crate::WebError;
 
-/// The query of a route that names one kiln and nothing else.
-#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(crate) struct KilnPathQuery {
-    /// Absolute path of the kiln.
-    #[param(value_type = String)]
-    pub(crate) kiln: std::path::PathBuf,
-}
-
 /// Response for model listings — the session-scoped `list_models` and the
 /// session-less `list_all_models` return the same `{ models: [...] }` shape.
 // `Deserialize` is for the route tests, which read a reply back into the

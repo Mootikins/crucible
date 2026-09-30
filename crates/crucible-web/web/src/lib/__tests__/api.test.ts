@@ -956,16 +956,16 @@ describe('MCP / kilns / notes / search', () => {
   // Replaces a DRIFTED mock that asserted a fictional string payload
   // (`{ kilns: ['default','docs'] }`). The real `handle_kiln_list`
   // (crucible-daemon/src/server/kiln.rs) returns objects — path/name/
-  // last_access_secs_ago — surfaced verbatim by GET /api/kilns.
+  // last_access_secs_ago — surfaced verbatim by `kiln.list`, which the
+  // browser reaches through `POST /api/rpc/kiln.list` now
+  // ([[Simplification Plan#Step 19]] item 3; `GET /api/kilns` is gone).
   it('listKilns returns KilnListEntry[] (object shape, matches handle_kiln_list)', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kilns': {
-        body: {
-          kilns: [
-            { path: '/vault', name: 'default', last_access_secs_ago: 5 },
-            { path: '/docs', name: null, last_access_secs_ago: 99 },
-          ],
-        },
+      'POST /api/rpc/kiln.list': {
+        body: [
+          { path: '/vault', name: 'default', last_access_secs_ago: 5 },
+          { path: '/docs', name: null, last_access_secs_ago: 99 },
+        ],
       },
     });
     expect(await listKilns()).toEqual([
@@ -983,38 +983,40 @@ describe('MCP / kilns / notes / search', () => {
     // 1000 entries, and a capped listing has to be distinguishable from a
     // complete one.
     const listing = { entries, truncated: false };
-    const mockFetch = createMockFetch({ 'GET /api/fs/list': { body: listing } });
+    const mockFetch = createMockFetch({ 'POST /api/rpc/fs.list_dir': { body: listing } });
     global.fetch = mockFetch;
     expect(await listDir('/proj', 'src/web', true)).toEqual(listing);
-    const url = (await mockFetch.sent(0)).url;
-    expect(url).toContain('root=%2Fproj');
-    expect(url).toContain('rel_path=src%2Fweb');
-    expect(url).toContain('show_ignored=true');
+    const body = (await mockFetch.sent(0)).body;
+    expect(body).toEqual({
+      root: '/proj',
+      rel_path: 'src/web',
+      show_ignored: true,
+      show_hidden: true,
+    });
   });
 
   it('listDir preserves the truncation flag', async () => {
     // Dropping this on the floor would render a capped folder as if it were
     // the whole thing, which is the failure the cap exists to avoid.
     const listing = { entries: [], truncated: true };
-    global.fetch = createMockFetch({ 'GET /api/fs/list': { body: listing } });
+    global.fetch = createMockFetch({ 'POST /api/rpc/fs.list_dir': { body: listing } });
     expect((await listDir('/proj')).truncated).toBe(true);
   });
 
   it('listDir throws on a non-ok response', async () => {
-    global.fetch = createMockFetch({ 'GET /api/fs/list': { status: 400 } });
-    await expect(listDir('/proj')).rejects.toThrow(/Failed to list \/proj: HTTP 400/);
+    global.fetch = createMockFetch({ 'POST /api/rpc/fs.list_dir': { status: 400 } });
+    await expect(listDir('/proj')).rejects.toThrow(/RPC `fs.list_dir` failed: HTTP 400/);
   });
 
   it.each([
-    { name: 'listNotes passes kiln + optional pathFilter', kiln: 'default', pathFilter: 'docs/', expectPresent: ['kiln=default', 'path_filter=docs%2F'], expectAbsent: [] as string[] },
-    { name: 'listNotes omits pathFilter when missing', kiln: 'default', expectPresent: [] as string[], expectAbsent: ['path_filter'] },
-  ])('$name', async ({ kiln, pathFilter, expectPresent, expectAbsent }: { kiln: string; pathFilter?: string; expectPresent: string[]; expectAbsent: string[] }) => {
-    const mockFetch = createMockFetch({ 'GET /api/notes': { body: { notes: [] } } });
+    { name: 'listNotes passes kiln + optional pathFilter', kiln: 'default', pathFilter: 'docs/' },
+    { name: 'listNotes omits pathFilter when missing', kiln: 'default', pathFilter: undefined },
+  ])('$name', async ({ kiln, pathFilter }: { kiln: string; pathFilter?: string }) => {
+    const mockFetch = createMockFetch({ 'POST /api/rpc/list_notes': { body: [] } });
     global.fetch = mockFetch;
     await listNotes(kiln, pathFilter);
-    const url = (await mockFetch.sent(0)).url;
-    for (const p of expectPresent) expect(url).toContain(p);
-    for (const p of expectAbsent) expect(url).not.toContain(p);
+    const body = (await mockFetch.sent(0)).body;
+    expect(body).toEqual(pathFilter ? { kiln, path_filter: pathFilter } : { kiln });
   });
 
   it('listNotes includes error text on failure', async () => {
@@ -1051,7 +1053,7 @@ describe('project endpoints', () => {
 
   it('unregisterProject POSTs the path', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/project/unregister': { body: {} },
+      'POST /api/rpc/project.unregister': { body: null },
     });
     global.fetch = mockFetch;
     await unregisterProject('/p');
@@ -1060,30 +1062,34 @@ describe('project endpoints', () => {
 
   it('listProjects returns the array', async () => {
     global.fetch = createMockFetch({
-      'GET /api/project/list': { body: [project] },
+      'POST /api/rpc/project.list': { body: [project] },
     });
     expect(await listProjects()).toEqual([project]);
   });
 
   it('getProject returns the project when found', async () => {
     global.fetch = createMockFetch({
-      'GET /api/project/get': { body: project },
+      'POST /api/rpc/project.get': { body: project },
     });
     expect(await getProject('/p')).toEqual(project);
   });
 
-  it('getProject returns null on 404', async () => {
+  // `project.get`'s reply is `Option<Project>`, so a path with no
+  // registration is `null`, not a 404 — the route that used to translate
+  // the option into a status is gone ([[Simplification Plan#Step 19]]
+  // item 3).
+  it('getProject returns null for an unregistered path', async () => {
     global.fetch = createMockFetch({
-      'GET /api/project/get': { status: 404, body: { error: 'not found' } },
+      'POST /api/rpc/project.get': { body: null },
     });
     expect(await getProject('/missing')).toBeNull();
   });
 
-  it('getProject re-throws non-404 errors', async () => {
+  it('getProject re-throws a real failure', async () => {
     global.fetch = createMockFetch({
-      'GET /api/project/get': { status: 500 },
+      'POST /api/rpc/project.get': { status: 500 },
     });
-    await expect(getProject('/p')).rejects.toThrow('Failed to get project: HTTP 500');
+    await expect(getProject('/p')).rejects.toThrow('RPC `project.get` failed: HTTP 500');
   });
 });
 
@@ -1094,16 +1100,22 @@ describe('project endpoints', () => {
 describe('file endpoints', () => {
   const fileEntry = { name: 'a.md', path: '/a.md', is_dir: false };
 
+  // `GET /api/kiln/files` and `/api/kiln/notes`, which used to answer this
+  // shape server-side as `FileEntryRow`, are gone
+  // ([[Simplification Plan#Step 19]] item 3): `listFiles`/`listKilnNotes`
+  // reshape a `list_notes` row themselves now, so the mock answers that row.
+  const noteRow = { name: fileEntry.name, path: fileEntry.path };
+
   it('listFiles returns the files array', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kiln/files': { body: { files: [fileEntry] } },
+      'POST /api/rpc/list_notes': { body: [noteRow] },
     });
     expect(await listFiles('/k')).toEqual([fileEntry]);
   });
 
   it('listKilnNotes returns the files array', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kiln/notes': { body: { files: [fileEntry] } },
+      'POST /api/rpc/list_notes': { body: [noteRow] },
     });
     expect(await listKilnNotes('/k')).toEqual([fileEntry]);
   });

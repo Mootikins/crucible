@@ -56,26 +56,33 @@ function inRoot<T>(body: () => T): T {
   });
 }
 
+// `project.list`, `project.unregister` and `project.get` reach the browser
+// through `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]]
+// item 3); `GET /api/project/list`/`/get` and
+// `POST /api/project/unregister` are gone. `POST /api/project/register`
+// stays: its `[web] registration_roots` check and its rollback are
+// web-owned behavior.
+
 describe('useProjects', () => {
   it('fetches once for two callers under one root', async () => {
-    env = createTestQueryEnv({ 'GET /api/project/list': () => LIVE });
+    env = createTestQueryEnv({ 'POST /api/rpc/project.list': () => LIVE });
 
     const both = inRoot(() => ({ first: useProjects(), second: useProjects() }));
 
     await vi.waitFor(() => expect(both.first.data).toEqual(LIVE));
     expect(both.second.data).toEqual(LIVE);
-    expect(env.fetch.calls('GET /api/project/list')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(1);
   });
 
   it('surfaces a refusal as an error rather than as an empty roster', async () => {
     env = createTestQueryEnv({
-      'GET /api/project/list': apiError(500, 'the project registry is unreadable'),
+      'POST /api/rpc/project.list': apiError(500, 'the project registry is unreadable'),
     });
 
     const query = inRoot(() => useProjects());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to list projects');
+    expect(query.error?.message).toContain('RPC `project.list` failed');
     expect(query.data).toBeUndefined();
   });
 
@@ -86,7 +93,7 @@ describe('useProjects', () => {
       release = resolve;
     });
     env = createTestQueryEnv({
-      'GET /api/project/list': async () => {
+      'POST /api/rpc/project.list': async () => {
         await answered;
         return LIVE;
       },
@@ -99,11 +106,11 @@ describe('useProjects', () => {
 
     release?.();
     await vi.waitFor(() => expect(query.data).toEqual(LIVE));
-    expect(env.fetch.calls('GET /api/project/list')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(1);
   });
 
   it('writes the fetched roster back to storage', async () => {
-    env = createTestQueryEnv({ 'GET /api/project/list': () => LIVE });
+    env = createTestQueryEnv({ 'POST /api/rpc/project.list': () => LIVE });
 
     const query = inRoot(() => useProjects());
 
@@ -118,7 +125,7 @@ describe('useRegisterProject', () => {
     let sent: unknown = null;
     const added = project('/repos/added', 'added');
     env = createTestQueryEnv({
-      'GET /api/project/list': () => answer,
+      'POST /api/rpc/project.list': () => answer,
       'POST /api/project/register': async (request) => {
         sent = await request.json();
         answer = [...LIVE, added];
@@ -129,37 +136,37 @@ describe('useRegisterProject', () => {
     const both = inRoot(() => ({ query: useProjects(), register: useRegisterProject() }));
 
     await vi.waitFor(() => expect(both.query.data).toEqual(LIVE));
-    expect(env.fetch.calls('GET /api/project/list')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(1);
 
     await expect(both.register.mutateAsync('/repos/added')).resolves.toEqual(added);
 
     expect(sent).toEqual({ path: '/repos/added' });
     await vi.waitFor(() => expect(both.query.data).toEqual([...LIVE, added]));
-    expect(env.fetch.calls('GET /api/project/list')).toBe(2);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(2);
   });
 
   it('asks for the kiln roster again, because a registration can change it', async () => {
     env = createTestQueryEnv({
-      'GET /api/kilns': () => ({ kilns: [] }),
-      'GET /api/project/list': () => LIVE,
+      'POST /api/rpc/kiln.list': () => [],
+      'POST /api/rpc/project.list': () => LIVE,
       'POST /api/project/register': () => project('/repos/added', 'added'),
     });
 
     const both = inRoot(() => ({ kilns: useKilns(), register: useRegisterProject() }));
 
     await vi.waitFor(() => expect(both.kilns.data).toEqual([]));
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
 
     await both.register.mutateAsync('/repos/added');
 
     // The kiln read happens in the BACKGROUND: the mutation does not wait for
     // it, so the wait belongs here rather than on the mutation's promise.
-    await vi.waitFor(() => expect(env.fetch.calls('GET /api/kilns')).toBe(2));
+    await vi.waitFor(() => expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(2));
   });
 
   it('reports a failed registration to the caller and leaves the roster alone', async () => {
     env = createTestQueryEnv({
-      'GET /api/project/list': () => LIVE,
+      'POST /api/rpc/project.list': () => LIVE,
       'POST /api/project/register': apiError(422, 'that path is not a directory'),
     });
 
@@ -169,7 +176,7 @@ describe('useRegisterProject', () => {
     await expect(both.register.mutateAsync('/nowhere')).rejects.toThrow(
       /Failed to register project/,
     );
-    expect(env.fetch.calls('GET /api/project/list')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(1);
   });
 });
 
@@ -178,11 +185,11 @@ describe('useUnregisterProject', () => {
     let answer = LIVE;
     let sent: unknown = null;
     env = createTestQueryEnv({
-      'GET /api/project/list': () => answer,
-      'POST /api/project/unregister': async (request) => {
+      'POST /api/rpc/project.list': () => answer,
+      'POST /api/rpc/project.unregister': async (request) => {
         sent = await request.json();
         answer = [];
-        return new Response(null, { status: 204 });
+        return null;
       },
     });
 
@@ -194,7 +201,7 @@ describe('useUnregisterProject', () => {
 
     expect(sent).toEqual({ path: '/repos/live' });
     await vi.waitFor(() => expect(both.query.data).toEqual([]));
-    expect(env.fetch.calls('GET /api/project/list')).toBe(2);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(2);
   });
 });
 
@@ -204,7 +211,7 @@ describe('useScmClone', () => {
     let answer = LIVE;
     let sent: unknown = null;
     env = createTestQueryEnv({
-      'GET /api/project/list': () => answer,
+      'POST /api/rpc/project.list': () => answer,
       'POST /api/scm/clone': async (request) => {
         sent = await request.json();
         answer = [...LIVE, cloned];
@@ -221,23 +228,26 @@ describe('useScmClone', () => {
     expect(sent).toEqual({ url: 'octocat/Spoon-Knife' });
     expect(result.path).toBe('/repos/cloned');
     await vi.waitFor(() => expect(both.query.data).toEqual([...LIVE, cloned]));
-    expect(env.fetch.calls('GET /api/project/list')).toBe(2);
+    expect(env.fetch.calls('POST /api/rpc/project.list')).toBe(2);
   });
 });
 
 describe('fetchProjectOnce', () => {
   it('reads one project, and answers the second caller from the cache', async () => {
     const one = project('/repos/one', 'one');
-    env = createTestQueryEnv({ 'GET /api/project/get': () => one });
+    env = createTestQueryEnv({ 'POST /api/rpc/project.get': () => one });
 
     await expect(fetchProjectOnce('/repos/one')).resolves.toEqual(one);
     await expect(fetchProjectOnce('/repos/one')).resolves.toEqual(one);
-    expect(env.fetch.calls('GET /api/project/get')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/project.get')).toBe(1);
   });
 
+  // `project.get`'s reply is `Option<Project>`, so a path the daemon does
+  // not know is `null`, not a 404 — the route that used to translate the
+  // option into a status is gone ([[Simplification Plan#Step 19]] item 3).
   it('answers null for a path the daemon does not know', async () => {
     env = createTestQueryEnv({
-      'GET /api/project/get': apiError(404, 'no such project'),
+      'POST /api/rpc/project.get': () => null,
     });
 
     await expect(fetchProjectOnce('/repos/missing')).resolves.toBeNull();

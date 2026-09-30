@@ -6,9 +6,10 @@ import type { KilnListEntry } from '@/lib/types';
  * A kiln crosses the wire as a **name** now — `Session.kilns`, `session.create`,
  * `session.connect_kiln`, the session-search filter. But the browser still has
  * genuinely path-shaped work to do: grep a directory, resolve a wikilink inside
- * a corpus, list a kiln's notes. `GET /api/kilns` is the one endpoint whose job
- * is to say where a kiln lives (`{ name, path }`, the documented exception to
- * "no paths in the API"), so it is the one place the two spellings are joined.
+ * a corpus, list a kiln's notes. `kiln.list` (`POST /api/rpc/kiln.list`,
+ * Simplification Plan step 19) is the one call whose job is to say where a
+ * kiln lives (`{ name, path }`, the documented exception to "no paths in the
+ * API"), so it is the one place the two spellings are joined.
  *
  * The rule every caller here depends on: **a name the registry does not answer
  * for resolves to `null`, and `null` is not a root.** Coercing it to `''`

@@ -56,9 +56,11 @@ test.describe('a kiln survives a daemon restart', () => {
       timeout: 20_000,
     });
     // The web process starts a fresh daemon on its next call. Wait for that,
-    // not for a fixed delay.
+    // not for a fixed delay. `kiln.list` reaches the browser through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3);
+    // `GET /api/kilns` is gone.
     await expect
-      .poll(async () => (await api.get('/api/kilns')).status(), {
+      .poll(async () => (await api.post('/api/rpc/kiln.list', { data: null })).status(), {
         timeout: 30_000,
         message: 'the web process never reconnected to a fresh daemon',
       })
@@ -66,11 +68,12 @@ test.describe('a kiln survives a daemon restart', () => {
 
     try {
       // The fresh daemon still has the registration — this is what makes the
-      // write's refusal a contradiction rather than a missing kiln.
-      const listed = (await (await api.get('/api/kilns')).json()) as {
-        kilns: { path: string; name: string | null; registered?: boolean }[];
-      };
-      const row = listed.kilns.find((k) => k.path === kiln);
+      // write's refusal a contradiction rather than a missing kiln. The
+      // reply is the array directly, not wrapped under `{ kilns }`.
+      const listed = (await (
+        await api.post('/api/rpc/kiln.list', { data: null })
+      ).json()) as { path: string; name: string | null; registered?: boolean }[];
+      const row = listed.find((k) => k.path === kiln);
       expect(row, `the daemon stopped listing ${kiln}: ${JSON.stringify(listed)}`).toBeTruthy();
       expect(row!.registered, 'the registration did not survive the restart').toBe(true);
 

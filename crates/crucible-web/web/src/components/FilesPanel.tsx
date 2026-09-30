@@ -364,8 +364,8 @@ export const FilesPanel: Component<{
   // rebuilds fresh TreeRoot objects on every recompute and the kiln query
   // answers twice by design (stored list, then fetched), so the roster changes
   // twice per mount — and an identity-keyed effect refetched the root plus every
-  // persisted-expanded folder a second time. That was the duplicate
-  // `/api/fs/list` per expand: folders already in the persisted-expanded set
+  // persisted-expanded folder a second time. That was the duplicate call
+  // of `fs.list_dir` per expand: folders already in the persisted-expanded set
   // were fetched once per pass.
   //
   // `on`'s handler also runs untracked, which drops a second accidental

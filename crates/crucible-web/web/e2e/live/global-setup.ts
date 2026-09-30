@@ -435,8 +435,9 @@ async function globalSetup(): Promise<void> {
     execFileSync(cru, ['init', '-p', secondKilnDir, '-y'], { env, stdio: 'ignore', timeout: 60_000 });
     writeFileSync(path.join(kilnDir, 'Seed.md'), '# Seed\n\nseeded note body\n');
     writeFileSync(path.join(secondKilnDir, 'Second.md'), '# Second\n\nsecond kiln note\n');
-    // Open AND index the kiln in the daemon. `/api/kiln/notes` serves the note
-    // index (SQLite), and opening a kiln deliberately does not scan it — the
+    // Open AND index the kiln in the daemon. `list_notes` (reached through
+    // `POST /api/rpc/{method}`) serves the note index (SQLite), and opening
+    // a kiln deliberately does not scan it — the
     // daemon's `open()` only starts the file watcher, so files that already
     // exist are invisible to the index until the product's explicit indexing
     // step runs. `cru process` is that step (kiln_open with process=true),

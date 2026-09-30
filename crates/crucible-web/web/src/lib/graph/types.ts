@@ -1,6 +1,6 @@
 import type { SimulationNodeDatum } from 'd3-force';
 
-/** Wire shape of `GET /api/kiln/graph` (daemon `kiln.graph`). */
+/** Wire shape of `kiln.graph` (`POST /api/rpc/kiln.graph`). */
 interface GraphNoteDto {
   path: string;
   title: string;

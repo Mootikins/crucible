@@ -103,7 +103,7 @@ let env: TestQueryEnv;
 function serve(): void {
   const routes: Record<string, (request: Request) => unknown> = {
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/kilns': () => ({ kilns: [] }),
+    'POST /api/rpc/kiln.list': () => [],
     'GET /api/session/list': () => listAnswer(),
     [SEND_ROUTE]: async (request) => {
       sentTurns.push((await request.clone().json()) as { session_id: string; content: string });

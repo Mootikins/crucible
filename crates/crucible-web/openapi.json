@@ -580,174 +580,6 @@
         }
       }
     },
-    "/api/fs/list": {
-      "get": {
-        "summary": "`GET /api/fs/list` — one directory level inside a registered root.",
-        "description": "All security (registry allowlist, path containment, symlink/dotfile\nhandling) is enforced daemon-side; this handler is a thin passthrough of\nthe daemon's listing envelope.",
-        "operationId": "list_dir",
-        "parameters": [
-          {
-            "name": "root",
-            "in": "query",
-            "description": "Absolute path of the root to list inside.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "rel_path",
-            "in": "query",
-            "description": "Root-relative POSIX path of the directory. Empty lists the root.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "show_ignored",
-            "in": "query",
-            "description": "Include entries git ignores. The file tree sends `true`.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "show_hidden",
-            "in": "query",
-            "description": "Include dotfiles. `.git` never lists, whatever this says.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FsListing"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon refuses the root or the relative path, and says why"
-          },
-          "502": {
-            "description": "The daemon could not list the directory, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/fs/mkdir": {
-      "post": {
-        "summary": "`POST /api/fs/mkdir` — create a folder inside one root.",
-        "description": "The tree's \"New folder\". Missing parents are created too. Thin daemon proxy.",
-        "operationId": "mkdir_path",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FsPathRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FsMkdirResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon refuses the root or the relative path, and says why"
-          },
-          "502": {
-            "description": "The daemon could not create the folder"
-          }
-        }
-      }
-    },
-    "/api/fs/move": {
-      "post": {
-        "summary": "`POST /api/fs/move` — move or rename one entry within one root.",
-        "description": "The file-tree drag-and-drop backend. All security (allowlist, containment,\noverwrite refusal) is daemon-side; this handler is a thin passthrough. Kiln\nnote and canvas moves carry the link-rewrite report, so the tree can tell\nthe user what happened to their links.",
-        "operationId": "move_path",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FsMoveRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FsMoveReply"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon refuses the root, either path, or an overwrite, and says why"
-          },
-          "502": {
-            "description": "The daemon could not move the entry, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/fs/trash": {
-      "post": {
-        "summary": "`POST /api/fs/trash` — move one entry to the root's `.crucible/trash/`.",
-        "description": "The tree's \"Delete\". Thin daemon proxy; kiln notes leave the index inline,\nso backlinks re-resolve at once.",
-        "operationId": "trash_path",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FsPathRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FsTrashReply"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon refuses the root or the relative path, and says why"
-          },
-          "502": {
-            "description": "The daemon could not trash the entry, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
     "/api/interaction/respond": {
       "post": {
         "summary": "Answer one pending interaction.",
@@ -952,124 +784,6 @@
         }
       }
     },
-    "/api/kiln/files": {
-      "get": {
-        "summary": "`GET /api/kiln/files?kiln=<path>` — list notes in a kiln as file entries.",
-        "operationId": "list_kiln_files",
-        "parameters": [
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "The absolute path of the kiln.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KilnFilesResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the notes, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/kiln/graph": {
-      "get": {
-        "summary": "`GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.",
-        "description": "Returns the daemon's `kiln.graph` result verbatim:\n`{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.",
-        "operationId": "kiln_graph",
-        "parameters": [
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "The absolute path of the kiln.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KilnGraphReply"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not build the graph, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/kiln/notes": {
-      "get": {
-        "summary": "`GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata.",
-        "operationId": "list_kiln_notes",
-        "parameters": [
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "The absolute path of the kiln.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KilnFilesResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the notes, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/kilns": {
-      "get": {
-        "summary": "`GET /api/kilns` — every kiln a client may address.",
-        "operationId": "list_kilns",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KilnListResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the kilns"
-          }
-        }
-      }
-    },
     "/api/layout": {
       "get": {
         "summary": "`GET /api/layout` — the pane layout this browser last saved.",
@@ -1142,47 +856,6 @@
         }
       }
     },
-    "/api/notes": {
-      "get": {
-        "summary": "`GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata.",
-        "operationId": "list_notes",
-        "parameters": [
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "Absolute path of the kiln to list.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "path_filter",
-            "in": "query",
-            "description": "Keep only notes whose path holds this substring.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteListResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the notes"
-          }
-        }
-      }
-    },
     "/api/notes/resolve": {
       "get": {
         "summary": "`GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink\ntarget to a file, **by walking the kiln**.",
@@ -1238,51 +911,6 @@
       }
     },
     "/api/notes/{name}": {
-      "get": {
-        "summary": "`GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply\nis core's own [`NoteByNameReply`], the same type `get_note_by_name`\nanswers.",
-        "operationId": "get_note",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "description": "The note's name or kiln-relative path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "Absolute path of the kiln.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteByNameReply"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The name carries a traversal sequence"
-          },
-          "404": {
-            "description": "The kiln holds no note of that name"
-          },
-          "502": {
-            "description": "The daemon could not read the note"
-          }
-        }
-      },
       "put": {
         "summary": "`PUT /api/notes/{name}` — write a note into an open kiln.",
         "operationId": "put_note",
@@ -1705,66 +1333,6 @@
         }
       }
     },
-    "/api/project/get": {
-      "get": {
-        "summary": "`GET /api/project/get` — one project by its root path.",
-        "description": "A path no project is registered for answers 404 rather than a null body,\nso a client cannot mistake \"not registered\" for a project with no fields.",
-        "operationId": "get_project",
-        "parameters": [
-          {
-            "name": "path",
-            "in": "query",
-            "description": "Absolute path of the project root.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Project"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No project is registered for this path"
-          },
-          "502": {
-            "description": "The daemon could not read the project"
-          }
-        }
-      }
-    },
-    "/api/project/list": {
-      "get": {
-        "summary": "`GET /api/project/list` — every project the daemon holds registered.",
-        "operationId": "list_projects",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Project"
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the projects"
-          }
-        }
-      }
-    },
     "/api/project/register": {
       "post": {
         "summary": "`POST /api/project/register` — make a directory a registered project.",
@@ -1799,38 +1367,6 @@
           },
           "502": {
             "description": "The daemon could not register the project"
-          }
-        }
-      }
-    },
-    "/api/project/unregister": {
-      "post": {
-        "summary": "`POST /api/project/unregister` — forget a registered project.",
-        "description": "The directory stays on disk; only the registration goes.",
-        "operationId": "unregister_project",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProjectPathRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectUnregisterResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not unregister the project"
           }
         }
       }
@@ -2000,40 +1536,6 @@
         }
       }
     },
-    "/api/search/grep": {
-      "post": {
-        "summary": "`POST /api/search/grep` — ripgrep-style content search over an absolute\n`root`. The daemon enforces that `root` is contained within a registered\nproject or open kiln (a root outside every known root is rejected with\nINVALID_PARAMS, surfaced here as 400). `glob` filters by file name\n(e.g. `*.md`); `null` searches all files. `.gitignore` is respected and\nbinary files are skipped.",
-        "operationId": "search_grep",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GrepSearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GrepSearchResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The root sits outside every registered project and open kiln, or the query is not a valid regex"
-          },
-          "502": {
-            "description": "The daemon could not run the search"
-          }
-        }
-      }
-    },
     "/api/search/semantic": {
       "post": {
         "summary": "`POST /api/search/semantic` — embed the query, then rank the kiln's notes.",
@@ -2061,37 +1563,6 @@
           },
           "502": {
             "description": "The kiln has no embedding provider, or the daemon could not search it"
-          }
-        }
-      }
-    },
-    "/api/search/vectors": {
-      "post": {
-        "summary": "`POST /api/search/vectors` — rank a kiln's blocks against a vector the\ncaller already holds.",
-        "operationId": "search_vectors",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VectorSearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VectorSearchResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not search the kiln"
           }
         }
       }
@@ -6777,29 +6248,6 @@
           "base64"
         ]
       },
-      "FileEntryRow": {
-        "type": "object",
-        "description": "One entry of a kiln's file listing.",
-        "required": [
-          "name",
-          "path",
-          "is_dir"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The file stem, or the whole path when the stem is not UTF-8."
-          },
-          "path": {
-            "type": "string",
-            "description": "RELATIVE to the kiln root."
-          },
-          "is_dir": {
-            "type": "boolean",
-            "description": "Always `false`: this listing walks the note index, which holds files.\nThe key stays because the file tree reads one entry type for every\nsource, and `GET /api/fs/list` does report directories."
-          }
-        }
-      },
       "FileProcessError": {
         "type": "object",
         "description": "One file a batch or a full-kiln process step failed on: the shape\n`kiln.open { process: true }` and `process_batch` both answer for an\nunindexed file.",
@@ -7246,19 +6694,6 @@
           }
         }
       },
-      "FsMkdirResponse": {
-        "type": "object",
-        "description": "What `POST /api/fs/mkdir` answers.\n\nThe route's own shape, not the daemon's: `fs_mkdir` reports success as\n`()`, so there is no daemon body to forward.",
-        "required": [
-          "created"
-        ],
-        "properties": {
-          "created": {
-            "type": "boolean",
-            "description": "Always true. A refusal is an error status, not a `false`."
-          }
-        }
-      },
       "FsMoveReply": {
         "type": "object",
         "description": "What `fs.move` answers.\n\nThe two link-report keys are absent for a move the link index does not\nwatch — a directory, an asset, a project file — which is the shape the\nbrowser already reads.",
@@ -7428,7 +6863,7 @@
       },
       "GrepHit": {
         "type": "object",
-        "description": "A single content-search hit.\n\n`match_start`/`match_end` are **character** offsets into `text` (post-trim),\nsuitable for `<mark>` highlighting in the web UI. Only the first match on a\nline is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/\n`match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.",
+        "description": "A single content-search hit: one row of `search_grep`.\n\n`match_start`/`match_end` are **character** offsets into `text`\n(post-trim), suitable for `<mark>` highlighting in the web UI. Only the\nfirst match on a line is reported. Wire keys (`path`/`rel_path`/`line`/\n`text`/`match_start`/`match_end`) are the `search_grep` RPC + `POST\n/api/search/grep` contract.",
         "required": [
           "path",
           "rel_path",
@@ -7454,7 +6889,7 @@
           },
           "text": {
             "type": "string",
-            "description": "The matched line, trimmed of surrounding whitespace and capped at\n[`GREP_SNIPPET_CAP`] characters."
+            "description": "The matched line, trimmed of surrounding whitespace and capped at a\ndaemon-side length."
           },
           "match_start": {
             "type": "integer",
@@ -7505,7 +6940,7 @@
       },
       "GrepSearchResponse": {
         "type": "object",
-        "description": "Result of a `search_grep` call: the hits plus whether they were capped at\nthe requested limit. Matches the `POST /api/search/grep` response body.",
+        "description": "Result of a `search_grep` call: the hits plus whether they were capped at\nthe requested limit.",
         "required": [
           "hits",
           "truncated"
@@ -8484,21 +7919,6 @@
           }
         }
       },
-      "KilnFilesResponse": {
-        "type": "object",
-        "description": "What `GET /api/kiln/files` and `GET /api/kiln/notes` both answer.\n\nOne type for two routes because they answer the same projection of the same\nlisting. The key is `files` on both, including on the one named for notes.",
-        "required": [
-          "files"
-        ],
-        "properties": {
-          "files": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FileEntryRow"
-            }
-          }
-        }
-      },
       "KilnForgetReply": {
         "type": "object",
         "description": "What `kiln.forget` answers.",
@@ -8590,21 +8010,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/KilnGraphLink"
-            }
-          }
-        }
-      },
-      "KilnListResponse": {
-        "type": "object",
-        "description": "What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is\ncore's own [`KilnRow`], the same type `kiln.list` answers.",
-        "required": [
-          "kilns"
-        ],
-        "properties": {
-          "kilns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KilnRow"
             }
           }
         }
@@ -10033,21 +9438,6 @@
           "links",
           "tags"
         ]
-      },
-      "NoteListResponse": {
-        "type": "object",
-        "description": "What `GET /api/notes` answers. A thin wrapper, not a copy: the row is\ncore's own [`NoteListRow`], the same type `note.list` answers.",
-        "required": [
-          "notes"
-        ],
-        "properties": {
-          "notes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NoteListRow"
-            }
-          }
-        }
       },
       "NoteListRow": {
         "type": "object",
@@ -12266,19 +11656,6 @@
           "untrusted": {
             "type": "boolean",
             "description": "The caller is not the local user at the machine."
-          }
-        }
-      },
-      "ProjectUnregisterResponse": {
-        "type": "object",
-        "description": "What `POST /api/project/unregister` answers.\n\nThe route's own shape: the daemon reports the unregistration as `()`, so\nthere is no daemon body to forward.",
-        "required": [
-          "ok"
-        ],
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "description": "Always true. A refusal is an error status, not a `false`."
           }
         }
       },
@@ -18369,77 +17746,6 @@
             "type": [
               "string",
               "null"
-            ]
-          }
-        }
-      },
-      "VectorSearchRequest": {
-        "type": "object",
-        "required": [
-          "kiln",
-          "vector"
-        ],
-        "properties": {
-          "kiln": {
-            "type": "string",
-            "description": "Absolute path of the kiln to search."
-          },
-          "vector": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            },
-            "description": "The query vector, already embedded by the caller."
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "VectorSearchResponse": {
-        "type": "object",
-        "description": "What `POST /api/search/vectors` answers.",
-        "required": [
-          "results"
-        ],
-        "properties": {
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VectorSearchRow"
-            }
-          }
-        }
-      },
-      "VectorSearchRow": {
-        "type": "object",
-        "description": "One block hit, as `search_vectors` ranked it.",
-        "required": [
-          "document_id",
-          "score",
-          "block"
-        ],
-        "properties": {
-          "document_id": {
-            "type": "string",
-            "description": "The note's kiln-relative path."
-          },
-          "score": {
-            "type": "number",
-            "format": "double",
-            "description": "Similarity, higher is closer."
-          },
-          "block": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BlockRef",
-                "description": "Where in the note the hit sits, or `null` when the hit names the whole\nnote. Always written, so `null` reads as \"the whole note\" and never as\n\"unknown\"."
-              }
             ]
           }
         }

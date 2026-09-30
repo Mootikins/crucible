@@ -141,7 +141,7 @@ beforeEach(() => {
   // where the fetch's own microtasks never get to run, so a roster that only
   // arrived over the wire would leave every file outside every kiln.
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(kilnsValue));
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: kilnsValue }) });
+  env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsValue });
 });
 
 afterEach(() => {
@@ -449,7 +449,7 @@ describe('FileViewerPanel — the proposal bar', () => {
   it('shows the proposal bar on a note that a proposal writes', async () => {
     env.restore();
     env = createTestQueryEnv({
-      'GET /api/kilns': () => ({ kilns: kilnsValue }),
+      'POST /api/rpc/kiln.list': () => kilnsValue,
       ...proposalRoutes([
         proposalFixture(
           ID,
@@ -487,7 +487,7 @@ describe('FileViewerPanel — the proposal bar', () => {
   it('draws no bar for a superseded proposal', async () => {
     env.restore();
     const served = createTestQueryEnv({
-      'GET /api/kilns': () => ({ kilns: kilnsValue }),
+      'POST /api/rpc/kiln.list': () => kilnsValue,
       ...proposalRoutes([
         proposalFixture(
           ID,

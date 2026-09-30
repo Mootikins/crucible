@@ -81,7 +81,7 @@ beforeEach(() => {
   installFakeEventSource();
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+    'POST /api/rpc/kiln.list': () => [{ path: KILN, name: 'kiln' }],
     // The read: the bytes with the hash they were read at, so the buffer's
     // next save can name the base it edited from.
     'GET /api/kiln/file': async (request) => ({
@@ -115,7 +115,7 @@ beforeEach(() => {
         headers: { 'Content-Type': 'application/json' },
       });
     },
-    'GET /api/notes': () => ({ notes: [] }),
+    'POST /api/rpc/list_notes': () => [],
     'GET /api/config': () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   });
 });

@@ -30,9 +30,15 @@ const STORED: KilnListEntry[] = [
   },
 ];
 
-/** The envelope `GET /api/kilns` answers; `listKilns` unwraps `kilns`. */
-function kilnsBody(kilns: KilnListEntry[]): { kilns: KilnListEntry[] } {
-  return { kilns };
+/**
+ * The reply `kiln.list` answers: the array directly, not `{ kilns }`.
+ *
+ * `GET /api/kilns`, which used to wrap it, is gone
+ * ([[Simplification Plan#Step 19]] item 3): the browser reaches
+ * `kiln.list` through `POST /api/rpc/{method}` now.
+ */
+function kilnsBody(kilns: KilnListEntry[]): KilnListEntry[] {
+  return kilns;
 }
 
 let env: TestQueryEnv;
@@ -61,24 +67,24 @@ function inRoot<T>(body: () => T): T {
 
 describe('useKilns', () => {
   it('fetches once for two callers under one root', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
 
     const both = inRoot(() => ({ first: useKilns(), second: useKilns() }));
 
     await vi.waitFor(() => expect(both.first.data).toEqual(MAIN));
     expect(both.second.data).toEqual(MAIN);
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
   });
 
   it('surfaces a refusal as an error rather than as an empty list', async () => {
     env = createTestQueryEnv({
-      'GET /api/kilns': apiError(422, 'the kiln registry is closed'),
+      'POST /api/rpc/kiln.list': apiError(422, 'the kiln registry is closed'),
     });
 
     const query = inRoot(() => useKilns());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to list kilns');
+    expect(query.error?.message).toContain('RPC `kiln.list` failed');
     expect(query.data).toBeUndefined();
   });
 
@@ -89,7 +95,7 @@ describe('useKilns', () => {
       release = resolve;
     });
     env = createTestQueryEnv({
-      'GET /api/kilns': async () => {
+      'POST /api/rpc/kiln.list': async () => {
         await answered;
         return kilnsBody(MAIN);
       },
@@ -102,11 +108,11 @@ describe('useKilns', () => {
 
     release?.();
     await vi.waitFor(() => expect(query.data).toEqual(MAIN));
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
   });
 
   it('writes the fetched list back to storage', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
 
     const query = inRoot(() => useKilns());
 
@@ -116,67 +122,67 @@ describe('useKilns', () => {
 
   it('keeps the stored list out of the cache when a later read follows a failure', async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(STORED));
-    env = createTestQueryEnv({ 'GET /api/kilns': apiError(500, 'the daemon fell over') });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': apiError(500, 'the daemon fell over') });
 
     const query = inRoot(() => useKilns());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
     // The stale list stays on screen; the failure is still reported.
     expect(query.data).toEqual(STORED);
-    expect(query.error?.message).toContain('Failed to list kilns');
+    expect(query.error?.message).toContain('RPC `kiln.list` failed');
   });
 });
 
 describe('fetchKilnsOnce', () => {
   it('answers the same list the hook reads, from one fetch', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
 
     const query = inRoot(() => useKilns());
     await vi.waitFor(() => expect(query.data).toEqual(MAIN));
 
     await expect(fetchKilnsOnce()).resolves.toEqual(MAIN);
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
   });
 
   it('rejects when the daemon refuses, rather than answering an empty list', async () => {
     // No stored list: a seeded entry would be answered from the cache, and
     // this is about what the FETCH does when the daemon refuses it.
-    env = createTestQueryEnv({ 'GET /api/kilns': apiError(500, 'the daemon fell over') });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': apiError(500, 'the daemon fell over') });
 
     // The callers of this function cannot render a pending state and cannot
     // render a refusal either, so a resolved `[]` would read to them as "this
     // kiln does not exist". The rejection is what makes them stop instead.
     // The sentence carries the attempt AND the daemon's own words: a bare
     // status is what the user used to be left holding.
-    await expect(fetchKilnsOnce()).rejects.toThrow('Failed to list kilns: the daemon fell over');
+    await expect(fetchKilnsOnce()).rejects.toThrow('RPC `kiln.list` failed: the daemon fell over');
   });
 });
 
 describe('kilnsSnapshot', () => {
   it('starts the one fetch and then answers what the cache holds', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
 
     expect(kilnsSnapshot()).toEqual([]);
     await vi.waitFor(() => expect(kilnsSnapshot()).toEqual(MAIN));
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
   });
 
   it('shares the fetch with the hook', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
 
     const query = inRoot(() => useKilns());
     kilnsSnapshot();
 
     await vi.waitFor(() => expect(query.data).toEqual(MAIN));
     await vi.waitFor(() => expect(kilnsSnapshot()).toEqual(MAIN));
-    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(1);
   });
 
   it('answers the cache the test wrote, without a fetch of its own', async () => {
-    env = createTestQueryEnv({ 'GET /api/kilns': () => kilnsBody(MAIN) });
+    env = createTestQueryEnv({ 'POST /api/rpc/kiln.list': () => kilnsBody(MAIN) });
     env.client.setQueryData(keys.kilns(), STORED);
 
     expect(kilnsSnapshot()).toEqual(STORED);
-    expect(env.fetch.calls('GET /api/kilns')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/kiln.list')).toBe(0);
   });
 });

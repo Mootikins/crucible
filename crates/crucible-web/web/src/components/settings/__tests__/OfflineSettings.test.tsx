@@ -28,12 +28,12 @@ beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({
-      kilns: [
-        { path: '/kilns/notes', name: 'notes' },
-        { path: '/kilns/work', name: 'work' },
-      ],
-    }),
+    // `kiln.list` reaches the browser through `POST /api/rpc/{method}` now
+    // ([[Simplification Plan#Step 19]] item 3); `GET /api/kilns` is gone.
+    'POST /api/rpc/kiln.list': () => [
+      { path: '/kilns/notes', name: 'notes' },
+      { path: '/kilns/work', name: 'work' },
+    ],
   });
   calls.cached = [];
   calls.dropped = [];

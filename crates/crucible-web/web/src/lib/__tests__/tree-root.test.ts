@@ -119,7 +119,7 @@ describe('buildRoster', () => {
     expect(kilnRoots(groups).map((r) => r.path)).toEqual(['/b', '/a', '/c']);
   });
 
-  it('dedupes a kiln appearing in both /api/kilns and a project attachment', () => {
+  it('dedupes a kiln appearing in both kiln.list and a project attachment', () => {
     const groups = buildRoster(
       [project('/proj', 'Proj', [{ path: '/vault', name: 'shared' }])],
       [kiln('/vault', 'shared')],

@@ -146,10 +146,13 @@ beforeEach(() => {
         return answeredOnWire(err);
       }
     },
-    // The kiln's notes, with the wire's RELATIVE paths.
-    'GET /api/notes': async (request) => ({
-      notes: await net.list(new URL(request.url).searchParams.get('kiln')!),
-    }),
+    // The kiln's notes, with the wire's RELATIVE paths. `list_notes`
+    // reaches the browser through `POST /api/rpc/{method}` now
+    // ([[Simplification Plan#Step 19]] item 3); `GET /api/notes` is gone.
+    'POST /api/rpc/list_notes': async (request) => {
+      const body = (await request.clone().json()) as { kiln: string };
+      return net.list(body.kiln);
+    },
     // The identity the stamp reads. The real one is a plain fetch with no
     // service-worker cache, so it THROWS offline. A mock that always resolves
     // hides the whole defect.
@@ -397,7 +400,7 @@ describe('editNote', () => {
 /**
  * The wire shape, not a convenient one.
  *
- * `GET /api/notes` sends a path RELATIVE to the kiln. The mirror is read by
+ * `list_notes` sends a path RELATIVE to the kiln. The mirror is read by
  * the ABSOLUTE path the editor holds, so a source that forwards the wire's
  * path unchanged stores every note under a key no read asks for — and its
  * own fill read 404s first. The old fixture for this used absolute paths and

@@ -34,11 +34,18 @@ test.describe.configure({ timeout: 180_000 });
 const ALPHA = 'alpha';
 const BETA = 'beta';
 
-/** `/api/notes` for one kiln, as a predicate over the recorded query. */
+/**
+ * `list_notes` for one kiln, as a predicate over the recorded body.
+ *
+ * `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+ * (Simplification Plan step 19 item 3), so its params ride the body rather
+ * than the query string.
+ */
 function notesFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
   return log
-    .matching('/api/notes')
-    .filter((r) => r.method === 'GET' && r.query === `kiln=${encodeURIComponent(kilnDir)}`).length;
+    .matching('/api/rpc/list_notes')
+    .filter((r) => r.method === 'POST' && (JSON.parse(r.body ?? '{}') as { kiln?: string }).kiln === kilnDir)
+    .length;
 }
 
 test.describe('live C1 entities', () => {
@@ -68,11 +75,11 @@ test.describe('live C1 entities', () => {
     await appReady(page);
     await apiQuiet(log);
 
-    expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list'), describeRequests(log, '/api/rpc/kiln.list')).toBe(1);
     expect(log.count('GET', '/api/config'), describeRequests(log, '/api/config')).toBe(1);
     expect(
-      log.count('GET', '/api/project/list'),
-      describeRequests(log, '/api/project/list'),
+      log.count('POST', '/api/rpc/project.list'),
+      describeRequests(log, '/api/rpc/project.list'),
     ).toBe(1);
     expect(log.count('GET', '/api/providers'), describeRequests(log, '/api/providers')).toBe(1);
 
@@ -90,7 +97,7 @@ test.describe('live C1 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await apiQuiet(log);
-    expect(log.count('GET', '/api/kilns')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list')).toBe(1);
 
     // Three more mounted readers of the same roster: the search panel names a
     // kiln to search, the skills panel names the kiln whose skills it lists,
@@ -105,7 +112,7 @@ test.describe('live C1 entities', () => {
     }
     await apiQuiet(log);
 
-    expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list'), describeRequests(log, '/api/rpc/kiln.list')).toBe(1);
     expect(log.count('GET', '/api/config'), describeRequests(log, '/api/config')).toBe(1);
   });
 
@@ -122,25 +129,25 @@ test.describe('live C1 entities', () => {
     // that named it.
     await selectRoot(page, ALPHA);
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
-    expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list'), describeRequests(log, '/api/rpc/kiln.list')).toBe(1);
 
     // The second kiln. A different key, so a read; the first kiln's answer is
     // untouched.
     await selectRoot(page, BETA);
     await apiQuiet(log);
-    expect(notesFor(log, state.secondKilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.secondKilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
     expect(notesFor(log, state.kilnDir!)).toBe(1);
-    expect(log.count('GET', '/api/kilns')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list')).toBe(1);
 
     // And BACK. The answer for `alpha` is still held under its own key, so
     // returning to it asks nothing. A single-slot cache would refetch here,
     // because the second kiln overwrote the first.
     await selectRoot(page, ALPHA);
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
+    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
     expect(notesFor(log, state.secondKilnDir!)).toBe(1);
-    expect(log.count('GET', '/api/kilns')).toBe(1);
+    expect(log.count('POST', '/api/rpc/kiln.list')).toBe(1);
   });
 
   test('attaching a kiln to a session refreshes the scope, not the kiln registry', async ({
@@ -189,8 +196,8 @@ test.describe('live C1 entities', () => {
     // The KILN REGISTRY did not change, so nothing re-read it. A scope write
     // that invalidated the roster would refetch a list of every kiln on the
     // box for a change to one session's reach.
-    expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(0);
-    expect(log.count('GET', '/api/project/list')).toBe(0);
+    expect(log.count('POST', '/api/rpc/kiln.list'), describeRequests(log, '/api/rpc/kiln.list')).toBe(0);
+    expect(log.count('POST', '/api/rpc/project.list')).toBe(0);
     expect(log.count('GET', '/api/config')).toBe(0);
 
     await api.dispose();
@@ -201,9 +208,11 @@ test.describe('live C1 entities', () => {
     // that makes them worth making: the names being cached are the daemon's
     // own, from the two kilns globalSetup initialised and processed.
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
-    const res = await api.get('/api/kilns');
+    const res = await api.post('/api/rpc/kiln.list', { data: null });
     expect(res.status()).toBe(200);
-    const names = ((await res.json()) as { kilns: { name: string; path: string }[] }).kilns;
+    // The reply is the array directly, not wrapped under `{ kilns }`
+    // (Simplification Plan step 19 item 3; `GET /api/kilns` is gone).
+    const names = (await res.json()) as { name: string; path: string }[];
     expect(names.map((k) => k.name)).toEqual(expect.arrayContaining([ALPHA, BETA]));
     expect(names.find((k) => k.name === ALPHA)?.path).toBe(state.kilnDir);
     expect(names.find((k) => k.name === BETA)?.path).toBe(state.secondKilnDir);

@@ -1,8 +1,9 @@
 //! Shared grep engine (ripgrep crates) for content search.
 //!
-//! The single engine behind the `grep_notes` MCP tool, the `search_grep`
-//! RPC, and `POST /api/search/grep`. Lives in its own module because all
-//! three surfaces share the wire contract defined here.
+//! The single engine behind the `grep_notes` MCP tool and the `search_grep`
+//! RPC (reached by the browser through `POST /api/rpc/search_grep`). Lives
+//! in its own module because both surfaces share the wire contract defined
+//! here.
 
 use anyhow::Context as _;
 use globset::Glob;
@@ -31,7 +32,7 @@ impl<'a> WalkScope<'a> {
     }
 
     /// A walk with no containment, for the surfaces the USER drives directly
-    /// (the `search_grep` RPC and `POST /api/search/grep`), where the path came
+    /// (the `search_grep` RPC, reached by the browser through `POST /api/rpc/search_grep`), where the path came
     /// from the person at the keyboard rather than from a model.
     pub(crate) fn user_driven(root: &'a Path) -> Self {
         Self {
@@ -50,7 +51,7 @@ const GREP_SNIPPET_CAP: usize = 300;
 /// `match_start`/`match_end` are **character** offsets into `text` (post-trim),
 /// suitable for `<mark>` highlighting in the web UI. Only the first match on a
 /// line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
-/// `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
+/// `match_end`) are the `search_grep` RPC's own contract.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GrepHit {
@@ -70,7 +71,7 @@ pub struct GrepHit {
 }
 
 /// Result of a `search_grep` call: the hits plus whether they were capped at
-/// the requested limit. Matches the `POST /api/search/grep` response body.
+/// the requested limit. Matches the `search_grep` RPC's own reply.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GrepSearchResponse {

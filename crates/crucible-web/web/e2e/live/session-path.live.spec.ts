@@ -116,12 +116,17 @@ async function createSession(api: APIRequestContext, kilns: string[]): Promise<s
   return ((await created.json()) as { session_id: string }).session_id;
 }
 
-/** The kiln names the daemon publishes: every registered kiln, open since boot. */
+/**
+ * The kiln names the daemon publishes: every registered kiln, open since
+ * boot. `kiln.list` reaches the browser through `POST /api/rpc/{method}`
+ * now (Simplification Plan step 19 item 3); `GET /api/kilns` is gone, and
+ * the reply is the array directly, not wrapped under `{ kilns }`.
+ */
 async function openKilnNames(api: APIRequestContext): Promise<string[]> {
   const read = async (): Promise<string[]> => {
-    const listed = await api.get('/api/kilns');
+    const listed = await api.post('/api/rpc/kiln.list', { data: null });
     expect(listed.status()).toBe(200);
-    return ((await listed.json()) as { kilns: { name: string | null }[] }).kilns
+    return ((await listed.json()) as { name: string | null }[])
       .map((k) => k.name)
       .filter((n): n is string => !!n);
   };
@@ -185,15 +190,15 @@ test.describe('the live session path', () => {
     );
 
     // The files panel opens on the right by default and lists the session's
-    // own folder. A 200 from `/api/fs/list` IS the assertion: the folder is
+    // own folder. A 200 from `fs.list_dir` (`POST /api/rpc/fs.list_dir`) IS the assertion: the folder is
     // new, so an empty tree is the correct rendering of a successful listing.
     await expect
-      .poll(() => calls.filter((c) => c.url.includes('/api/fs/list')).length, {
+      .poll(() => calls.filter((c) => c.url.includes('/api/rpc/fs.list_dir')).length, {
         timeout: 30_000,
         message: 'the files panel never listed anything',
       })
       .toBeGreaterThan(0);
-    const listings = calls.filter((c) => c.url.includes('/api/fs/list'));
+    const listings = calls.filter((c) => c.url.includes('/api/rpc/fs.list_dir'));
     expect(listings.filter((c) => c.status >= 400)).toEqual([]);
 
     // No refusal reached the user, and none reached the network either. A

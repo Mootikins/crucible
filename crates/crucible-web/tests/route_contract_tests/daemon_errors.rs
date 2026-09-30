@@ -122,9 +122,11 @@ async fn session_list_daemon_error_maps_to_502() {
 /// The daemon's refusal reaches the browser as the sentence the daemon
 /// wrote, at 422, and not as `RPC error: {"code":-32602,…}`: a session
 /// created with no project lists its own folder, and when the daemon refuses
-/// a root the user must read why.
+/// a root the user must read why. `fs.list_dir` reaches the browser through
+/// `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3);
+/// `GET /api/fs/list` is gone.
 #[tokio::test]
-async fn fs_list_refusal_maps_to_422_with_the_daemons_sentence() {
+async fn fs_list_dir_refusal_maps_to_422_with_the_daemons_sentence() {
     let mut errors = MockErrors::new();
     errors.insert(
         RpcMethod::FsListDir,
@@ -139,8 +141,13 @@ async fn fs_list_refusal_maps_to_422_with_the_daemons_sentence() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/fs/list?root=/home/u/.crucible/workspaces/ses-1&rel_path=")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/fs.list_dir")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "root": "/home/u/.crucible/workspaces/ses-1", "rel_path": "" })
+                        .to_string(),
+                ))
                 .unwrap(),
         )
         .await

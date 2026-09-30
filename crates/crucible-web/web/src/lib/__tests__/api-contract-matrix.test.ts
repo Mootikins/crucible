@@ -50,7 +50,9 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/notes/resolve?kiln=k&name=a%20b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
     ['/api/backlinks?kiln=k&note=a%20b', () => api.getBacklinks('k', 'a b'), { linked: [] }, { linked: [] }],
     ['/api/scm/clone', () => api.scmClone('owner/repo'), { path: '/repo' }, { path: '/repo' }, { url: 'owner/repo' }],
-    ['/api/kiln/graph?kiln=a%20b', () => api.getKilnGraph('a b'), { nodes: [] }, { nodes: [] }],
+    // `kiln.graph` reaches the browser through `POST /api/rpc/{method}` now
+    // ([[Simplification Plan#Step 19]] item 3); `GET /api/kiln/graph` is gone.
+    ['/api/rpc/kiln.graph', () => api.getKilnGraph('a b'), { nodes: [] }, { nodes: [] }, { kiln: 'a b' }],
     ['/api/kiln/file?path=a%20b', () => api.getFileWithHash('a b'), { content: 'text', content_hash: 'h' }, { content: 'text', content_hash: 'h' }],
     ['/api/recents', api.fetchRecents, { recents: [{ abs_path: '/a', name: 'a', opened_at: 1 }] }, [{ absPath: '/a', name: 'a' }]],
     ['/api/canvas?path=a%20b', () => api.getCanvas('a b'), { canvas: {} }, { canvas: {} }],
@@ -86,10 +88,15 @@ it('maps search result fields and supplies defaults without swallowing errors', 
 });
 
 it('distinguishes file mutation success, conflict, authorization, and invalid responses', async () => {
+  // `fs.move`/`fs.mkdir`/`fs.trash` reach the browser through
+  // `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3);
+  // `POST /api/fs/move`/`/mkdir`/`/trash` are gone. `PATCH /api/kiln/file`
+  // stays: it maps the daemon's embedded conflict shape onto a 409, which
+  // `rpc()`'s one status mapping does not do.
   const calls = [
-    { call: () => api.fsMove('/r', 'kiln', 'a', 'b'), path: '/api/fs/move', method: 'POST', body: { root: '/r', kind: 'kiln', from_rel: 'a', to_rel: 'b' }, result: { moved: true } },
-    { call: () => api.fsMkdir('/r', 'project', 'a'), path: '/api/fs/mkdir', method: 'POST', body: { root: '/r', kind: 'project', rel_path: 'a' }, result: undefined },
-    { call: () => api.fsTrash('/r', 'kiln', 'a'), path: '/api/fs/trash', method: 'POST', body: { root: '/r', kind: 'kiln', rel_path: 'a' }, result: undefined },
+    { call: () => api.fsMove('/r', 'kiln', 'a', 'b'), path: '/api/rpc/fs.move', method: 'POST', body: { root: '/r', kind: 'kiln', from_rel: 'a', to_rel: 'b' }, result: { moved: true } },
+    { call: () => api.fsMkdir('/r', 'project', 'a'), path: '/api/rpc/fs.mkdir', method: 'POST', body: { root: '/r', kind: 'project', rel_path: 'a' }, result: undefined },
+    { call: () => api.fsTrash('/r', 'kiln', 'a'), path: '/api/rpc/fs.trash', method: 'POST', body: { root: '/r', kind: 'kiln', rel_path: 'a' }, result: undefined },
     { call: () => api.patchKilnFile('/a', [], 'h'), path: '/api/kiln/file', method: 'PATCH', body: { path: '/a', edits: [], base_hash: 'h' }, result: { ok: true, content_hash: 'next' } },
   ];
   for (const c of calls) {
@@ -115,7 +122,7 @@ it('distinguishes file mutation success, conflict, authorization, and invalid re
   await expect(api.patchKilnFile('/a', [])).rejects.toThrow('held');
   await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('held');
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 500 })));
-  await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('move failed: not json');
+  await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('RPC `fs.move` failed: not json');
 });
 
 it('keeps optional discovery fallbacks separate from explicit target resolution failures', async () => {

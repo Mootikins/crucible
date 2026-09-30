@@ -101,13 +101,16 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     // THIS finding — a "flaky" line in the run report is this failure
     // firing and is the signal to re-open the investigation, not ordinary
     // CI hygiene to ignore.
+    // `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19 item 3); `GET /api/kiln/notes` is gone,
+    // and the reply is the array directly, not wrapped under `{ files }`.
     await expect
       .poll(
         async () => {
-          const notesRes = await api.get(`/api/kiln/notes?kiln=${encodeURIComponent(kiln)}`);
+          const notesRes = await api.post('/api/rpc/list_notes', { data: { kiln } });
           if (!notesRes.ok()) return false;
-          const notes = (await notesRes.json()) as { files: Array<{ name: string }> };
-          return notes.files.some((f) => f.name === 'Shared');
+          const notes = (await notesRes.json()) as Array<{ name: string }>;
+          return notes.some((f) => f.name === 'Shared');
         },
         {
           timeout: 60_000,
@@ -119,14 +122,16 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
       .toBe(true);
 
     // The one shared truth is the kiln file on disk — what an agent tool reads
-    // next turn. NOTE(finding): GET /api/notes/:name returns metadata only (no
+    // next turn. NOTE(finding): `get_note_by_name` returns metadata only (no
     // `content`), though the frontend's getNote() expects a `content` field —
     // a real backend/frontend mismatch. We assert the on-disk bytes (the truth)
-    // and that the metadata read reflects the note.
+    // and that the metadata read reflects the note. `get_note_by_name` reaches
+    // the browser through `POST /api/rpc/{method}` now (Simplification Plan
+    // step 19 item 3); `GET /api/notes/:name` is gone.
     const onDisk = path.join(kiln, 'Shared.md');
     expect(readFileSync(onDisk, 'utf-8')).toBe(content);
 
-    const metaRes = await api.get(`/api/notes/${encodeURIComponent('Shared')}?kiln=${encodeURIComponent(kiln)}`);
+    const metaRes = await api.post('/api/rpc/get_note_by_name', { data: { kiln, name: 'Shared' } });
     expect(metaRes.ok()).toBe(true);
     const meta = (await metaRes.json()) as { title?: string; content?: string };
     expect(meta.title).toBe('Shared');
@@ -137,13 +142,16 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
   test('WS-201: browse lists notes in the kiln', async () => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const kiln = state.kilnDir!;
-    const res = await api.get(`/api/kiln/notes?kiln=${encodeURIComponent(kiln)}`);
+    // `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19 item 3); `GET /api/kiln/notes` is gone,
+    // and the reply is the array directly, not wrapped under `{ files }`.
+    const res = await api.post('/api/rpc/list_notes', { data: { kiln } });
     expect(res.ok()).toBe(true);
-    const body = (await res.json()) as { files: Array<{ name: string; is_dir: boolean }> };
+    const body = (await res.json()) as Array<{ name: string }>;
     // At least the seeded note is present: globalSetup indexed the kiln with
     // `cru process`, so the index-backed listing has content from the start.
-    expect(body.files.length).toBeGreaterThan(0);
-    expect(body.files.some((f) => f.name === 'Seed')).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.some((f) => f.name === 'Seed')).toBe(true);
     await api.dispose();
   });
 
@@ -314,24 +322,24 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
       { kiln: kilnDir, body: note },
     );
 
+    // `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19 item 3); `GET /api/notes` is gone, and
+    // the reply is the array directly, not wrapped under `{ notes }`.
+    const listNotes = (kiln: string) =>
+      page.evaluate(async (kiln) => {
+        const res = await fetch('/api/rpc/list_notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kiln }),
+        });
+        const body = (await res.json()) as { name: string }[];
+        return body.find((n) => n.name === 'Props') ?? null;
+      }, kiln);
+
     const listed = await expect
-      .poll(
-        async () =>
-          await page.evaluate(async (kiln) => {
-            const res = await fetch(`/api/notes?kiln=${encodeURIComponent(kiln)}`);
-            const body = await res.json();
-            return (body.notes ?? []).find((n: { name: string }) => n.name === 'Props') ?? null;
-          }, kilnDir),
-        { timeout: 15_000 },
-      )
+      .poll(() => listNotes(kilnDir), { timeout: 15_000 })
       .not.toBeNull()
-      .then(() =>
-        page.evaluate(async (kiln) => {
-          const res = await fetch(`/api/notes?kiln=${encodeURIComponent(kiln)}`);
-          const body = await res.json();
-          return (body.notes ?? []).find((n: { name: string }) => n.name === 'Props');
-        }, kilnDir),
-      );
+      .then(() => listNotes(kilnDir));
 
     expect(listed.properties).toMatchObject({ status: 'doing' });
     expect(listed.properties).not.toHaveProperty('scope');

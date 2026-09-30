@@ -897,12 +897,10 @@ fn every_route_the_router_serves_is_in_the_document() {
 /// The TypeScript modules that name `/api` paths as literals.
 ///
 /// `diff-api.ts` is here because the regex scan that this test replaces never
-/// read a module beside `api.ts`, and those paths went unchecked. Its own
-/// floor is 0 now: every diff row moved onto `rpc(...)` (Simplification Plan
-/// step 19), which names a method, not a literal path, so this scan has
-/// nothing left to find there — kept in the list rather than deleted, so a
-/// route added back to that file directly is still caught.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 69), ("lib/diff-api.ts", 0)];
+/// read a module beside `api.ts`, and those paths went unchecked. The floor
+/// of `lib/diff-api.ts` is 0: its calls name a method through `rpc(...)`, not
+/// a path. It stays in the list, so a path that returns to it is still found.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 54), ("lib/diff-api.ts", 0)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.

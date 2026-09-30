@@ -32,38 +32,40 @@ const OTHER = {
 async function setupNoteResolution(page: Page) {
   await page.route('**/api/config', (r) => r.fulfill({ json: { kiln_path: HARNESS_KILN } }));
   // The editor harness derives its kiln from the focused file's own path.
-  await page.route('**/api/kilns**', (r) =>
-    r.fulfill({ json: { kilns: [{ path: HARNESS_KILN }] } }),
-  );
+  // `kiln.list` reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/kilns` is gone, and the
+  // reply is the array directly.
+  await page.route('**/api/rpc/kiln.list', (r) => r.fulfill({ json: [{ path: HARNESS_KILN }] }));
 
-  // getNote: /api/notes/{name}?kiln= → metadata (path is what nav/preview use).
-  await page.route('**/api/notes/**', (route) => {
+  // Resolution: `GET /api/notes/resolve` stays a REST route (it walks the
+  // filesystem, not a bare RPC forward).
+  await page.route('**/api/notes/resolve**', (route) => {
     const url = new URL(route.request().url());
-
-    // Resolution is a path lookup against the kiln. Handled here rather than as
-    // its own route because Playwright matches the most recently registered
-    // handler first, so a separate route would be shadowed by this one.
-    if (url.pathname.endsWith('/api/notes/resolve')) {
-      const target = url.searchParams.get('name') ?? '';
-      if (target.toLowerCase() !== 'other note') {
-        return route.fulfill({ status: 404, body: 'not found' });
-      }
-      return route.fulfill({
-        json: { path: 'Other Note.md', absolutePath: OTHER.path, title: 'Other Note' },
-      });
-    }
-
-    const name = decodeURIComponent(url.pathname.replace('/api/notes/', ''));
-    if (name.toLowerCase() !== 'other note') {
+    const target = url.searchParams.get('name') ?? '';
+    if (target.toLowerCase() !== 'other note') {
       return route.fulfill({ status: 404, body: 'not found' });
     }
     return route.fulfill({
+      json: { path: 'Other Note.md', absolutePath: OTHER.path, title: 'Other Note' },
+    });
+  });
+
+  // getNote: `get_note_by_name` → metadata (path is what nav/preview use).
+  // It reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/notes/{name}` is gone.
+  await page.route('**/api/rpc/get_note_by_name', (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { name?: string };
+    if ((body.name ?? '').toLowerCase() !== 'other note') {
+      return route.fulfill({ json: null });
+    }
+    return route.fulfill({
       json: {
-        name: 'Other Note',
         path: OTHER.path,
         title: 'Other Note',
         tags: [],
-        updated_at: '2026-01-01T00:00:00Z',
+        links_to: [],
+        wikilinks: [],
+        content_hash: '0'.repeat(64),
       },
     });
   });

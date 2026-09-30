@@ -106,7 +106,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 
 /**
  * Obsidian-style knowledge graph: force-directed canvas over the kiln's
- * resolved link index (`/api/kiln/graph`). Physics via d3-force; rendering
+ * resolved link index (`kiln.graph`). Physics via d3-force; rendering
  * is a plain 2D canvas redrawn through a dirty-flag rAF loop, so an idle
  * settled graph costs nothing.
  *

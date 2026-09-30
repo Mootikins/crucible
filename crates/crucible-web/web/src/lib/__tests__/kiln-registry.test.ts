@@ -38,7 +38,7 @@ describe('kilnPathForName', () => {
     expect(kilnPathForName(undefined, registry)).toBeNull();
   });
 
-  // An empty registry is the state on first paint, before `GET /api/kilns`
+  // An empty registry is the state on first paint, before `kiln.list`
   // answers. A resolver that treated "nothing registered" as "match anything"
   // would give the first render of every session the widest possible scope.
   it('is null for every name while the registry is empty', () => {

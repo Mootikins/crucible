@@ -43,9 +43,21 @@ let dispose: (() => void) | null = null;
 /** The `kiln` of every note request this test answered, per route. */
 let asked: { route: string; kiln: string; name: string }[] = [];
 
+/**
+ * `list_notes` and `kiln.graph` reach the browser through
+ * `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3):
+ * `GET /api/notes`, `/api/kiln/notes` and `/api/kiln/files` all forwarded
+ * (and, for the last two, reshaped) `list_notes` — `useListNotes`,
+ * `useListKilnNotes` and `useListKilnFiles` are now, on the wire, the SAME
+ * call, distinguished only by the query KEY each hook holds its answer
+ * under; the mock below can no longer tell them apart by route, so they
+ * share one bucket, `'list_notes'`, and a test that exercises more than one
+ * of them counts the total. `GET /api/kiln/graph` is gone the same way.
+ */
 function noteRoutes() {
   asked = [];
-  const record = (route: string, nameParam: string) => (request: Request) => {
+  /** For a route whose params still ride the query string. */
+  const recordQuery = (route: string, nameParam: string) => (request: Request) => {
     const params = new URL(request.url).searchParams;
     asked.push({
       route,
@@ -54,8 +66,18 @@ function noteRoutes() {
     });
     return answerOf(route, params.get(nameParam) ?? '');
   };
+  /** For an `rpc()` route whose params ride the JSON body. */
+  const recordBody = (route: string, nameParam: string) => async (request: Request) => {
+    const body = (await request.clone().json()) as Record<string, string>;
+    asked.push({
+      route,
+      kiln: body.kiln ?? '',
+      name: body[nameParam] ?? '',
+    });
+    return answerOf(route, body[nameParam] ?? '');
+  };
   return {
-    'GET /api/notes': record('notes', 'path_filter'),
+    'POST /api/rpc/list_notes': recordBody('list_notes', 'path_filter'),
     'GET /api/notes/resolve': (request: Request) => {
       const params = new URL(request.url).searchParams;
       const name = params.get('name') ?? '';
@@ -68,24 +90,18 @@ function noteRoutes() {
       }
       return { path: 'Rust.md', absolutePath: `${params.get('kiln')}/Rust.md`, title: 'Rust' };
     },
-    'GET /api/backlinks': record('backlinks', 'note'),
-    'GET /api/kiln/notes': record('kilnNotes', 'kiln'),
-    'GET /api/kiln/files': record('kilnFiles', 'kiln'),
-    'GET /api/kiln/graph': record('graph', 'kiln'),
+    'GET /api/backlinks': recordQuery('backlinks', 'note'),
+    'POST /api/rpc/kiln.graph': recordBody('graph', 'kiln'),
   };
 }
 
 /** The body of one route, distinct per route so a mixed-up key shows up. */
 function answerOf(route: string, name: string): unknown {
   switch (route) {
-    case 'notes':
-      return { notes: [{ name: 'A', path: 'A.md', title: 'A', tags: [] }] };
+    case 'list_notes':
+      return [{ name: 'A', path: 'A.md', title: 'A', tags: [] }];
     case 'backlinks':
       return { linked: [{ abs_path: `${KILN}/${name}` }], unlinked: [] };
-    case 'kilnNotes':
-      return { files: [{ name: 'A', path: 'A.md' }] };
-    case 'kilnFiles':
-      return { files: [{ name: 'B', path: 'B.png' }] };
     default:
       return { nodes: [], edges: [] };
   }
@@ -119,7 +135,7 @@ describe('useListNotes', () => {
 
     await waitFor(() => expect(both.palette.data).toBeDefined());
     await waitFor(() => expect(both.picker.data).toBeDefined());
-    expect(countOf('notes')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
     expect(env.client.getQueryData(keys.notesList(KILN))).toEqual(both.palette.data);
   });
 
@@ -135,7 +151,7 @@ describe('useListNotes', () => {
 
     await waitFor(() => expect(both.here.data).toBeDefined());
     await waitFor(() => expect(both.there.data).toBeDefined());
-    expect(asked.filter((seen) => seen.route === 'notes').map((seen) => seen.kiln)).toEqual([
+    expect(asked.filter((seen) => seen.route === 'list_notes').map((seen) => seen.kiln)).toEqual([
       KILN,
       OTHER,
     ]);
@@ -148,7 +164,7 @@ describe('useListNotes', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(query.data).toBeUndefined();
-    expect(countOf('notes')).toBe(0);
+    expect(countOf('list_notes')).toBe(0);
   });
 });
 
@@ -159,7 +175,7 @@ describe('fetchNotesOnce and invalidateNotes', () => {
     await fetchNotesOnce(KILN);
     await fetchNotesOnce(KILN);
 
-    expect(countOf('notes')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
   });
 
   it('asks again after the tree says the kiln moved', async () => {
@@ -169,7 +185,7 @@ describe('fetchNotesOnce and invalidateNotes', () => {
     await invalidateNotes(KILN);
     await fetchNotesOnce(KILN);
 
-    expect(countOf('notes')).toBe(2);
+    expect(countOf('list_notes')).toBe(2);
   });
 });
 
@@ -298,7 +314,7 @@ describe('useListKilnNotes', () => {
     await waitFor(() => expect(query.data).toBeDefined());
     await fetchKilnNotesOnce(KILN);
 
-    expect(countOf('kilnNotes')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
   });
 
   /**
@@ -320,7 +336,7 @@ describe('useListKilnNotes', () => {
     vi.setSystemTime(Date.now() + KILN_NOTES_STALE_MS + 1);
     await fetchKilnNotesOnce(KILN);
 
-    expect(countOf('kilnNotes')).toBe(2);
+    expect(countOf('list_notes')).toBe(2);
   });
 
 });
@@ -338,7 +354,7 @@ describe('useListKilnFiles', () => {
     await waitFor(() => expect(query.data).toBeDefined());
     await fetchKilnFilesOnce(KILN);
 
-    expect(countOf('kilnFiles')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
   });
 
   it('holds a kiln apart from another kiln', async () => {
@@ -347,8 +363,8 @@ describe('useListKilnFiles', () => {
     await fetchKilnFilesOnce(KILN);
     const other = await fetchKilnFilesOnce(OTHER);
 
-    expect(countOf('kilnFiles')).toBe(2);
-    expect(asked.filter((seen) => seen.route === 'kilnFiles').map((seen) => seen.kiln)).toEqual([
+    expect(countOf('list_notes')).toBe(2);
+    expect(asked.filter((seen) => seen.route === 'list_notes').map((seen) => seen.kiln)).toEqual([
       KILN,
       OTHER,
     ]);
@@ -363,7 +379,7 @@ describe('useListKilnFiles', () => {
     vi.setSystemTime(Date.now() + KILN_NOTES_STALE_MS + 1);
     await fetchKilnFilesOnce(KILN);
 
-    expect(countOf('kilnFiles')).toBe(2);
+    expect(countOf('list_notes')).toBe(2);
   });
 
   // The key lives in the `notes` family, so the filesystem stream's walk of
@@ -376,7 +392,7 @@ describe('useListKilnFiles', () => {
     await invalidateNotesUnder([`${KILN}/Ghost.md`]);
     await fetchKilnFilesOnce(KILN);
 
-    expect(countOf('kilnFiles')).toBe(2);
+    expect(countOf('list_notes')).toBe(2);
   });
 });
 
@@ -405,7 +421,7 @@ describe('invalidateResolvedNotes', () => {
     expect(countOf('resolve')).toBe(4);
     // The index is a sibling under the same family head; the prefix must not
     // reach it, or one dropped resolution is a refetch of every note list.
-    expect(countOf('notes')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
   });
 });
 
@@ -421,19 +437,21 @@ describe('invalidateNotesUnder', () => {
   it('drops what is held about the kiln a written note is in', async () => {
     env = createTestQueryEnv(noteRoutes());
 
+    // `useListNotes` and `useListKilnNotes` are wire-identical calls now
+    // (both `list_notes`, [[Simplification Plan#Step 19]] item 3), so this
+    // counts the total of the two rather than each alone.
     await fetchNotesOnce(KILN);
     await fetchResolvedNoteOnce(KILN, 'ghost');
     await fetchKilnNotesOnce(KILN);
-    expect(countOf('notes')).toBe(1);
+    expect(countOf('list_notes')).toBe(2);
 
     await invalidateNotesUnder([`${KILN}/Ghost.md`]);
 
     await fetchNotesOnce(KILN);
     await fetchResolvedNoteOnce(KILN, 'ghost');
     await fetchKilnNotesOnce(KILN);
-    expect(countOf('notes')).toBe(2);
+    expect(countOf('list_notes')).toBe(4);
     expect(countOf('resolve')).toBe(2);
-    expect(countOf('kilnNotes')).toBe(2);
   });
 
   // The negative: the kiln is a PREFIX of the path, so a note written in one
@@ -448,8 +466,8 @@ describe('invalidateNotesUnder', () => {
 
     await fetchNotesOnce(KILN);
     await fetchNotesOnce(OTHER);
-    expect(asked.filter((seen) => seen.route === 'notes' && seen.kiln === KILN)).toHaveLength(1);
-    expect(asked.filter((seen) => seen.route === 'notes' && seen.kiln === OTHER)).toHaveLength(2);
+    expect(asked.filter((seen) => seen.route === 'list_notes' && seen.kiln === KILN)).toHaveLength(1);
+    expect(asked.filter((seen) => seen.route === 'list_notes' && seen.kiln === OTHER)).toHaveLength(2);
   });
 
   // A kiln that is a string prefix of another is not a parent of it.
@@ -461,6 +479,6 @@ describe('invalidateNotesUnder', () => {
     await invalidateNotesUnder([`${KILN}-archive/Ghost.md`]);
 
     await fetchNotesOnce(KILN);
-    expect(countOf('notes')).toBe(1);
+    expect(countOf('list_notes')).toBe(1);
   });
 });

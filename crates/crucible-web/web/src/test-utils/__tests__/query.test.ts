@@ -96,15 +96,15 @@ describe('withQueryClient', () => {
 describe('createTestQueryEnv', () => {
   it('installs a client and a fetch the app then reads', async () => {
     const env = createTestQueryEnv({
-      'GET /api/kilns': () => [{ name: 'main', path: '/kilns/main' }],
+      'GET /api/config': () => ({ kiln_path: '/kilns/main' }),
     });
 
     try {
       expect(getQueryClient()).toBe(env.client);
       expect(global.fetch).toBe(env.fetch);
       await expect(
-        client.GET('/api/kilns').then((r) => decode(r, 'Failed to list kilns')),
-      ).resolves.toEqual([{ name: 'main', path: '/kilns/main' }]);
+        client.GET('/api/config').then((r) => decode(r, 'Failed to get config')),
+      ).resolves.toEqual({ kiln_path: '/kilns/main' });
     } finally {
       env.restore();
     }
@@ -135,12 +135,12 @@ describe('createMockFetch', () => {
 
   it('answers a function with the body it returns', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kilns': () => [{ name: 'main' }],
+      'GET /api/config': () => ({ kiln_path: '/k' }),
     });
 
     await expect(
-      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list kilns')),
-    ).resolves.toEqual([{ name: 'main' }]);
+      client.GET('/api/config').then((r) => decode(r, 'Failed to get config')),
+    ).resolves.toEqual({ kiln_path: '/k' });
   });
 
   it('gives the function the request, with its method and its body', async () => {
@@ -174,13 +174,13 @@ describe('createMockFetch', () => {
   });
 
   it('counts the calls of one route, and answers zero for a route nobody called', async () => {
-    const mockFetch = createMockFetch({ 'GET /api/kilns': () => [] });
+    const mockFetch = createMockFetch({ 'GET /api/mcp/status': () => ({ running: false }) });
     global.fetch = mockFetch;
 
-    expect(mockFetch.calls('GET /api/kilns')).toBe(0);
-    await client.GET('/api/kilns');
-    await client.GET('/api/kilns');
-    expect(mockFetch.calls('GET /api/kilns')).toBe(2);
+    expect(mockFetch.calls('GET /api/mcp/status')).toBe(0);
+    await client.GET('/api/mcp/status');
+    await client.GET('/api/mcp/status');
+    expect(mockFetch.calls('GET /api/mcp/status')).toBe(2);
     expect(mockFetch.calls('GET /api/config')).toBe(0);
   });
 
@@ -198,27 +198,25 @@ describe('createMockFetch', () => {
   it('answers 422 with the envelope the error path unwraps', async () => {
     const refusal = 'root is not a registered project';
     global.fetch = createMockFetch({
-      'GET /api/fs/list': apiError(422, refusal),
+      'GET /api/kiln/file': apiError(422, refusal),
     });
 
     await expect(
       client
-        .GET('/api/fs/list', {
-          params: { query: { root: '/p', rel_path: '', show_ignored: true, show_hidden: false } },
-        })
-        .then((r) => decode(r, 'Failed to list folder')),
-    ).rejects.toThrow(`Failed to list folder: ${refusal}`);
+        .GET('/api/kiln/file', { params: { query: { path: '/p/a.md' } } })
+        .then((r) => decode(r, 'Failed to read file')),
+    ).rejects.toThrow(`Failed to read file: ${refusal}`);
   });
 
   it('carries the status of a failure to the caller', async () => {
-    global.fetch = createMockFetch({ 'GET /api/fs/list': apiError(500, 'the daemon fell over') });
+    global.fetch = createMockFetch({
+      'GET /api/kiln/file': apiError(500, 'the daemon fell over'),
+    });
 
     await expect(
       client
-        .GET('/api/fs/list', {
-          params: { query: { root: '/p', rel_path: '', show_ignored: true, show_hidden: false } },
-        })
-        .then((r) => decode(r, 'Failed to list folder')),
+        .GET('/api/kiln/file', { params: { query: { path: '/p/a.md' } } })
+        .then((r) => decode(r, 'Failed to read file')),
     ).rejects.toMatchObject({ status: 500 });
   });
 

@@ -36,12 +36,18 @@ const ROOT = '/proj';
 let env: TestQueryEnv;
 let dispose: (() => void) | null = null;
 let stopStream: (() => void) | null = null;
-/** The `rel_path` of every `GET /api/fs/list` this test answered, in order. */
+/** The `rel_path` of every `fs.list_dir` this test answered, in order. */
 let listed: string[] = [];
 /** The body of every write route this test answered, in order. */
 let wrote: { path: string; body: Record<string, unknown> }[] = [];
 
-/** The routes of the filesystem: one recording list, and the four writes. */
+/**
+ * The routes of the filesystem: one recording list, and the four writes.
+ *
+ * `fs.list_dir`/`fs.move`/`fs.mkdir`/`fs.trash` reach the browser through
+ * `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3), so
+ * a caller's params ride the body rather than the query string.
+ */
 function fsRoutes() {
   listed = [];
   wrote = [];
@@ -50,16 +56,17 @@ function fsRoutes() {
     return {};
   };
   return {
-    'GET /api/fs/list': (request: Request) => {
-      const rel = new URL(request.url).searchParams.get('rel_path') ?? '';
+    'POST /api/rpc/fs.list_dir': async (request: Request) => {
+      const body = (await request.clone().json()) as { rel_path?: string };
+      const rel = body.rel_path ?? '';
       listed.push(rel);
       return { entries: [{ rel_path: `${rel}/a.md`, name: 'a.md', is_dir: false }], truncated: false };
     },
     'GET /api/kiln/file': () => ({ content: 'on disk\n', content_hash: 'h1' }),
     'PUT /api/kiln/file': record('PUT'),
-    'POST /api/fs/move': record('move'),
-    'POST /api/fs/mkdir': record('mkdir'),
-    'POST /api/fs/trash': record('trash'),
+    'POST /api/rpc/fs.move': record('move'),
+    'POST /api/rpc/fs.mkdir': record('mkdir'),
+    'POST /api/rpc/fs.trash': record('trash'),
   };
 }
 

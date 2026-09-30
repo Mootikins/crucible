@@ -83,7 +83,9 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   // Animations off before anything renders — see disableAnimations().
   await disableAnimations(page);
 
-  await page.route('**/api/project/list', (route) =>
+  // `project.list` reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/project/list` is gone.
+  await page.route('**/api/rpc/project.list', (route) =>
     route.fulfill({ json: overrides.projects ?? [MOCK_PROJECT] }),
   );
 
@@ -140,7 +142,11 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: { current_mode_id: 'ask', modes: [] } }),
   );
 
-  await page.route('**/api/fs/list**', (route) => route.fulfill({ json: { entries: [] } }));
+  // `fs.list_dir` reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/fs/list` is gone.
+  await page.route('**/api/rpc/fs.list_dir', (route) =>
+    route.fulfill({ json: { entries: [], truncated: false } }),
+  );
 
   await page.route('**/api/recents', (route) => route.fulfill({ json: { recents: [] } }));
 
@@ -164,7 +170,10 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: answers[name] ?? { targets: [] } });
   });
 
-  await page.route('**/api/kilns', (route) =>
+  // `kiln.list` reaches the browser through `POST /api/rpc/{method}` now
+  // (Simplification Plan step 19 item 3); `GET /api/kilns` is gone, and the
+  // reply is the array directly, not `{ kilns }`.
+  await page.route('**/api/rpc/kiln.list', (route) =>
     route.fulfill({ json: overrides.kilns ?? MOCK_KILNS }),
   );
 

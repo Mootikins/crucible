@@ -1,4 +1,16 @@
 //! Search/Kiln Route Contract Tests
+//!
+//! `GET /api/kilns`, `/api/notes`, `/api/kiln/graph` and
+//! `POST /api/search/vectors` are gone ([[Simplification Plan#Step 19]]
+//! item 3, the "migration"): each only forwarded one RPC row. The browser
+//! reaches `kiln.list`, `list_notes`, `kiln.graph` and `search_vectors`
+//! through `POST /api/rpc/{method}` now, so these tests drive that one
+//! route instead. The "requires kiln query param" tests for `list_notes`
+//! and `kiln.graph` are gone with the routes they proved: axum's typed
+//! query extractor rejected a missing param before the daemon ever saw the
+//! call; `POST /api/rpc/{method}` takes the body as `serde_json::Value`
+//! (step 19 item 6's own design), so a missing field is the real daemon's
+//! `Req` deserialization to refuse now, not this route's.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -7,54 +19,36 @@ use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon, start_real_daemon_with_kilns};
 
-#[tokio::test]
-async fn list_kilns_returns_200_with_array() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
+async fn call_rpc(app: axum::Router, method: &str, body: Value) -> (StatusCode, Value) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/kilns")
-                .body(Body::empty())
+                .method("POST")
+                .uri(format!("/api/rpc/{method}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert!(json["kilns"].is_array(), "Response must have 'kilns' array");
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
 }
 
 #[tokio::test]
-async fn list_notes_requires_kiln_query_param() {
+async fn kiln_list_returns_200_with_array() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_state(client);
     let app = build_test_app(state);
 
-    // Missing required 'kiln' query parameter
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/notes")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(app, "kiln.list", json!(null)).await;
 
-    // Axum returns 400/422 for missing required query parameters
-    assert!(
-        response.status().is_client_error(),
-        "Missing kiln param should return client error, got: {}",
-        response.status()
-    );
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.is_array(), "reply must be the array directly: {json}");
 }
 
 #[tokio::test]
@@ -63,23 +57,10 @@ async fn list_notes_with_kiln_returns_200() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/notes?kiln=/tmp/test-kiln")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(app, "list_notes", json!({ "kiln": "/tmp/test-kiln" })).await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert!(json["notes"].is_array(), "Response must have 'notes' array");
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.is_array(), "reply must be the array directly: {json}");
 }
 
 #[tokio::test]
@@ -88,22 +69,9 @@ async fn kiln_graph_returns_200_with_notes_and_links() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/kiln/graph?kiln=/tmp/test-kiln")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(app, "kiln.graph", json!({ "kiln": "/tmp/test-kiln" })).await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(status, StatusCode::OK);
 
     // Route returns the daemon's kiln.graph result verbatim.
     assert!(json["notes"].is_array(), "Response must have 'notes' array");
@@ -114,63 +82,24 @@ async fn kiln_graph_returns_200_with_notes_and_links() {
 }
 
 #[tokio::test]
-async fn kiln_graph_requires_kiln_query_param() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/kiln/graph")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert!(
-        response.status().is_client_error(),
-        "Missing kiln param should return client error, got: {}",
-        response.status()
-    );
-}
-
-#[tokio::test]
 async fn search_vectors_returns_200_with_results() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/search/vectors")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({
-                        "kiln": "/tmp/test-kiln",
-                        "vector": [0.1, 0.2, 0.3],
-                        "limit": 5
-                    })
-                    .to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(
+        app,
+        "search_vectors",
+        json!({
+            "kiln": "/tmp/test-kiln",
+            "vector": [0.1, 0.2, 0.3],
+            "limit": 5
+        }),
+    )
+    .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert!(
-        json["results"].is_array(),
-        "Response must have 'results' array"
-    );
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.is_array(), "reply must be the array directly: {json}");
 }
 
 #[tokio::test]

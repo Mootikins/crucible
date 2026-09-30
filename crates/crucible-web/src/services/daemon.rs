@@ -1,10 +1,7 @@
 use super::forwarding::ReplayPolicy;
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
-use crucible_core::protocol::requests::{
-    FsRootKind, GetBacklinksReply, KilnGraphReply, KilnRow, NoteByNameReply, NoteListRow,
-    SessionCreateRequest, VectorHit,
-};
+use crucible_core::protocol::requests::{GetBacklinksReply, SessionCreateRequest, VectorHit};
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;

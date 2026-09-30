@@ -62,7 +62,7 @@ beforeEach(() => {
   reply = NEIGHBOURHOOD;
   mocks.activeFile.mockReturnValue(null);
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'POST /api/rpc/kiln.list': () => KILNS,
     'POST /api/plugins/command': async (request) => {
       const { name, args } = (await request.json()) as { name: string; args: unknown };
       sent.push({ name, args, caller: request.headers.get(PLUGIN_CALLER_HEADER) ?? '' });

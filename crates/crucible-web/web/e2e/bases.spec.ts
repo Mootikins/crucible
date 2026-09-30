@@ -3,7 +3,7 @@ import { setupBasicMocks } from './helpers/mock-api';
 import { appReady } from './helpers/nav';
 
 test('WS-250: a saved base opens in its native panel and switches to kanban', async ({ page }) => {
-  await setupBasicMocks(page, { kilns: { kilns: [{ name: 'Work', path: '/kiln', registered: true }], default_kiln: 'Work' } });
+  await setupBasicMocks(page, { kilns: [{ name: 'Work', path: '/kiln', registered: true }] });
   const row = { path: 'First.md', ancestor_hash: 'hash', movable: true, values: { 'file.name': { type: 'string', value: 'First.md' }, 'note.status': { type: 'string', value: 'todo' } } };
   await page.route('**/api/bases/query?**', route => {
     const board = new URL(route.request().url()).searchParams.get('view') === 'Board';
@@ -25,7 +25,7 @@ test('WS-250: a saved base opens in its native panel and switches to kanban', as
 });
 
 test('WS-253: native view options and typed values survive narrow layouts', async ({ page }) => {
-  await setupBasicMocks(page, { kilns: { kilns: [{ name: 'Work', path: '/kiln', registered: true }], default_kiln: 'Work' } });
+  await setupBasicMocks(page, { kilns: [{ name: 'Work', path: '/kiln', registered: true }] });
   await page.route('**/api/file/raw?**', route => route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#447799"/></svg>'}));
   await page.route('**/api/bases/query?**', route => {
     const name = new URL(route.request().url()).searchParams.get('view') ?? 'Cards';

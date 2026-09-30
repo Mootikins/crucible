@@ -6,34 +6,31 @@ use crucible_core::config::expand_tilde;
 // answers it, so none of them keeps a copy of its shape.
 use crucible_core::Project;
 use crucible_daemon::project_manager::untrusted_root_refusal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn project_routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
-        .routes(routes!(register_project))
-        .routes(routes!(unregister_project))
-        .routes(routes!(list_projects))
-        .routes(routes!(get_project))
+    OpenApiRouter::new().routes(routes!(register_project))
 }
+
+// `POST /api/project/unregister`, `GET /api/project/list` and
+// `GET /api/project/get` are gone ([[Simplification Plan#Step 19]] item 3,
+// the "migration"): each only forwarded one RPC row
+// (`project.unregister`, `project.list`, `project.get`), and `project.get`'s
+// own Option-to-404 translation is now `rpc()`'s caller's own null check
+// (`lib/query/projects.ts`) — the RPC row already answers
+// `Option<Project>`. The browser reaches all three through
+// `POST /api/rpc/{method}` now. `POST /api/project/register` stays: its
+// `[web] registration_roots` restriction and its untrusted-registration
+// rollback are real web-owned behavior, not a forward.
 
 #[derive(Debug, Deserialize, ToSchema)]
 struct ProjectPathRequest {
     /// Absolute path of the project root.
     #[schema(value_type = String)]
     path: PathBuf,
-}
-
-/// What `POST /api/project/unregister` answers.
-///
-/// The route's own shape: the daemon reports the unregistration as `()`, so
-/// there is no daemon body to forward.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ProjectUnregisterResponse {
-    /// Always true. A refusal is an error status, not a `false`.
-    ok: bool,
 }
 
 /// The optional tightening filter over registration.
@@ -159,87 +156,12 @@ async fn register_project(
     Ok(Json(project))
 }
 
-/// `POST /api/project/unregister` — forget a registered project.
-///
-/// The directory stays on disk; only the registration goes.
-#[utoipa::path(
-    post,
-    path = "/api/project/unregister",
-    request_body = ProjectPathRequest,
-    responses(
-        (status = 200, body = ProjectUnregisterResponse),
-        (status = 502, description = "The daemon could not unregister the project"),
-    )
-)]
-async fn unregister_project(
-    State(state): State<AppState>,
-    Json(req): Json<ProjectPathRequest>,
-) -> Result<Json<ProjectUnregisterResponse>, WebError> {
-    state
-        .daemon
-        .project_unregister(&req.path)
-        .await
-        .daemon_err()?;
-
-    Ok(Json(ProjectUnregisterResponse { ok: true }))
-}
-
-/// `GET /api/project/list` — every project the daemon holds registered.
-#[utoipa::path(
-    get,
-    path = "/api/project/list",
-    responses(
-        (status = 200, body = Vec<Project>),
-        (status = 502, description = "The daemon could not list the projects"),
-    )
-)]
-async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>, WebError> {
-    let projects = state.daemon.project_list().await.daemon_err()?;
-
-    Ok(Json(projects))
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct GetProjectQuery {
-    /// Absolute path of the project root.
-    #[param(value_type = String)]
-    path: PathBuf,
-}
-
-/// `GET /api/project/get` — one project by its root path.
-///
-/// A path no project is registered for answers 404 rather than a null body,
-/// so a client cannot mistake "not registered" for a project with no fields.
-#[utoipa::path(
-    get,
-    path = "/api/project/get",
-    params(GetProjectQuery),
-    responses(
-        (status = 200, body = Project),
-        (status = 404, description = "No project is registered for this path"),
-        (status = 502, description = "The daemon could not read the project"),
-    )
-)]
-async fn get_project(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<GetProjectQuery>,
-) -> Result<Json<Project>, WebError> {
-    match state.daemon.project_get(&query.path).await {
-        Ok(Some(project)) => Ok(Json(project)),
-        Ok(None) => Err(WebError::NotFound(format!(
-            "Project not found: {}",
-            query.path.display()
-        ))),
-        Err(e) => Err(e).daemon_err(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::{
-        build_state_with_config, build_test_app, mock_project, shape, start_mock_daemon,
+        build_state_with_config, build_test_app, mock_project, request_json, shape,
+        start_mock_daemon,
     };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
@@ -510,10 +432,19 @@ mod tests {
         );
     }
 
+    // `project.list`, `project.get` and `project.unregister` reach the
+    // browser through `POST /api/rpc/{method}` now
+    // ([[Simplification Plan#Step 19]] item 3): each only forwarded one RPC
+    // row. `project.get`'s reply is `Option<Project>` already, so a path no
+    // project is registered for answers `null` rather than 404 — `rpc()`'s
+    // own caller (`lib/query/projects.ts`) reads the option, and no route
+    // translates it into a status any more.
+
     /// The project list reaches the browser as the daemon wrote it.
     #[tokio::test]
-    async fn list_projects_answers_the_declared_shape() {
-        let answered: Vec<Project> = shape("GET", "/api/project/list", None).await;
+    async fn project_list_answers_the_declared_shape_through_the_rpc_route() {
+        let answered: Vec<Project> =
+            shape("POST", "/api/rpc/project.list", Some(json!(null))).await;
 
         assert_eq!(sent(&answered), sent(vec![mock_project()]));
         assert_eq!(answered.len(), 1);
@@ -522,23 +453,41 @@ mod tests {
 
     /// One project reaches the browser as the daemon wrote it.
     #[tokio::test]
-    async fn get_project_answers_the_declared_shape() {
+    async fn project_get_answers_the_declared_shape_through_the_rpc_route() {
         let project = mock_project();
-        let uri = format!("/api/project/get?path={}", project.path.display());
-        let answered: Project = shape("GET", &uri, None).await;
+        let answered: Project = shape(
+            "POST",
+            "/api/rpc/project.get",
+            Some(json!({ "path": project.path.display().to_string() })),
+        )
+        .await;
 
         assert_eq!(sent(&answered), sent(&project));
     }
 
+    /// A path no project is registered for answers `null`, not a 404.
     #[tokio::test]
-    async fn unregister_project_answers_the_declared_shape() {
-        let answered: ProjectUnregisterResponse = shape(
+    async fn project_get_answers_null_for_an_unregistered_path() {
+        let (status, body) = request_json(
             "POST",
-            "/api/project/unregister",
+            "/api/rpc/project.get",
+            Some(json!({ "path": "/nowhere" })),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.is_null(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn project_unregister_answers_through_the_rpc_route() {
+        let (status, _) = request_json(
+            "POST",
+            "/api/rpc/project.unregister",
             Some(json!({ "path": "/tmp/test-project" })),
         )
         .await;
 
-        assert!(answered.ok);
+        assert_eq!(status, StatusCode::OK);
     }
 }

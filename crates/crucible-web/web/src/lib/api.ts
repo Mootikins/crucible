@@ -1,6 +1,7 @@
 import type { components } from './api-schema';
 import type { SessionCommand } from './slash-commands';
-import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from './api-client';
+import { APP_CALLER, callerParam, client, decode, expectOk, rpc, type ApiError } from './api-client';
+import type { RpcMethods } from './rpc-methods';
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type { CommentRef } from './diffset';
@@ -1114,10 +1115,10 @@ export async function getSession(id: string): Promise<SessionDetail> {
 }
 
 // =============================================================================
-// Content Search (ripgrep) — POST /api/search/grep
+// Content Search (ripgrep) — search_grep
 // =============================================================================
 
-/** What `POST /api/search/grep` answers, read straight off the document. */
+/** What `search_grep` answers, read straight off the document. */
 export type GrepResponse = Schemas['GrepSearchResponse'];
 
 /**
@@ -1134,18 +1135,13 @@ export async function grepSearch(
   query: string,
   opts?: { glob?: string; limit?: number; caseInsensitive?: boolean },
 ): Promise<GrepResponse> {
-  return decode(
-    await client.POST('/api/search/grep', {
-      body: {
-        root,
-        query,
-        glob: opts?.glob ?? null,
-        limit: opts?.limit ?? 100,
-        case_insensitive: opts?.caseInsensitive ?? true,
-      },
-    }),
-    'Search failed',
-  );
+  return rpc('search_grep', {
+    root,
+    query,
+    glob: opts?.glob ?? null,
+    limit: opts?.limit ?? 100,
+    case_insensitive: opts?.caseInsensitive ?? true,
+  });
 }
 
 // =============================================================================
@@ -1690,18 +1686,17 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
 
 /**
  * List available kilns. Returns the daemon's object shape verbatim
- * (`{ path, name, last_access_secs_ago }`) — see `KilnListEntry`. The route
- * (`GET /api/kilns`) wraps the array under `{ kilns }`.
+ * (`{ path, name, last_access_secs_ago }`) — see `KilnListEntry`.
+ * `kiln.list` answers the array directly; `GET /api/kilns`, which used to
+ * wrap it under `{ kilns }`, is gone ([[Simplification Plan#Step 19]]
+ * item 3).
  */
 export async function listKilns(): Promise<KilnListEntry[]> {
-  return decode(await client.GET('/api/kilns'), 'Failed to list kilns').kilns;
+  return rpc('kiln.list', null);
 }
 
 export async function listNotes(kiln: string, pathFilter?: string): Promise<NoteEntry[]> {
-  return decode(
-    await client.GET('/api/notes', { params: { query: { kiln, path_filter: pathFilter } } }),
-    'Failed to list notes',
-  ).notes;
+  return rpc('list_notes', { kiln, path_filter: pathFilter });
 }
 
 /**
@@ -1754,15 +1749,12 @@ export async function registerProject(path: string): Promise<Project> {
 
 /** Unregister a project. */
 export async function unregisterProject(path: string): Promise<void> {
-  expectOk(
-    await client.POST('/api/project/unregister', { body: { path } }),
-    'Failed to unregister project',
-  );
+  await rpc('project.unregister', { path });
 }
 
 /** List all registered projects. */
 export async function listProjects(): Promise<Project[]> {
-  return decode(await client.GET('/api/project/list'), 'Failed to list projects');
+  return rpc('project.list', null);
 }
 
 // =============================================================================
@@ -1780,43 +1772,44 @@ export async function scmClone(url: string): Promise<ScmCloneResponse> {
   );
 }
 
-/** Get project by path. */
+/**
+ * Get project by path, or `null` if none is registered for it.
+ *
+ * `project.get`'s own reply is `Option<Project>` — a path with no
+ * registration was a 404 back when a route translated the option into a
+ * status; `GET /api/project/get` is gone ([[Simplification Plan#Step 19]]
+ * item 3), so this reads the option directly.
+ */
 export async function getProject(path: string): Promise<Project | null> {
-  try {
-    return decode(
-      await client.GET('/api/project/get', { params: { query: { path } } }),
-      'Failed to get project',
-    );
-  } catch (err) {
-    if ((err as ApiError).status === 404) {
-      return null;
-    }
-    throw err;
-  }
+  return rpc('project.get', { path });
+}
+
+/**
+ * `list_notes`, narrowed to `{name, path, is_dir}`.
+ *
+ * `GET /api/kiln/files` and `GET /api/kiln/notes` used to do this reshape
+ * server-side under one name, `FileEntryRow` — one route body for two
+ * routes, so the two answered the same projection. They are gone
+ * ([[Simplification Plan#Step 19]] item 3): `listFiles` and `listKilnNotes`
+ * below are that one reshape now, so the two still cannot drift apart.
+ */
+function toFileEntries(notes: RpcMethods['list_notes']['result']): FileEntry[] {
+  return notes.map((n) => ({ name: n.name, path: n.path, is_dir: false }));
 }
 
 /** List files in a kiln directory. */
 export async function listFiles(path: string): Promise<FileEntry[]> {
-  return decode(
-    await client.GET('/api/kiln/files', { params: { query: { kiln: path } } }),
-    'Failed to list files',
-  ).files;
+  return toFileEntries(await rpc('list_notes', { kiln: path }));
 }
 
 /** List kiln notes. */
 export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
-  return decode(
-    await client.GET('/api/kiln/notes', { params: { query: { kiln: kilnPath } } }),
-    'Failed to list kiln notes',
-  ).files;
+  return toFileEntries(await rpc('list_notes', { kiln: kilnPath }));
 }
 
 /** Full note-link graph of a kiln (nodes + resolved/unresolved edges). */
 export async function getKilnGraph(kilnPath: string): Promise<import('./graph/types').GraphDto> {
-  return decode(
-    await client.GET('/api/kiln/graph', { params: { query: { kiln: kilnPath } } }),
-    'Failed to load graph',
-  );
+  return rpc('kiln.graph', { kiln: kilnPath });
 }
 
 /** Get file content by path. */
@@ -2058,11 +2051,12 @@ export async function recordRecent(absPath: string, name: string): Promise<void>
  * sent true); dotfiles stay behind the explicit `showHidden` toggle and
  * `.git` never lists (daemon policy).
  *
- * Goes through the generated client like every other call: a refused root
- * used to surface as `listDir failed: 422`, the status and nothing else, while
- * the daemon had said in a sentence which root it refused and why. The query
- * parameters are the document's own (`root` / `rel_path` / `show_ignored` /
- * `show_hidden`), so a rename in Rust fails the build here.
+ * Goes through `rpc()` ([[Simplification Plan#Step 19]] item 3), so a
+ * refusal reads the daemon's own sentence rather than a bare status; the
+ * one error message names the method (`` RPC `fs.list_dir` failed ``), not
+ * the root that was asked for. The params are the row's own
+ * (`root` / `rel_path` / `show_ignored` / `show_hidden`), so a rename in
+ * Rust fails the build here.
  *
  * `notify: false` rejects without a toast. The `@` completer uses it, because
  * a refused workspace root is not an error that the user can correct there.
@@ -2073,13 +2067,9 @@ export async function listDir(
   showHidden = false,
   { notify = true }: { notify?: boolean } = {},
 ): Promise<FsListing> {
-  return decode(
-    await client.GET('/api/fs/list', {
-      params: {
-        query: { root, rel_path: relPath, show_ignored: true, show_hidden: showHidden },
-      },
-    }),
-    `Failed to list ${root}`,
+  return rpc(
+    'fs.list_dir',
+    { root, rel_path: relPath, show_ignored: true, show_hidden: showHidden },
     { notify },
   );
 }
@@ -2107,12 +2097,7 @@ export async function fsMove(
   fromRel: string,
   toRel: string,
 ): Promise<FsMoveOutcome> {
-  return decode(
-    await client.POST('/api/fs/move', {
-      body: { root, kind, from_rel: fromRel, to_rel: toRel },
-    }),
-    'move failed',
-  );
+  return rpc('fs.move', { root, kind, from_rel: fromRel, to_rel: toRel });
 }
 
 /** Create a folder (and missing parents) inside one root. */
@@ -2121,10 +2106,7 @@ export async function fsMkdir(
   kind: Schemas['FsRootKind'],
   relPath: string,
 ): Promise<void> {
-  expectOk(
-    await client.POST('/api/fs/mkdir', { body: { root, kind, rel_path: relPath } }),
-    'mkdir failed',
-  );
+  await rpc('fs.mkdir', { root, kind, rel_path: relPath });
 }
 
 /**
@@ -2137,10 +2119,7 @@ export async function fsTrash(
   kind: Schemas['FsRootKind'],
   relPath: string,
 ): Promise<void> {
-  expectOk(
-    await client.POST('/api/fs/trash', { body: { root, kind, rel_path: relPath } }),
-    'trash failed',
-  );
+  await rpc('fs.trash', { root, kind, rel_path: relPath });
 }
 
 /**

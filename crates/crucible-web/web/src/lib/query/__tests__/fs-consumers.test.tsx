@@ -59,7 +59,7 @@ beforeEach(() => {
   resetKilnsForTests();
   localStorage.clear();
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+    'POST /api/rpc/kiln.list': () => [{ path: KILN, name: 'kiln' }],
     // The read the offline layer makes: the bytes with the hash they were
     // read at, so a buffer's next save can name the base it edited from.
     'GET /api/kiln/file': async (request) => ({
@@ -67,8 +67,10 @@ beforeEach(() => {
       content_hash: 'base-hash',
     }),
     // The tree the panel browses, and the note list the shell may ask for.
-    'GET /api/fs/list': () => ({ entries: [] }),
-    'GET /api/notes': () => ({ notes: [] }),
+    // `fs.list_dir`/`list_notes` reach the browser through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3).
+    'POST /api/rpc/fs.list_dir': () => ({ entries: [], truncated: false }),
+    'POST /api/rpc/list_notes': () => [],
   });
 });
 

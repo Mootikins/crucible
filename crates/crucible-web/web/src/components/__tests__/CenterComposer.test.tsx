@@ -99,7 +99,7 @@ beforeEach(async () => {
   cloneAnswer = {};
   clonedUrl = null;
   env = createTestQueryEnv({
-    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'POST /api/rpc/kiln.list': () => KILNS,
     'POST /api/rpc/agents.list_profiles': () => ({ profiles: AGENTS }),
     // The model chip and its default hint are real reads now: the composer
     // shares both keys with the session context and the phone sheet.
@@ -117,7 +117,10 @@ beforeEach(async () => {
       ],
     }),
     'GET /api/config': () => configReply,
-    'GET /api/project/list': () => [{ path: '/repos/crucible', name: 'crucible', kilns: [] }],
+    // `project.list` reaches the browser through `POST /api/rpc/{method}`
+    // now ([[Simplification Plan#Step 19]] item 3); `GET /api/project/list`
+    // is gone.
+    'POST /api/rpc/project.list': () => [{ path: '/repos/crucible', name: 'crucible', kilns: [] }],
     'GET /api/plugins/publications': () => ({ publications: { targets: declared } }),
     'POST /api/plugins/command': async (request) => {
       const { name } = (await request.json()) as { name: string };

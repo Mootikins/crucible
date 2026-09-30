@@ -14,7 +14,12 @@ import { wikilinkCompletionSource } from '../wikilink-completion';
  * that went around the cache would still look like one fetch.
  */
 let env: TestQueryEnv;
-/** What `GET /api/kiln/notes` answers next, and how often it was asked. */
+/**
+ * What `list_notes` answers next, and how often it was asked.
+ *
+ * `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+ * ([[Simplification Plan#Step 19]] item 3); `GET /api/kiln/notes` is gone.
+ */
 let served: { name: string; path: string }[] = [];
 let asks = 0;
 
@@ -22,9 +27,9 @@ function openKiln(notes: { name: string; path: string }[]): void {
   served = notes;
   asks = 0;
   env = createTestQueryEnv({
-    'GET /api/kiln/notes': () => {
+    'POST /api/rpc/list_notes': () => {
       asks += 1;
-      return { files: served };
+      return served;
     },
   });
 }

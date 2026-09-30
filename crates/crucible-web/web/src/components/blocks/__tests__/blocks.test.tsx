@@ -136,7 +136,12 @@ describe('KanbanBlock', () => {
   /** Answers the kiln roster and each base query; `seen` holds each query URL. */
   function daemon(seen: URL[]) {
     vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
-      if (request.url.includes('/api/kilns')) return Response.json({ kilns: [{name: 'Work', path: '/kiln', registered:true}], default_kiln:'Work' });
+      // `kiln.list` reaches the browser through `POST /api/rpc/{method}`
+      // now ([[Simplification Plan#Step 19]] item 3); `GET /api/kilns` is
+      // gone, and the reply is the array directly, not `{ kilns }`.
+      if (request.url.includes('/api/rpc/kiln.list')) {
+        return Response.json([{ name: 'Work', path: '/kiln', registered: true }]);
+      }
       if (request.url.includes('/api/bases/query')) {
         seen.push(new URL(request.url));
         return Response.json({root:'/kiln',view:'Board',view_type:'kanban',columns:[],rows:[],groups:[],summaries:{},options:baseOptions(),views:[{name:'Board',type:'kanban'}]});

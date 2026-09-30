@@ -23,8 +23,8 @@ import type { BlockProps } from './registry';
  * hidden, because the cost of that shape is the finding, not a detail.
  *
  * `GraphPanel` is untouched and still draws the whole-kiln force view from
- * `GET /api/kiln/graph`. This is not its replacement; it is the smaller,
- * narrower read that endpoint cannot serve.
+ * `kiln.graph`. This is not its replacement; it is the smaller, narrower
+ * read that call cannot serve.
  */
 
 interface Ring {

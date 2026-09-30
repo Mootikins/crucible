@@ -48,24 +48,22 @@ test.describe('File tab flows', () => {
   test('opening a file creates a file tab in the center pane', async ({ page }) => {
     await setupBasicMocks(page);
 
-    // Mock notes API (file viewer fetches note content via getNote)
-    await page.route('**/api/notes**', (route) => {
-      const url = route.request().url();
-      if (url.includes('/api/notes/')) {
-        route.fulfill({
-          json: {
-            name: 'My Note',
-            content: '# Hello World\n\nThis is test content.',
-            path: '/home/user/notes/My Note.md',
-          },
-        });
-      } else {
-        route.fulfill({
-          json: [
-            { name: 'My Note', path: '/home/user/notes/My Note.md', is_dir: false },
-          ],
-        });
-      }
+    // Mock the notes API. `list_notes` and `get_note_by_name` reach the
+    // browser through `POST /api/rpc/{method}` now (Simplification Plan
+    // step 19 item 3); `GET /api/notes` and `/api/notes/{name}` are gone.
+    await page.route('**/api/rpc/list_notes', (route) => {
+      route.fulfill({
+        json: [{ name: 'My Note', path: '/home/user/notes/My Note.md' }],
+      });
+    });
+    await page.route('**/api/rpc/get_note_by_name', (route) => {
+      route.fulfill({
+        json: {
+          name: 'My Note',
+          content: '# Hello World\n\nThis is test content.',
+          path: '/home/user/notes/My Note.md',
+        },
+      });
     });
 
     await page.goto('/');

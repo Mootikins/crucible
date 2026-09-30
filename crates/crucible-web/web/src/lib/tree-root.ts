@@ -55,9 +55,10 @@ export function projectIsGitRoot(p: Pick<Project, 'path' | 'repository'>): boole
 /**
  * Build the two-group roster.
  *  - Projects: one root per registered project.
- *  - Kilns: the union of `GET /api/kilns` and every project's attached kilns,
- *    deduped by kiln ROOT path (`kilnRoot()` normalizes a `.crucible` config
- *    dir to its parent). A project and its attached kiln are DIFFERENT roots
+ *  - Kilns: the union of `kiln.list` (`POST /api/rpc/kiln.list`) and every
+ *    project's attached kilns, deduped by kiln ROOT path (`kilnRoot()`
+ *    normalizes a `.crucible` config dir to its parent). A project and its
+ *    attached kiln are DIFFERENT roots
  *    and never dedup against each other (`rootKey` includes `kind`).
  *
  * The daemon may list one kiln under two identities — its absolute path AND a
@@ -113,7 +114,7 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
   for (const k of kilns) learn(k.path, k.name ?? null);
   for (const p of projects) for (const k of p.kilns) learn(k.path, k.name ?? null);
 
-  // Only a `GET /api/kilns` row says whether its kiln is a git top level. A
+  // Only a `kiln.list` row says whether its kiln is a git top level. A
   // project's attached kiln takes the answer of the row for the same root.
   const gitRoots = new Set<string>();
   for (const k of kilns) {

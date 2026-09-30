@@ -40,7 +40,12 @@ const mockNotes: NoteEntry[] = [
  * still look like one fetch.
  */
 let env: TestQueryEnv;
-/** How many times `GET /api/notes` was asked, and for which kiln. */
+/**
+ * How many times `list_notes` was asked, and for which kiln.
+ *
+ * `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+ * ([[Simplification Plan#Step 19]] item 3); `GET /api/notes` is gone.
+ */
 let notesAsked: string[] = [];
 
 // Kobalte's Dialog renders into a Portal appended to document.body. Even
@@ -53,9 +58,10 @@ beforeEach(() => {
   statusBarActions.setKilnPath('/kilns/helios');
   notesAsked = [];
   env = createTestQueryEnv({
-    'GET /api/notes': (request: Request) => {
-      notesAsked.push(new URL(request.url).searchParams.get('kiln') ?? '');
-      return { notes: mockNotes };
+    'POST /api/rpc/list_notes': async (request: Request) => {
+      const body = (await request.clone().json()) as { kiln: string };
+      notesAsked.push(body.kiln ?? '');
+      return mockNotes;
     },
   });
 });

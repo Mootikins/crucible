@@ -43,7 +43,7 @@ function searchRoutes() {
       await wait(body.query);
       return { results: [{ path: `/a/${body.query}.md`, rel_path: 'a.md', document_id: 'd', score: 1 }] };
     },
-    'POST /api/search/grep': async (request: Request) => {
+    'POST /api/rpc/search_grep': async (request: Request) => {
       const body = (await request.json()) as { root: string; query: string; glob: string | null };
       asked.push({ route: 'grep', query: body.query, root: body.root });
       await wait(body.query);

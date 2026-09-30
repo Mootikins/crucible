@@ -27,16 +27,24 @@ let projectRoots: unknown[] = [];
 // passed with the bug still in place. Driving the actual store is what makes
 // the assertion mean anything.
 
-/** The daemon's side of every read the panel makes, over the mocked fetch. */
+/**
+ * The daemon's side of every read the panel makes, over the mocked fetch.
+ *
+ * `kiln.list`, `list_notes` and `fs.list_dir` reach the browser through
+ * `POST /api/rpc/{method}` now ([[Simplification Plan#Step 19]] item 3);
+ * `GET /api/kilns`, `/api/notes` and `/api/fs/list` are gone, and a row's
+ * params ride the body rather than the query string.
+ */
 function fsRoutes() {
   return {
-    'GET /api/kilns': () => ({ kilns: kilnRoster }),
-    'GET /api/notes': async (request: Request) => ({
-      notes: await listNotesMock(new URL(request.url).searchParams.get('kiln')),
-    }),
-    'GET /api/fs/list': async (request: Request) => {
-      const params = new URL(request.url).searchParams;
-      return listDirMock(params.get('root'), params.get('rel_path') ?? '');
+    'POST /api/rpc/kiln.list': () => kilnRoster,
+    'POST /api/rpc/list_notes': async (request: Request) => {
+      const body = (await request.clone().json()) as { kiln: string };
+      return listNotesMock(body.kiln);
+    },
+    'POST /api/rpc/fs.list_dir': async (request: Request) => {
+      const body = (await request.clone().json()) as { root: string; rel_path?: string };
+      return listDirMock(body.root, body.rel_path ?? '');
     },
   };
 }
@@ -286,7 +294,7 @@ describe('FilesPanel — a project root loads once', () => {
     // The root and the one persisted-expanded folder, once each — not once
     // per panel.
     expect(listDirMock.mock.calls.map((c) => c[1])).toEqual(['', 'src']);
-    expect(env.fetch.calls('GET /api/fs/list')).toBe(2);
+    expect(env.fetch.calls('POST /api/rpc/fs.list_dir')).toBe(2);
   });
 
   it('fetches each directory exactly once despite the cache-then-fetch double apply', async () => {

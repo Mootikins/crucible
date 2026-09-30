@@ -22,11 +22,16 @@ test('picking a non-workspace project from the root dropdown browses it', async 
     ],
   });
 
-  // The tree fetches directories from /api/fs/list.
-  await page.route('**/api/fs/list**', (route) => {
-    const url = new URL(route.request().url());
-    const root = url.searchParams.get('root') ?? '';
-    if (root === '/home/user/other-repo' && !url.searchParams.get('rel_path')) {
+  // The tree fetches directories from `fs.list_dir`, reached through
+  // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3);
+  // `GET /api/fs/list` is gone, and a row's params ride the body.
+  await page.route('**/api/rpc/fs.list_dir', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as {
+      root?: string;
+      rel_path?: string;
+    };
+    const root = body.root ?? '';
+    if (root === '/home/user/other-repo' && !body.rel_path) {
       return route.fulfill({
         json: {
           entries: [
