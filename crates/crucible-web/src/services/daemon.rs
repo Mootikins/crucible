@@ -336,23 +336,12 @@ impl ReconnectingDaemon {
         -> crucible_daemon::McpStatus = mcp_status();
     }
 
-    forward_rpc! {
-        Safe SkillsList =>
-        skills_list(kiln: &Path, scope_filter: Option<&str> => scope_filter.map(str::to_owned))
-        -> crucible_core::types::SkillsReply = skills_list(&kiln, None, scope_filter.as_deref());
-    }
-
-    forward_rpc! {
-        Safe SkillsGet =>
-        skills_get(name: &str, kiln: &Path)
-        -> crucible_core::types::SkillDetail = skills_get(&name, &kiln, None);
-    }
-
-    forward_rpc! {
-        Safe SkillsSearch =>
-        skills_search(query: &str, kiln: &Path, limit: Option<usize>)
-        -> crucible_core::types::SkillsReply = skills_search(&query, &kiln, None, limit);
-    }
+    // skills.list/get/search: the browser calls them through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
+    // this forwarder is gone; `DaemonClient::skills_list`/`skills_get`/
+    // `skills_search` stay, because they reshape an ergonomic `&Path`
+    // argument into the wire request's `String` field, which the CLI still
+    // calls directly (item 9).
 
     forward_rpc! {
         /// Create a session and have the daemon resolve + configure its agent in

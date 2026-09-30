@@ -245,9 +245,9 @@ fn browser_may_call(method: RpcMethod) -> bool {
         // ---- Health/liveness: a harmless read. ----
         Ping => true,
 
-        // Not read by any web route today; each panel already answers a
-        // narrower question (`GET /api/plugins`, `/api/skills`, ...) than
-        // "list every method the daemon has".
+        // Not read by any web route today; each panel already asks a
+        // narrower question (`GET /api/plugins`, `skills.list` through this
+        // very route, ...) than "list every method the daemon has".
         DaemonCapabilities => false,
 
         // Local admin: stops the daemon process itself.

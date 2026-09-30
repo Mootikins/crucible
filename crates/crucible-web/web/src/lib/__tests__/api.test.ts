@@ -39,9 +39,6 @@ import {
   installPlugin,
   removePlugin,
   getMcpStatus,
-  listSkills,
-  getSkill,
-  searchSkills,
   listKilns,
   listDir,
   listNotes,
@@ -944,72 +941,9 @@ describe('plugin endpoints', () => {
   });
 });
 
-// =============================================================================
-// Skills
-// =============================================================================
-
-describe('skills endpoints', () => {
-  it('listSkills fetches /api/skills?kiln=… and returns skills array', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/skills': {
-        body: {
-          skills: [
-            { name: 's1', scope: 'user', description: 'd', shadowed_count: 0 },
-          ],
-        },
-      },
-    });
-    global.fetch = mockFetch;
-    const skills = await listSkills('/tmp/k');
-    expect(skills).toHaveLength(1);
-    expect(skills[0].name).toBe('s1');
-    expect((await mockFetch.sent(0)).url).toContain('kiln=%2Ftmp%2Fk');
-  });
-
-  it('listSkills includes scope filter when provided', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/skills': { body: { skills: [] } },
-    });
-    global.fetch = mockFetch;
-    await listSkills('/tmp/k', 'kiln');
-    expect((await mockFetch.sent(0)).url).toContain('scope=kiln');
-  });
-
-  it('getSkill URL-encodes the name and returns the detail', async () => {
-    const mockFetch = createMockFetch({
-      'GET /api/skills/my%20skill': {
-        body: {
-          name: 'my skill',
-          scope: 'user',
-          description: 'd',
-          source_path: '/p',
-          body: '# Body',
-        },
-      },
-    });
-    global.fetch = mockFetch;
-    const detail = await getSkill('my skill', '/tmp/k');
-    expect(detail.body).toBe('# Body');
-    expect((await mockFetch.sent(0)).url).toContain('/api/skills/my%20skill');
-  });
-
-  it.each([
-    { name: 'searchSkills passes q + limit', query: 'foo', kiln: '/tmp/k', limit: 5, expectPresent: ['q=foo', 'limit=5'], expectAbsent: [] as string[] },
-    { name: 'searchSkills omits limit when not provided', query: 'foo', kiln: '/tmp/k', expectPresent: [] as string[], expectAbsent: ['limit='] },
-  ])('$name', async ({ query, kiln, limit, expectPresent, expectAbsent }: { query: string; kiln: string; limit?: number; expectPresent: string[]; expectAbsent: string[] }) => {
-    const mockFetch = createMockFetch({ 'GET /api/skills/search': { body: { skills: [] } } });
-    global.fetch = mockFetch;
-    await searchSkills(query, kiln, limit);
-    const url = (await mockFetch.sent(0)).url;
-    for (const p of expectPresent) expect(url).toContain(p);
-    for (const p of expectAbsent) expect(url).not.toContain(p);
-  });
-
-  it('listSkills throws on 5xx', async () => {
-    global.fetch = createMockFetch({ 'GET /api/skills': { status: 500 } });
-    await expect(listSkills('/tmp/k')).rejects.toThrow('Failed to list skills');
-  });
-});
+// Skills: covered in `lib/query/__tests__/skills.test.ts`, against
+// `POST /api/rpc/{skills.list,skills.get,skills.search}` — no REST route
+// forwards them any more (Simplification Plan step 19 item 3).
 
 // =============================================================================
 // MCP / Kilns / Notes / Search

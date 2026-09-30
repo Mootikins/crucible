@@ -30,7 +30,6 @@ import type {
   SessionSearchResponse,
   SessionKnobSupport,
   SessionModes,
-  SkillSummary,
   Surface,
   TargetProvider,
   FileEntry,
@@ -1699,39 +1698,9 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
   );
 }
 
-// =============================================================================
-// Skills Endpoints
-// =============================================================================
-
-export type SkillDetail = Schemas['SkillDetail'];
-
-/** List skills discovered for a kiln, optionally filtered by scope. */
-export async function listSkills(kiln: string, scope?: string): Promise<SkillSummary[]> {
-  return decode(
-    await client.GET('/api/skills', { params: { query: { kiln, scope } } }),
-    'Failed to list skills',
-  ).skills;
-}
-
-/** Fetch a skill's full body and metadata. */
-export async function getSkill(name: string, kiln: string): Promise<SkillDetail> {
-  return decode(
-    await client.GET('/api/skills/{name}', { params: { path: { name }, query: { kiln } } }),
-    'Failed to load skill',
-  );
-}
-
-/** Server-side skills search (case-insensitive name + description match). */
-export async function searchSkills(
-  query: string,
-  kiln: string,
-  limit?: number,
-): Promise<SkillSummary[]> {
-  return decode(
-    await client.GET('/api/skills/search', { params: { query: { kiln, q: query, limit } } }),
-    'Failed to search skills',
-  ).skills;
-}
+// Skills: `lib/query/skills.ts` calls `rpc('skills.list' | 'skills.get' |
+// 'skills.search', ...)` directly. No REST route forwards them any more
+// (Simplification Plan step 19 item 3).
 
 // =============================================================================
 // MCP Endpoints

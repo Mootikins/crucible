@@ -24,8 +24,11 @@ const state = readState();
 
 test.describe.configure({ timeout: 180_000 });
 
-const SKILLS = /^\/api\/skills$/;
-const SKILLS_SEARCH = /^\/api\/skills\/search$/;
+// [[Simplification Plan#Step 19]] item 3: `skills.list`/`skills.search` are
+// two rows of the one `POST /api/rpc/{method}` route now, not two REST
+// routes — the method name in the path is still what tells them apart.
+const SKILLS = /^\/api\/rpc\/skills\.list$/;
+const SKILLS_SEARCH = /^\/api\/rpc\/skills\.search$/;
 
 test.describe('live C3 entities', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
@@ -94,16 +97,16 @@ test.describe('live C3 entities', () => {
     // The roster, once. The SEARCH is a different key and an empty box asks
     // nothing: a panel that searched for "" on mount would fetch a second
     // answer nobody reads.
-    expect(log.count('GET', SKILLS), describeRequests(log, SKILLS)).toBe(1);
-    expect(log.count('GET', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(0);
+    expect(log.count('POST', SKILLS), describeRequests(log, SKILLS)).toBe(1);
+    expect(log.count('POST', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(0);
 
     // A typed query. The panel debounces, so four keystrokes are one search.
     await page.getByTestId('skills-search-input').fill('note');
     await apiQuiet(log);
-    const afterFirst = log.count('GET', SKILLS_SEARCH);
+    const afterFirst = log.count('POST', SKILLS_SEARCH);
     expect(afterFirst, describeRequests(log, SKILLS_SEARCH)).toBe(1);
     // And the roster was not asked for again behind it.
-    expect(log.count('GET', SKILLS)).toBe(1);
+    expect(log.count('POST', SKILLS)).toBe(1);
 
     // Clearing and retyping the SAME query answers from the key it already
     // holds, so the daemon is not asked twice for one question.
@@ -111,7 +114,7 @@ test.describe('live C3 entities', () => {
     await apiQuiet(log);
     await page.getByTestId('skills-search-input').fill('note');
     await apiQuiet(log);
-    expect(log.count('GET', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(afterFirst);
+    expect(log.count('POST', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(afterFirst);
   });
 
   test('the surfaces panel reconciles each open and holds one stream', async ({ page }) => {

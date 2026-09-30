@@ -1,9 +1,13 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import { getSkill, listSkills, searchSkills, type SkillDetail } from '@/lib/api';
+import { rpc } from '@/lib/api-client';
 import type { SkillSummary } from '@/lib/types';
+import type { RpcMethods } from '@/lib/rpc-methods';
 import { getQueryClient } from './client';
 import { keys } from './keys';
+
+/** One skill's full body and metadata: the `skills.get` row's own reply. */
+export type SkillDetail = RpcMethods['skills.get']['result'];
 
 /**
  * The skills of one kiln: the roster, the search over it, and one skill's body.
@@ -32,7 +36,8 @@ export function useSkillList(
   return useQuery(
     () => ({
       queryKey: keys.skillsList(kiln() ?? ''),
-      queryFn: () => listSkills(kiln() as string),
+      queryFn: async () =>
+        (await rpc('skills.list', { kiln_path: kiln() as string })).skills,
       enabled: withKiln(kiln()),
     }),
     getQueryClient,
@@ -57,7 +62,8 @@ export function useSkillSearch(
   return useQuery(
     () => ({
       queryKey: keys.skillsSearch(kiln() ?? '', asked()),
-      queryFn: () => searchSkills(asked(), kiln() as string),
+      queryFn: async () =>
+        (await rpc('skills.search', { query: asked(), kiln_path: kiln() as string })).skills,
       enabled: withKiln(kiln()) && asked().length > 0,
     }),
     getQueryClient,
@@ -78,7 +84,7 @@ export function useSkillDetail(
   return useQuery(
     () => ({
       queryKey: keys.skillDetail(name() ?? '', kiln() ?? ''),
-      queryFn: () => getSkill(name() as string, kiln() as string),
+      queryFn: () => rpc('skills.get', { name: name() as string, kiln_path: kiln() as string }),
       enabled: withKiln(kiln()) && !!name(),
     }),
     getQueryClient,

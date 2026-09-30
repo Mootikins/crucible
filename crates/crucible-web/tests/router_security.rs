@@ -65,7 +65,7 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
         "/api/kiln/notes",
         "/api/canvas",
         "/api/layout",
-        "/api/skills",
+        "/api/rpc/skills.list",
         "/api/webhook/probe",
         "/api/terminal/ws",
     ] {

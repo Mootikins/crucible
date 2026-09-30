@@ -1,11 +1,37 @@
-//! Skills route contract tests (with mock daemon).
+//! Skills contract tests (with mock daemon).
+//!
+//! `GET /api/skills`, `/api/skills/{name}` and `/api/skills/search` are gone
+//! ([[Simplification Plan#Step 19]] item 3, the "migration"): a REST route
+//! that only forwarded one RPC row. The browser reaches `skills.list`,
+//! `skills.get` and `skills.search` through `POST /api/rpc/{method}` now, so
+//! these tests drive that one route instead.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon};
+
+async fn call_rpc(app: axum::Router, method: &str, body: Value) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/rpc/{method}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap();
+    (status, json)
+}
 
 #[tokio::test]
 async fn list_skills_returns_200_with_skills_array() {
@@ -13,46 +39,12 @@ async fn list_skills_returns_200_with_skills_array() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills?kiln=/tmp/test-kiln")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) =
+        call_rpc(app, "skills.list", json!({ "kiln_path": "/tmp/test-kiln" })).await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(status, StatusCode::OK);
     assert!(json["skills"].is_array(), "must have skills array");
     assert_eq!(json["skills"][0]["name"], "test-skill");
-}
-
-#[tokio::test]
-async fn list_skills_requires_kiln_query() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert!(
-        response.status().is_client_error(),
-        "missing kiln must 4xx, got {}",
-        response.status()
-    );
 }
 
 #[tokio::test]
@@ -61,17 +53,14 @@ async fn list_skills_accepts_scope_filter() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills?kiln=/tmp/test-kiln&scope=user")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, _json) = call_rpc(
+        app,
+        "skills.list",
+        json!({ "kiln_path": "/tmp/test-kiln", "scope_filter": "user" }),
+    )
+    .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -80,21 +69,14 @@ async fn get_skill_returns_200_with_body() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills/test-skill?kiln=/tmp/test-kiln")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(
+        app,
+        "skills.get",
+        json!({ "name": "test-skill", "kiln_path": "/tmp/test-kiln" }),
+    )
+    .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(json["name"], "test-skill");
     assert!(json["body"].as_str().unwrap().contains("Test Skill"));
 }
@@ -105,40 +87,14 @@ async fn search_skills_returns_200_with_matches() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills/search?q=match&kiln=/tmp/test-kiln&limit=5")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = call_rpc(
+        app,
+        "skills.search",
+        json!({ "query": "match", "kiln_path": "/tmp/test-kiln", "limit": 5 }),
+    )
+    .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(status, StatusCode::OK);
     assert!(json["skills"].is_array());
     assert_eq!(json["skills"][0]["name"], "matched-skill");
-}
-
-#[tokio::test]
-async fn search_skills_requires_q_param() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/skills/search?kiln=/tmp/test-kiln")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert!(response.status().is_client_error());
 }

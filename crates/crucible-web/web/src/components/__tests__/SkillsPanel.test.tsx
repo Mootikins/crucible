@@ -47,9 +47,9 @@ import type { SkillSummary } from '@/lib/types';
 // falls back to the configured `kiln_path`.
 let env: TestQueryEnv;
 
-/** The roster `GET /api/skills` answers next. */
+/** The roster `POST /api/rpc/skills.list` answers next. */
 let listed: SkillSummary[] = [];
-/** The hits `GET /api/skills/search` answers next. */
+/** The hits `POST /api/rpc/skills.search` answers next. */
 let found: SkillSummary[] = [];
 /** A refusal to serve in place of the roster, once. */
 let listRefusal: MockFetchHandler | null = null;
@@ -76,13 +76,13 @@ beforeEach(() => {
   listRefusal = null;
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [] }),
-    'GET /api/skills': () => {
+    'POST /api/rpc/skills.list': () => {
       const refusal = listRefusal;
       listRefusal = null;
       return refusal ? new Response(JSON.stringify(refusal.body), { status: refusal.status }) : { skills: listed };
     },
-    'GET /api/skills/search': () => ({ skills: found }),
-    'GET /api/skills/alpha': () => ALPHA_DETAIL,
+    'POST /api/rpc/skills.search': () => ({ skills: found }),
+    'POST /api/rpc/skills.get': () => ALPHA_DETAIL,
     // The kiln resolver awaits this outside the query layer; same route
     // seam, same answer.
     'GET /api/config': () => ({ kiln_path: '/tmp/k' }),
@@ -106,7 +106,7 @@ describe('SkillsPanel', () => {
 
   it('groups skills by scope and renders rows', async () => {
     render(() => <SkillsPanel />);
-    await waitFor(() => expect(env.fetch.calls('GET /api/skills')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/skills.list')).toBe(1));
 
     await waitFor(() => {
       expect(screen.getByTestId('skill-row-alpha')).toBeInTheDocument();
@@ -132,11 +132,11 @@ describe('SkillsPanel', () => {
     fireEvent.input(input, { target: { value: 'be' } });
 
     // Before debounce fires, search shouldn't be called.
-    expect(env.fetch.calls('GET /api/skills/search')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/skills.search')).toBe(0);
 
     // Advance past the 200ms debounce.
     vi.advanceTimersByTime(250);
-    await waitFor(() => expect(env.fetch.calls('GET /api/skills/search')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/skills.search')).toBe(1));
     await waitFor(() => expect(screen.getByTestId('skill-row-beta')).toBeInTheDocument());
     expect(screen.queryByTestId('skill-row-alpha')).not.toBeInTheDocument();
 
@@ -145,7 +145,7 @@ describe('SkillsPanel', () => {
     fireEvent.input(input, { target: { value: '' } });
     vi.advanceTimersByTime(250);
     await waitFor(() => expect(screen.getByTestId('skill-row-alpha')).toBeInTheDocument());
-    expect(env.fetch.calls('GET /api/skills')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/skills.list')).toBe(1);
   });
 
   it('opens the drawer and loads detail on row click', async () => {
@@ -154,7 +154,7 @@ describe('SkillsPanel', () => {
 
     fireEvent.click(screen.getByTestId('skill-row-alpha'));
     await waitFor(() => expect(screen.getByTestId('skills-drawer')).toBeInTheDocument());
-    await waitFor(() => expect(env.fetch.calls('GET /api/skills/alpha')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/skills.get')).toBe(1));
     await waitFor(() => {
       const drawer = screen.getByTestId('skills-drawer');
       const pre = drawer.querySelector('pre');
@@ -197,7 +197,7 @@ describe('SkillsPanel', () => {
     await waitFor(() =>
       expect(addNotificationMock).toHaveBeenCalledWith(
         'error',
-        expect.stringContaining('Failed to list skills'),
+        expect.stringContaining("RPC `skills.list` failed"),
       ),
     );
   });
