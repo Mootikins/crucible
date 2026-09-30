@@ -168,13 +168,12 @@
 .mk-trow .mk-i { color: var(--cru-color-muted-dark); }
 /* A file that is not a note shows its extension (toolbox "File labels"). */
 .mk-ext { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; line-height: 14px; padding: 0 4px; border-radius: 3px; color: var(--cru-color-muted-dark); background: var(--mk-strip); }
-/* An open folder's children hang from a faint guide in the rail's strip
-   shade (the colour of the icon strip and the split gap), under the centre
-   of the folder's caret. */
+/* An open folder's children hang from a guide in the caret's colour, a
+   little fainter, under the centre of the folder's caret. */
 .mk-tchildren { position: relative; }
 /* Rows paint over the guide, so a selected row's fill is not cut. */
 .mk-tchildren > * { position: relative; }
-.mk-tchildren::before { content: ''; position: absolute; inset-block: 0; left: calc(16.5px + var(--mk-depth) * 14px); width: 1px; background: var(--mk-strip); pointer-events: none; }
+.mk-tchildren::before { content: ''; position: absolute; inset-block: 0; left: calc(16.5px + var(--mk-depth) * 14px); width: 1px; background: color-mix(in oklab, var(--cru-color-muted-dark) 45%, transparent); pointer-events: none; }
 
 /* Note */
 .mk-body { display: grid; grid-template-rows: 30px minmax(0, 1fr); height: 100%; min-height: 0; background: var(--cru-color-shell-panel); }
