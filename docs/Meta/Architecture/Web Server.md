@@ -85,6 +85,57 @@ daemon, so every caller of the RPC method gets them:
   same cross-instance isolation. Proved in
   `crates/crucible-daemon/tests/client_state.rs`.
 
+**Step 19's generic RPC route is done for its backend half (items 1-3 and 6);
+its typed client, the route migration and the old-route deletion are open
+(item 4 and item 9).** `POST /api/rpc/{method}` (`crates/crucible-web/src/routes/rpc.rs`)
+sits behind the same auth middleware, origin checks and body-size limit as
+every other route — it is merged into `api_router` beside them, not layered
+separately — and does three things in order:
+
+1. Look up `method` in `RpcMethod`. A name the daemon does not answer to is
+   404.
+2. Check `browser_may_call`, one `match` over every `RpcMethod` variant with
+   no wildcard arm: a row added to `rpc_methods!` fails to compile here until
+   someone decides whether the browser may reach it. This table, not the
+   route, is the security boundary. `false` methods fall into three groups,
+   each named at its arm: local-admin methods (`shutdown`, `lua.eval` and the
+   Lua lifecycle, `plugin.install`/`remove`, the `config.*` writes and reads,
+   `storage.*`, `mcp.start`/`stop`, `kiln.open`/`close`/`register`/`forget`,
+   `project.register`/`unregister`, `llm.register_provider`,
+   `webhook.receive`, `client_state.get`/`set`); methods no current web route
+   forwards; and methods whose existing REST route applies a check this raw
+   passthrough would skip (`project.register`'s untrusted-root rule,
+   `/api/config`'s credential redaction).
+3. Check `plugin_may_call`, the stricter per-caller list from
+   `routes/plugin_caller.rs`'s `PluginCaller` (read the same way — same
+   header, same three-valued identity — except that an absent header is the
+   app here, not a refusal, since almost none of this route's callers are
+   plugin business). A caller that named itself a plugin reaches only
+   `plugin.run_command` (checked against that plugin's own commands, reusing
+   `routes/plugin.rs`'s `refuse_another_plugins_command`) and
+   `plugin.publications` (narrowed to the caller's own rows after the daemon
+   answers, reusing `routes/plugin.rs`'s `narrow_to_caller`) — the same two
+   operations the dedicated plugin routes already gate this way. See
+   `routes/plugin_caller.rs`'s own header comment: this identity is asserted
+   by the caller, not proved.
+
+The body then reaches `ReconnectingDaemon::rpc_forward` (a `services/daemon.rs`
+method, `ReplayPolicy::Once` because the route's method is chosen at the HTTP
+layer and cannot be known safe to replay), and the reply comes back
+unchanged. Daemon errors map through the same `WebResultExt::daemon_err`
+every other route uses (`INVALID_PARAMS` → 422, `BUSY` → 409, anything else →
+502); an unknown method or a disallowed one is the route's own 404/403,
+before the daemon is ever asked. This route is documented once in the OpenAPI
+document, generically — the typed contract a caller reads is the generated
+`crates/crucible-web/web/src/lib/rpc-methods.d.ts` map, not 169 hand-written
+paths.
+
+This route is additive today: it does not yet replace a single existing REST
+route, so the frontend keeps working unchanged while a later change moves
+callers over one at a time and then deletes the routes that only forwarded
+one RPC (step 19 item 9) and the generated typed client that replaces their
+hand-written TS functions (item 4).
+
 `crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
 filesystem directly (a walk that deliberately bypasses the note index), but
 now resolves its root through the daemon's `fs.read` rather than a local
@@ -105,8 +156,8 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/assets.rs` | 201 | Serves the embedded SolidJS bundle or a `--static-dir` override. |
 | `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
 | `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
-| `crates/crucible-web/src/server.rs` | 710 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
-| `crates/crucible-web/src/test_support.rs` | 1860 | Shared test daemons and fixtures for every route test in this crate: the mock daemon, whose reply `match` is exhaustive over `RpcMethod`, and `start_real_daemon_with_kilns`, a real in-process daemon. |
+| `crates/crucible-web/src/server.rs` | 720 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases/rpc route groups. |
+| `crates/crucible-web/src/test_support.rs` | 1936 | Shared test daemons and fixtures for every route test in this crate: the mock daemon, whose reply `match` is exhaustive over `RpcMethod`, `start_real_daemon_with_kilns`, a real in-process daemon, and `request_json_with_errors`, a mock daemon that answers scripted JSON-RPC errors. |
 
 ### `crates/crucible-web/src/middleware/`
 
@@ -125,7 +176,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/src/routes/mod.rs` | 60 | Module tree and public re-export surface for every route group. |
+| `crates/crucible-web/src/routes/mod.rs` | 61 | Module tree and public re-export surface for every route group. |
 | `crates/crucible-web/src/routes/agents.rs` | 147 | `GET /api/agents`, `GET /api/models` — the session-creation agent picker. |
 | `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
@@ -147,6 +198,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/plugin_caller.rs` | 144 | `PluginCaller` — the caller-identity extractor gating six plugin routes. |
 | `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
 | `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
+| `crates/crucible-web/src/routes/rpc.rs` | 642 | `POST /api/rpc/{method}` — the one generic RPC route (Simplification Plan step 19 item 1): `browser_may_call`'s exhaustive allow list, `plugin_may_call`'s stricter per-caller list, and the daemon-error-to-HTTP-status mapping. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
 | `crates/crucible-web/src/routes/search.rs` | 1506 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. `list_kilns`, `list_notes`, `get_note` and `get_backlinks` return core's own reply types (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`) unchanged, rather than a local row type decoded through `daemon_shape`. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
@@ -179,7 +231,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | File | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-web/src/services/mod.rs` | 8 | Declares the `services` module tree; imports the `forward_rpc!` macro crate-wide. |
-| `crates/crucible-web/src/services/daemon.rs` | 1042 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, and the `base.*`/`diff.*`/`proposal`-adjacent forwarders. |
+| `crates/crucible-web/src/services/daemon.rs` | 1064 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, the `base.*`/`diff.*`/`proposal`-adjacent forwarders, and `rpc_forward`, the generic forwarder behind `routes/rpc.rs`. |
 | `crates/crucible-web/src/services/daemon_config.rs` | 91 | Forwards `config.*` RPCs and redacts credentials at the crate boundary. |
 | `crates/crucible-web/src/services/daemon_event_stream.rs` | 252 | `EventStream`, `Interest` — per-session upstream subscribe/unsubscribe reconciliation and SSE lag-to-`stream_gap` translation. |
 | `crates/crucible-web/src/services/daemon_plugins.rs` | 101 | Forwards `plugin.*` RPCs for the plugin panel and settings pane. |

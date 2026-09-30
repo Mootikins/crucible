@@ -1061,8 +1061,9 @@ the route itself (parts 1-6 of the change below) is not started.**
 `session.*`, `lua.*`, `plugin.*`, `surface.*`, `config.*`, `ui.*`,
 `notification.*`, `workflow.*`, `subagent.*`, `daemon.*`, `ping` and
 `shutdown` rows (below); "What the web itself needs"'s four moved rules and
-two moved stores are done (below); the route itself (parts 1-6 of the
-change below) is not started.**
+two moved stores are done (below); the route itself's items 1-3 and 6 are
+done (below); item 4 (the generated typed client), the route migration and
+item 9 (deleting the routes that only forward one RPC) are open.**
 
 **Status: the "one event stream" decision of part 5 is done.** `GET
 /api/events` (`crates/crucible-web/src/routes/events.rs`) replaces the four
@@ -1483,28 +1484,52 @@ on every path" outcomes in the sense "How a step is accepted" defines them,
 not "Gone" ones.
 
 **Change.**
-1. One authenticated route, `POST /api/rpc/{method}`, behind the existing
-   auth middleware and the origin checks. It forwards the body to the daemon
-   method and returns the reply.
-2. An allow list of the methods a browser may call. Local-admin methods stay
-   off it: `shutdown`, `lua.eval`, the Lua lifecycle and test methods,
-   `plugin.install`/`remove`, the `config.*` writes, `storage.*`, `mcp.*`,
-   `kiln.register`/`forget`, `project.register`/`unregister`,
-   `llm.register_provider`, `webhook.receive`. The allow list is the
-   security boundary; the opaque route is not.
-3. A second allow list per caller. A plugin block is same-origin script
-   today, and its `x-crucible-plugin` identity is asserted, not proved
-   (`routes/plugin_caller.rs`). So a block can call what the app can call,
-   as it can reach every route today. The proxy does not make this worse.
-   When blocks run in a sandboxed origin behind a bridge that stamps their
-   identity (`docs/Meta/Analysis/Plugin API Plan.md`), the per-caller list
-   lets a block call only its own plugin's methods.
+1. **Done.** One authenticated route, `POST /api/rpc/{method}`
+   (`crates/crucible-web/src/routes/rpc.rs`), behind the existing auth
+   middleware and origin checks — merged into `api_router` beside every other
+   route group, not layered separately. It forwards the body to
+   `ReconnectingDaemon::rpc_forward` and returns the reply unchanged.
+   `RpcMethod::parse` failing is a 404 before the daemon is ever asked.
+2. **Done.** `browser_may_call`, one `match` over every `RpcMethod` variant
+   with no wildcard arm: a row added to `rpc_methods!` fails to compile here
+   until someone decides whether the browser may reach it. Local-admin
+   methods stay off it: `shutdown`, `lua.eval`, the Lua lifecycle and test
+   methods, `plugin.install`/`remove`, the `config.*` writes and reads,
+   `storage.*`, `mcp.start`/`stop`, `kiln.open`/`close`/`register`/`forget`,
+   `kiln.registry_list`, `project.register`/`unregister`,
+   `project.registry_list`, `llm.register_provider`, `webhook.receive`,
+   `client_state.get`/`set` (the web server's own layout/recents store),
+   `daemon.capabilities` and every method no current web route forwards. The
+   allow list is the security boundary; the opaque route is not. Tested by
+   `a_local_admin_method_answers_403` and `an_unknown_method_answers_404`.
+3. **Done.** A second allow list per caller, `plugin_may_call`. A plugin
+   block is same-origin script today, and its `x-crucible-plugin` identity is
+   asserted, not proved (`routes/plugin_caller.rs`). So a block can call what
+   the app can call, as it can reach every route today. The proxy does not
+   make this worse: a caller that names itself a plugin reaches only
+   `plugin.run_command` (checked against that plugin's own commands, reusing
+   `routes/plugin.rs`'s `refuse_another_plugins_command`) and
+   `plugin.publications` (narrowed to the caller's own rows, reusing
+   `routes/plugin.rs`'s `narrow_to_caller`) — every other method is 403 for a
+   plugin caller even when `browser_may_call` allows it for the app. When
+   blocks run in a sandboxed origin behind a bridge that stamps their
+   identity (`docs/Meta/Analysis/Plugin API Plan.md`), the same per-caller
+   list will hold without a change. Tested by
+   `a_plugin_may_not_run_another_plugins_command`,
+   `a_plugin_may_not_call_a_method_that_is_not_its_own` and
+   `plugin_publications_are_narrowed_to_the_caller`.
 4. A generated typed client: `rpc<M>(method, params)`, from the typed
    `rpc_methods!` rows of step 12, with a generated method map in TS. The
-   per-route TS functions and types go.
+   per-route TS functions and types go. **Not started.**
 5. Do the decisions in the table above: one event stream, the catalog cache
-   and client state in the daemon, the four rules in the daemon.
-6. Map daemon error codes to one error shape in the browser, in one place.
+   and client state in the daemon, the four rules in the daemon. **Done**,
+   recorded above in "What the web itself needs".
+6. **Done.** Daemon errors map through the same `WebResultExt::daemon_err`
+   every other route already used (`INVALID_PARAMS` → 422, `BUSY` → 409,
+   anything else → 502) — one place, not a new one, since the mapping this
+   step needed already existed in `error.rs` and applies unchanged to a
+   passthrough reply. Tested through the real route by
+   `a_daemon_invalid_params_error_is_422` and `any_other_daemon_error_is_502`.
 
 7. **Done.** Put every `rpc_methods!` row's params and reply type in the
    schema document, not only the types that a web route names. `utoipa`
