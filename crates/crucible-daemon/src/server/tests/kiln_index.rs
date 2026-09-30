@@ -59,6 +59,14 @@ where
 /// Write `files` into the kiln and index them.
 async fn seed(server: &TestServer, files: &[(&str, &str)]) -> PathBuf {
     let kiln = kiln(server);
+    // Open the kiln first: opening starts its watch. The server's boot opens
+    // it too, but in the background, so under load a file written here could
+    // come before the watch, and the watcher would never report it.
+    server
+        .kiln_manager
+        .open(&kiln)
+        .await
+        .expect("open the kiln and start its watch");
     for (rel, text) in files {
         let path = kiln.join(rel);
         std::fs::create_dir_all(path.parent().expect("a parent")).expect("mkdir");
