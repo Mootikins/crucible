@@ -424,6 +424,12 @@ body { background: var(--mk-nav); }
 :is(.wm-ribbon-btn, .wm-ribbon-tab, .wm-tabbar-btn, .wm-window-controls button, .mk-railbtn, .mk-iconbtn):hover,
 .wm-ribbon-tab[data-highlighted] { color: var(--cru-color-ink); }
 :is(.mk-railbtn, .mk-iconbtn)[aria-pressed='true'] { color: var(--cru-color-primary); }
+/* The open tab's icon brightens with the slide, as its cutout fades in, and
+   dims with it on close. A switch between tabs of an open rail eases too. */
+.wm-ribbon-tab { transition: color 150ms ease-out; }
+.wm-ribbon-tab[data-highlighted]:not(:hover) {
+  color: color-mix(in oklab, var(--cru-color-muted-dark), var(--cru-color-ink) calc(var(--wm-edge-progress, 1) * 100%));
+}
 
 /* Lines: 1px in `--mk-line`. A centre split always shows its line, because
    each side has its own tabs. The toolbox "Inner lines" adds the tab bars,
@@ -644,12 +650,3 @@ body { background: var(--mk-nav); }
 .mk-review-controls .mk-tb-seg { width: auto; }
 .mk-review-controls .mk-check { padding: 0; }
 
-/* Rail motion "Grow from tab" (toolbox). While the rail slides, each pane is
-   also clipped to a band at its top, level with its tab, and its bottom
-   comes down with the slide; the content fades in with it. On close, the
-   bottom goes back up into the tab. `--wm-edge-progress` drives both. */
-:root[data-mk-motion='genie'] .wm-edge-host [data-edge-panel-body] .wm-pane {
-  clip-path: inset(0 0 calc((1 - var(--wm-edge-progress, 1)) * (100% - var(--mk-genie-band))) 0 round var(--mk-pane-r, 0px));
-}
-:root[data-mk-motion='genie'] .wm-edge-host [data-edge-panel-body] .wm-pane > * { opacity: var(--wm-edge-progress, 1); }
-:root { --mk-genie-band: 44px; }

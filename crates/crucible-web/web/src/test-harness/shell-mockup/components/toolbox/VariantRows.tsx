@@ -9,13 +9,6 @@ import type { TweakRowsProps } from './types';
 
 export const VariantRows: Component<TweakRowsProps> = (props) => (
   <>
-    <FieldRow label="Rail motion" hint="Grow: the pane comes down from its tab">
-      <Segmented
-        value={props.tweaks.motion}
-        options={[['slide', 'Slide'], ['genie', 'Grow from tab']]}
-        onChange={(v) => props.onSet('motion', v)}
-      />
-    </FieldRow>
     <FieldRow label="Changes view" hint="A/B variant">
       <Segmented
         value={props.tweaks.changesControls}
