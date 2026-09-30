@@ -353,9 +353,267 @@ rpc_methods! {
 // per-knob method to name any more, so there is nothing here for a mapping
 // function to return.
 
+impl RpcMethod {
+    /// Whether a caller that lost the answer to this call may repeat it.
+    ///
+    /// One arm per [`RpcMethod`] variant and no wildcard, so a row added to
+    /// `rpc_methods!` does not compile here until someone decides whether it
+    /// is safe to replay — the same shape `routes/rpc.rs`'s own
+    /// `browser_may_call` uses for the browser's allow list, but this is a
+    /// different question: `browser_may_call` asks who may reach a method at
+    /// all, and this asks whether reaching it TWICE is the same as reaching
+    /// it once. A method can answer `false` here and `true` there (most
+    /// writes do), or the reverse (a local-admin read the browser never
+    /// calls is still safe to retry).
+    ///
+    /// `true` means a pure read: nothing it does depends on how many times it
+    /// runs, so a caller whose connection dropped before the reply arrived —
+    /// `crates/crucible-web/src/services/daemon.rs`'s `ReconnectingDaemon`,
+    /// behind `POST /api/rpc/{method}` — may reconnect and ask again rather
+    /// than surfacing the drop as a failure. `false` covers every write and
+    /// every read this table cannot yet prove side-effect-free: a doubled
+    /// write is a bug a doubled read can never be, so an uncertain method
+    /// stays `false` rather than guessing safe. `webhook.receive` is the
+    /// clearest example — an incoming webhook is itself the record of an
+    /// external event, and replaying it changes what the daemon believes
+    /// happened.
+    #[must_use]
+    pub const fn is_replay_safe(self) -> bool {
+        use RpcMethod::{
+            AgentsListCards, AgentsListProfiles, AgentsResolveProfile, BaseCreateEntry, BaseList,
+            BaseQuery, BaseReorderGroups, BaseSetProperty, BaseViews, ClientStateGet,
+            ClientStateSet, ConfigControls, ConfigEffective, ConfigGet, ConfigOrigin, ConfigPop,
+            ConfigReset, ConfigSave, ConfigSet, ConfigUnset, DaemonCapabilities, DiffComment,
+            DiffComments, DiffDeleteComment, DiffFile, DiffGet, DiffResolveComment, EmbedQuery,
+            EmbeddingsModels, FsListDir, FsMkdir, FsMove, FsRead, FsTrash, FsWrite, GetBacklinks,
+            GetNoteByName, KilnClose, KilnForget, KilnGraph, KilnList, KilnOpen, KilnRegister,
+            KilnRegistryList, ListNotes, LlmRegisterProvider, LuaDiscoverPlugins, LuaEval,
+            LuaGenerateStubs, LuaInitSession, LuaPluginHealth, LuaRegisterCommands,
+            LuaRunPluginTests, LuaShutdownSession, McpStart, McpStatus, McpStop, ModelsList,
+            NoteDelete, NoteGet, NoteList, NoteMove, NoteRename, NoteUpsert, NotificationDismiss,
+            NotificationList, Ping, PluginCommands, PluginInstall, PluginList, PluginOptionExecute,
+            PluginOptionGet, PluginOptionSet, PluginOptions, PluginPublications, PluginReload,
+            PluginRemove, PluginRunCommand, ProcessBatch, ProcessFile, ProjectGet, ProjectList,
+            ProjectOpenKilns, ProjectRegister, ProjectRegistryList, ProjectUnregister,
+            ProposalAccept, ProposalDismiss, ProposalGet, ProposalList, ProposalReject,
+            ProposalResolve, ProvidersList, ScmClone, SearchGrep, SearchText, SearchVectors,
+            SessionAddNotification, SessionArchive, SessionCacheStats, SessionCanUndo,
+            SessionCancel, SessionCleanup, SessionClear, SessionCommands, SessionCompact,
+            SessionConfigureAgent, SessionConnectKiln, SessionCreate, SessionDelete,
+            SessionDisconnectKiln, SessionDismissNotification, SessionEnd, SessionEventsAfter,
+            SessionExportToFile, SessionFork, SessionGenerateTitle, SessionGet,
+            SessionGetPluginApproval, SessionHistory, SessionInjectContext,
+            SessionInteractionRespond, SessionKnobGet, SessionKnobSet, SessionList,
+            SessionListAgentOptions, SessionListKnobs, SessionListModels, SessionListModes,
+            SessionListNotifications, SessionListPersisted, SessionListPluginApprovals,
+            SessionPause, SessionPendingInteractions, SessionReindex, SessionRenderMarkdown,
+            SessionReplay, SessionResume, SessionResumeFromStorage, SessionSearch,
+            SessionSendMessage, SessionSetAgentOption, SessionSetPluginApproval, SessionSetTitle,
+            SessionSetWorkspace, SessionStatus, SessionSubscribe, SessionTestInteraction,
+            SessionUnarchive, SessionUndo, SessionUndoDepth, SessionUnsubscribe, Shutdown,
+            SkillsGet, SkillsList, SkillsSearch, StorageBackup, StorageCleanup, StorageRestore,
+            StorageVerify, SubagentCollect, SuggestLinks, SurfaceGet, SurfaceList, UiConfig,
+            UiSetTheme, WebhookReceive, WorkflowApproveGate, WorkflowCancel, WorkflowStart,
+            WorkflowStatus,
+        };
+
+        match self {
+            // ---- Reads: the answer does not change what running the call
+            // again would do, so a lost reply may be re-asked for. ----
+            Ping
+            | DaemonCapabilities
+            | ClientStateGet
+            | KilnList
+            | KilnRegistryList
+            | SearchVectors
+            | SearchText
+            | SearchGrep
+            | EmbedQuery
+            | ListNotes
+            | GetNoteByName
+            | BaseList
+            | BaseViews
+            | BaseQuery
+            | GetBacklinks
+            | KilnGraph
+            | NoteGet
+            | NoteList
+            | SessionList
+            | SessionGet
+            | SessionHistory
+            | SessionListModels
+            | SessionListModes
+            | SessionCommands
+            | SessionListKnobs
+            | SessionKnobGet
+            | SessionListAgentOptions
+            | SessionCacheStats
+            | SessionListNotifications
+            | NotificationList
+            | SessionPendingInteractions
+            | SessionGetPluginApproval
+            | SessionListPluginApprovals
+            | SessionSearch
+            | SessionEventsAfter
+            | SessionListPersisted
+            | SessionRenderMarkdown
+            | SessionCanUndo
+            | SessionUndoDepth
+            | PluginList
+            | PluginCommands
+            | PluginPublications
+            | SurfaceList
+            | SurfaceGet
+            | PluginOptions
+            | PluginOptionGet
+            | SessionStatus
+            | LuaPluginHealth
+            | ConfigGet
+            | ConfigOrigin
+            | ConfigEffective
+            | ConfigControls
+            | UiConfig
+            | ProjectList
+            | ProjectGet
+            | ProjectOpenKilns
+            | ProjectRegistryList
+            | FsListDir
+            | DiffGet
+            | DiffFile
+            | DiffComments
+            | ProposalList
+            | ProposalGet
+            | FsRead
+            | StorageVerify
+            | McpStatus
+            | SkillsList
+            | SkillsGet
+            | SkillsSearch
+            | AgentsListProfiles
+            | AgentsListCards
+            | AgentsResolveProfile
+            | ModelsList
+            | ProvidersList
+            | EmbeddingsModels
+            | SuggestLinks
+            | WorkflowStatus => true,
+
+            // ---- Writes, and every read this table cannot yet prove
+            // side-effect-free: state changes, resource creation/removal,
+            // process spawns, arbitrary Lua, or a shape too broad
+            // (`SessionListPersisted`'s own row comment) to have been
+            // audited for this. `Shutdown` is a write on the daemon process
+            // itself. `SessionReindex` is retired (always
+            // `METHOD_NOT_FOUND`), which is not a read either. ----
+            Shutdown
+            | ClientStateSet
+            | KilnOpen
+            | KilnClose
+            | KilnRegister
+            | KilnForget
+            | LlmRegisterProvider
+            | BaseCreateEntry
+            | BaseSetProperty
+            | BaseReorderGroups
+            | NoteUpsert
+            | NoteDelete
+            | ProcessFile
+            | ProcessBatch
+            | SessionCreate
+            | SessionPause
+            | SessionResume
+            | SessionResumeFromStorage
+            | SessionEnd
+            | SessionArchive
+            | SessionUnarchive
+            | SessionDelete
+            | SessionCompact
+            | SessionSubscribe
+            | SessionUnsubscribe
+            | SessionConfigureAgent
+            | SessionSendMessage
+            | SessionCancel
+            | SessionClear
+            | SessionConnectKiln
+            | SessionDisconnectKiln
+            | SessionSetWorkspace
+            | SessionKnobSet
+            | SessionSetAgentOption
+            | SessionAddNotification
+            | SessionDismissNotification
+            | NotificationDismiss
+            | SessionInteractionRespond
+            | SessionSetPluginApproval
+            | SessionInjectContext
+            | SessionTestInteraction
+            | SessionFork
+            | SessionSetTitle
+            | SessionGenerateTitle
+            | SessionExportToFile
+            | SessionReplay
+            | SessionCleanup
+            | SessionReindex
+            | SessionUndo
+            | PluginReload
+            | PluginOptionSet
+            | PluginOptionExecute
+            | PluginRunCommand
+            | PluginInstall
+            | PluginRemove
+            | LuaInitSession
+            | LuaShutdownSession
+            | LuaDiscoverPlugins
+            | LuaGenerateStubs
+            | LuaRunPluginTests
+            | LuaRegisterCommands
+            | LuaEval
+            | ConfigSet
+            | ConfigSave
+            | ConfigReset
+            | ConfigPop
+            | ConfigUnset
+            | UiSetTheme
+            | ProjectRegister
+            | ProjectUnregister
+            | ScmClone
+            | DiffComment
+            | DiffResolveComment
+            | DiffDeleteComment
+            | ProposalAccept
+            | ProposalReject
+            | ProposalDismiss
+            | ProposalResolve
+            | FsWrite
+            | FsMove
+            | FsMkdir
+            | FsTrash
+            | NoteRename
+            | NoteMove
+            | StorageCleanup
+            | StorageBackup
+            | StorageRestore
+            | McpStart
+            | McpStop
+            | SubagentCollect
+            | WebhookReceive
+            | WorkflowStart
+            | WorkflowApproveGate
+            | WorkflowCancel => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_read_is_replay_safe_and_a_write_is_not() {
+        assert!(RpcMethod::SessionGet.is_replay_safe());
+        assert!(RpcMethod::KilnList.is_replay_safe());
+        assert!(!RpcMethod::SessionSendMessage.is_replay_safe());
+        assert!(!RpcMethod::WebhookReceive.is_replay_safe());
+    }
 
     #[test]
     fn methods_list_includes_core_methods() {

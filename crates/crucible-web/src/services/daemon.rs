@@ -104,18 +104,28 @@ impl ReconnectingDaemon {
     /// (`routes/rpc.rs`). Sends `params` as the request body of `method`,
     /// unread and untouched, and hands back the daemon's reply the same way.
     ///
-    /// `Once`, not `Safe`: every named forwarder above declares its own
-    /// replay policy because it knows whether its call is a read or a write.
-    /// This one carries an arbitrary [`RpcMethod`] chosen at the HTTP layer,
-    /// so it cannot tell the two apart — replaying an ambiguous write after a
-    /// dropped connection would risk applying it twice, and refusing to
-    /// guess is the safer default for a call this general.
+    /// Every named forwarder above declares its own replay policy by hand,
+    /// because each one already knows whether its call is a read or a
+    /// write. This one carries an arbitrary [`RpcMethod`] chosen at the HTTP
+    /// layer, so it asks [`RpcMethod::is_replay_safe`] instead — the same
+    /// exhaustive table `routes/rpc.rs`'s own `browser_may_call` is modelled
+    /// on, so a method added to `rpc_methods!` does not compile until
+    /// someone decides both questions. Before this method existed here,
+    /// every route on this passthrough was `Once`, so a read that lost its
+    /// connection failed outright rather than retrying — the first read
+    /// through the route after a daemon restart, in particular, where the
+    /// old per-route `Safe` reads used to just retry.
     pub async fn rpc_forward(
         &self,
         method: RpcMethod,
         params: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
-        self.forward_rpc(ReplayPolicy::Once, method, move |daemon| {
+        let policy = if method.is_replay_safe() {
+            ReplayPolicy::Safe
+        } else {
+            ReplayPolicy::Once
+        };
+        self.forward_rpc(policy, method, move |daemon| {
             let params = params.clone();
             Box::pin(async move { daemon.call(method, params).await })
         })

@@ -125,9 +125,17 @@ separately — and does three things in order:
    by the caller, not proved.
 
 The body then reaches `ReconnectingDaemon::rpc_forward` (a `services/daemon.rs`
-method, `ReplayPolicy::Once` because the route's method is chosen at the HTTP
-layer and cannot be known safe to replay), and the reply comes back
-unchanged. Daemon errors map through the same `WebResultExt::daemon_err`
+method), and the reply comes back unchanged. `rpc_forward` asks
+`RpcMethod::is_replay_safe` — an exhaustive table in
+`crates/crucible-core/src/protocol/rpc/method.rs`, modelled on
+`browser_may_call`'s own shape — to pick `ReplayPolicy::Safe` for a read or
+`ReplayPolicy::Once` for a write or an unaudited method, since the route's
+own method is chosen at the HTTP layer and `forward_rpc` cannot otherwise
+tell a read from a write. A `Safe` call retries once, inside the one
+`rpc_forward` call, when the connection drops before the reply arrives; a
+`Once` call surfaces the drop as an error, unretried — the same guard the
+named forwarders above give their own writes. Daemon errors map through the
+same `WebResultExt::daemon_err`
 every other route uses (`INVALID_PARAMS` → 422, `BUSY` → 409, anything else →
 502); an unknown method or a disallowed one is the route's own 404/403,
 before the daemon is ever asked. This route is documented once in the OpenAPI
