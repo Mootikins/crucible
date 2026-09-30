@@ -8,7 +8,7 @@ use std::io;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use super::{DrainMessagesOutcome, EventLoopParams, OilChatRunner, ProcessActionParams};
+use super::{DrainMessagesOutcome, EventLoopParams, OilChatRunner, StageCtx};
 
 /// The params of one typed request, in the untyped form that
 /// `DaemonClient::call` takes.
@@ -420,13 +420,15 @@ impl OilChatRunner {
             // `process_action` keep a replay away from the daemon.
             let action = Self::process_message(&msg, app);
             let quit = self
-                .process_action(ProcessActionParams {
+                .process_action(
+                    StageCtx {
+                        app: &mut *app,
+                        session,
+                        msg_tx,
+                        background_tasks: &mut *background_tasks,
+                    },
                     action,
-                    app: &mut *app,
-                    session,
-                    msg_tx,
-                    background_tasks: &mut *background_tasks,
-                })
+                )
                 .await?;
             if quit {
                 return Ok(DrainMessagesOutcome::Quit);
@@ -446,16 +448,17 @@ impl OilChatRunner {
 
     pub(super) async fn process_action(
         &mut self,
-        params: ProcessActionParams<'_>,
+        ctx: StageCtx<'_>,
+        action: Action<ChatAppMsg>,
     ) -> io::Result<bool> {
-        match params.action {
+        match action {
             Action::Quit => Ok(true),
             Action::Continue => Ok(false),
             Action::Send(msg) => {
                 match &msg {
                     ChatAppMsg::Undo(count) => {
-                        if params.app.is_streaming() {
-                            params.app.add_notification(
+                        if ctx.app.is_streaming() {
+                            ctx.app.add_notification(
                                 crucible_core::types::Notification::warning(
                                     "Cannot undo while streaming".to_string(),
                                 ),
@@ -463,9 +466,8 @@ impl OilChatRunner {
                             return Ok(false);
                         }
                         let count = *count;
-                        let Some(session) = params.session else {
-                            params
-                                .app
+                        let Some(session) = ctx.session else {
+                            ctx.app
                                 .add_notification(crucible_core::types::Notification::toast(
                                     "Nothing to undo".to_string(),
                                 ));
@@ -484,7 +486,7 @@ impl OilChatRunner {
                                 let total_removed: usize =
                                     summaries.iter().map(|s| s.messages_removed).sum();
                                 let turns = summaries.len();
-                                let _ = params.app.on_message(ChatAppMsg::UndoComplete {
+                                let _ = ctx.app.on_message(ChatAppMsg::UndoComplete {
                                     turns,
                                     messages_removed: total_removed,
                                 });
@@ -495,14 +497,14 @@ impl OilChatRunner {
                                 );
                             }
                             Ok(_) => {
-                                params.app.add_notification(
+                                ctx.app.add_notification(
                                     crucible_core::types::Notification::toast(
                                         "Nothing to undo".to_string(),
                                     ),
                                 );
                             }
                             Err(e) => {
-                                params.app.add_notification(
+                                ctx.app.add_notification(
                                     crucible_core::types::Notification::warning(format!(
                                         "Undo failed: {}",
                                         crucible_daemon::rpc_error_message(&e)
@@ -513,7 +515,7 @@ impl OilChatRunner {
                         return Ok(false);
                     }
                     ChatAppMsg::StreamCancelled => {
-                        if let (true, Some(session)) = (params.app.is_streaming(), params.session) {
+                        if let (true, Some(session)) = (ctx.app.is_streaming(), ctx.session) {
                             if let Err(e) = session.client.session_cancel(&session.id).await {
                                 tracing::warn!(error = %e, "Failed to cancel agent stream on daemon");
                             }
@@ -529,7 +531,7 @@ impl OilChatRunner {
                     ChatAppMsg::SetKnob(value) => {
                         let knob = value.knob();
                         tracing::info!(knob = knob.id(), "Knob set requested");
-                        let set = match params.session {
+                        let set = match ctx.session {
                             Some(session) => {
                                 session
                                     .client
@@ -544,15 +546,15 @@ impl OilChatRunner {
                                     precognition = enabled,
                                     "Precognition set successfully"
                                 );
-                                params.app.set_precognition(*enabled);
+                                ctx.app.set_precognition(*enabled);
                             }
                             (crucible_core::types::KnobValue::Precognition(enabled), Err(e)) => {
                                 // Revert the optimistic local flag: the `:set`
                                 // readout must not claim a state the daemon
                                 // refused.
                                 tracing::warn!(precognition = enabled, error = %e, "set_precognition failed");
-                                params.app.set_precognition(!*enabled);
-                                params.app.add_notification(
+                                ctx.app.set_precognition(!*enabled);
+                                ctx.app.add_notification(
                                     crucible_core::types::Notification::warning(format!(
                                         "Set precognition failed: {}",
                                         e
@@ -564,7 +566,7 @@ impl OilChatRunner {
                             }
                             (_, Err(e)) => {
                                 tracing::warn!(knob = knob.id(), error = %e, "knob set failed");
-                                params.app.add_notification(
+                                ctx.app.add_notification(
                                     crucible_core::types::Notification::warning(format!(
                                         "Set {} failed: {}",
                                         knob.id(),
@@ -584,19 +586,19 @@ impl OilChatRunner {
                         // if it is not yet connected); an internal session answers
                         // the catalogue narrowed by its classification.
                         Self::spawn_model_fetch(
-                            params.msg_tx,
-                            params.background_tasks,
-                            params.session.map(|s| s.id.clone()),
+                            ctx.msg_tx,
+                            ctx.background_tasks,
+                            ctx.session.map(|s| s.id.clone()),
                         );
                     }
                     // The mode list is per session: the daemon resolves it
                     // from the session's Lua registry, and two sessions in
                     // different projects can offer different modes.
                     ChatAppMsg::FetchModes if !self.is_replay => {
-                        if let Some(session) = params.session {
+                        if let Some(session) = ctx.session {
                             match session.client.session_list_modes(&session.id).await {
                                 Ok(state) if !state.modes.is_empty() => {
-                                    params.app.on_message(ChatAppMsg::ModesLoaded(state.modes));
+                                    ctx.app.on_message(ChatAppMsg::ModesLoaded(state.modes));
                                 }
                                 Ok(_) => {}
                                 Err(e) => {
@@ -609,28 +611,28 @@ impl OilChatRunner {
                     // was declared after our one startup fetch. Refresh rather
                     // than leave it uncyclable. Applying the message itself is
                     // the trailing `on_message` dispatch's job.
-                    ChatAppMsg::ModeSynced(ref mode_id) if !params.app.knows_mode(mode_id) => {
-                        let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
+                    ChatAppMsg::ModeSynced(ref mode_id) if !ctx.app.knows_mode(mode_id) => {
+                        let _ = ctx.msg_tx.send(ChatAppMsg::FetchModes);
                         // Each mode is also a command of the catalog.
-                        let _ = params.msg_tx.send(ChatAppMsg::FetchCommands);
+                        let _ = ctx.msg_tx.send(ChatAppMsg::FetchCommands);
                     }
                     ChatAppMsg::PluginStatusLoaded(_) => {
-                        params.app.on_message(msg.clone());
+                        ctx.app.on_message(msg.clone());
                     }
                     // The line shows the value that the daemon holds after the
                     // change, read back from the daemon. The client keeps no
                     // copy that could disagree with another client.
                     ChatAppMsg::PluginApproval { plugin, set } => {
-                        let shown = match params.session {
+                        let shown = match ctx.session {
                             Some(session) => plugin_approval_after(session, plugin, *set).await,
                             None => Err(anyhow::anyhow!("no live session")),
                         };
                         match shown {
-                            Ok(approval) => params.app.add_system_message(format!(
+                            Ok(approval) => ctx.app.add_system_message(format!(
                                 "  {PLUGIN_APPROVAL}{plugin}={}",
                                 approval.as_str()
                             )),
-                            Err(error) => params.app.add_notification(
+                            Err(error) => ctx.app.add_notification(
                                 crucible_core::types::Notification::warning(format!(
                                     "Set plugin approval failed: {error}"
                                 )),
@@ -642,7 +644,7 @@ impl OilChatRunner {
                         response,
                     } => {
                         tracing::info!(request_id = %request_id, "Sending interaction response");
-                        let responded = match params.session {
+                        let responded = match ctx.session {
                             Some(session) => {
                                 session
                                     .client
@@ -671,7 +673,7 @@ impl OilChatRunner {
                         // daemon refused — the exact "the UI says one thing,
                         // the agent does another" state this whole area is
                         // about. Revert to what the daemon reports and say so.
-                        let set = match params.session {
+                        let set = match ctx.session {
                             Some(session) => {
                                 session
                                     .client
@@ -692,22 +694,22 @@ impl OilChatRunner {
                             // re-apply the optimistic `ModeChanged` over the
                             // top of a direct revert. The mode to go back to
                             // is the one that the daemon reports.
-                            if let Some(session) = params.session {
+                            if let Some(session) = ctx.session {
                                 if let Ok(state) =
                                     session.client.session_list_modes(&session.id).await
                                 {
-                                    let _ = params
+                                    let _ = ctx
                                         .msg_tx
                                         .send(ChatAppMsg::ModeSynced(state.current_mode_id));
                                 }
                             }
-                            let _ = params.msg_tx.send(ChatAppMsg::Error(format!("mode: {e}")));
+                            let _ = ctx.msg_tx.send(ChatAppMsg::Error(format!("mode: {e}")));
                             // We offered a mode the daemon rejects, so the list
                             // we offered it from is stale. `FetchModes` fires
                             // once at startup, which is why a mode declared
                             // later never appeared — and one removed later
                             // stayed on offer.
-                            let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
+                            let _ = ctx.msg_tx.send(ChatAppMsg::FetchModes);
                         }
                     }
                     ChatAppMsg::UserMessage(ref content) => {
@@ -718,7 +720,7 @@ impl OilChatRunner {
                         // check here always trips and silently drops the
                         // send. Keypress entry is already gated against
                         // streaming upstream in input_handling.
-                        if let (false, Some(session)) = (self.is_replay, params.session) {
+                        if let (false, Some(session)) = (self.is_replay, ctx.session) {
                             // The input line sends a `/` line as a slash
                             // command, so a user message names no command.
                             if let Err(e) = send_user_message(session, content).await {
@@ -728,7 +730,7 @@ impl OilChatRunner {
                                 // `@comment:<id>`. A log line only told the
                                 // user nothing, and the transcript kept a
                                 // turn that never ran.
-                                let _ = params.msg_tx.send(ChatAppMsg::Error(format!("send: {e}")));
+                                let _ = ctx.msg_tx.send(ChatAppMsg::Error(format!("send: {e}")));
                             }
                         }
                     }
@@ -740,8 +742,8 @@ impl OilChatRunner {
                     ChatAppMsg::ConfigSet { ref key, ref value } if !self.is_replay => {
                         let key = key.clone();
                         let value = value.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match write_app_config_key(&key, value).await {
                                 Ok(value) => ChatAppMsg::ConfigSetResolved { key, value },
                                 Err(e) => {
@@ -759,8 +761,8 @@ impl OilChatRunner {
                     ChatAppMsg::ConfigQuery { ref key, history } if !self.is_replay => {
                         let key = key.clone();
                         let history = *history;
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match read_app_config_key(&key, history).await {
                                 Ok((value, origin)) => {
                                     ChatAppMsg::ConfigQueryResolved { key, value, origin }
@@ -779,8 +781,8 @@ impl OilChatRunner {
                     ChatAppMsg::ConfigDrop { ref key, kind } if !self.is_replay => {
                         let key = key.clone();
                         let kind = *kind;
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match drop_app_config_key(&key, kind).await {
                                 Ok((dropped, value, origin)) => ChatAppMsg::ConfigDropResolved {
                                     key,
@@ -803,8 +805,8 @@ impl OilChatRunner {
                     // `DaemonClient::connect()` and must not fire during replay.
                     ChatAppMsg::EvalLua(ref code) if !self.is_replay => {
                         let code = code.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let request =
                                 to_params(crucible_core::protocol::requests::LuaEvalRequest {
                                     code,
@@ -841,8 +843,8 @@ impl OilChatRunner {
                     // `DaemonClient::connect()`, and a replay must reach no daemon.
                     ChatAppMsg::OpenSurface(ref name) if !self.is_replay => {
                         let name = name.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             match crucible_daemon::DaemonClient::connect().await {
                                 Ok(client) => {
                                     match fetch_surface(&client, name.as_deref(), true).await {
@@ -871,9 +873,9 @@ impl OilChatRunner {
                     }
                     // `/resume`. Same replay gate: a replay must reach no daemon.
                     ChatAppMsg::FetchSessions if !self.is_replay => {
-                        let current = params.session.map(|s| s.id.clone());
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let current = ctx.session.map(|s| s.id.clone());
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match fetch_resumable_sessions(current.as_deref()).await {
                                 Ok(sessions) => ChatAppMsg::SessionsLoaded(sessions),
                                 Err(e) => ChatAppMsg::SessionsFetchFailed(format!("{e:#}")),
@@ -885,16 +887,15 @@ impl OilChatRunner {
                     // the session through the `--resume` path. The daemon must
                     // know the id first, because the switch leaves this session.
                     ChatAppMsg::ResumeSession(ref id) if !self.is_replay => {
-                        if params.session.is_some_and(|s| &s.id == id) {
-                            params
-                                .app
+                        if ctx.session.is_some_and(|s| &s.id == id) {
+                            ctx.app
                                 .add_notification(crucible_core::types::Notification::toast(
                                     format!("This console already shows session {id}"),
                                 ));
                             return Ok(false);
                         }
-                        if params.app.is_streaming() {
-                            params.app.add_notification(
+                        if ctx.app.is_streaming() {
+                            ctx.app.add_notification(
                                 crucible_core::types::Notification::warning(
                                     "Cannot resume another session while a turn runs".to_string(),
                                 ),
@@ -907,7 +908,7 @@ impl OilChatRunner {
                                 return Ok(true);
                             }
                             Err(e) => {
-                                params.app.on_message(ChatAppMsg::Error(format!(
+                                ctx.app.on_message(ChatAppMsg::Error(format!(
                                     "Cannot resume {id}: {e:#}"
                                 )));
                                 return Ok(false);
@@ -919,8 +920,8 @@ impl OilChatRunner {
                     // daemon admits it or refuses it.
                     ChatAppMsg::OpenDiff(ref base) if !self.is_replay => {
                         let base = base.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match fetch_branch_diff(base.as_deref()).await {
                                 Ok(diffset) => ChatAppMsg::DiffLoaded(Box::new(diffset)),
                                 Err(e) => ChatAppMsg::Error(format!("Diff failed: {e:#}")),
@@ -930,8 +931,8 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::FetchDiffFile(ref request) if !self.is_replay => {
                         let request = request.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match fetch_diff_file(&request).await {
                                 Ok(text) => ChatAppMsg::DiffFileLoaded {
                                     id: request.id,
@@ -950,9 +951,9 @@ impl OilChatRunner {
                     // plugin that starts turns, with the value that the
                     // session holds. The menu opens when it arrives.
                     ChatAppMsg::FetchPluginApprovals if !self.is_replay => {
-                        let session_id = params.session.map(|s| s.id.clone());
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let session_id = ctx.session.map(|s| s.id.clone());
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let fetched = match session_id {
                                 Some(id) => match crucible_daemon::DaemonClient::connect().await {
                                     Ok(client) => client.session_list_plugin_approvals(&id).await,
@@ -973,15 +974,15 @@ impl OilChatRunner {
                     }
                     // `:proposals`. Same replay gate: a replay must reach no daemon.
                     ChatAppMsg::FetchProposals { open } if !self.is_replay => {
-                        Self::spawn_proposal_fetch(*open, params.msg_tx, params.background_tasks);
+                        Self::spawn_proposal_fetch(*open, ctx.msg_tx, ctx.background_tasks);
                     }
                     // A `surface_changed` refetch. Same replay gate, and
                     // `open_if_closed = false`: this must refresh what is open and
                     // never open anything.
                     ChatAppMsg::RefreshSurface(ref name) if !self.is_replay => {
                         let name = name.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             // A daemon this client cannot reach says nothing about
                             // the surface, so the refetch reports no outcome.
                             let Ok(client) = crucible_daemon::DaemonClient::connect().await else {
@@ -998,8 +999,8 @@ impl OilChatRunner {
                     ChatAppMsg::ReloadPlugin(ref name) if !self.is_replay => {
                         tracing::info!(plugin = %name, "Plugin reload requested");
                         let name = name.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             match crucible_daemon::DaemonClient::connect().await {
                                 Ok(client) => {
                                     if name.is_empty() {
@@ -1074,9 +1075,9 @@ impl OilChatRunner {
                     // system message — an invocation, not a chat turn.
                     // The daemon's context_cleared draws the divider.
                     ChatAppMsg::ClearContext if !self.is_replay => {
-                        let session_id = params.session.map(|s| s.id.clone());
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let session_id = ctx.session.map(|s| s.id.clone());
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let result = match session_id {
                                 Some(id) => match crucible_daemon::DaemonClient::connect().await {
                                     Ok(client) => client.session_clear(&id).await,
@@ -1092,12 +1093,12 @@ impl OilChatRunner {
                     // Gated on `!self.is_replay`: the daemon holds the
                     // session logs. The scope is the session's whole kiln set.
                     ChatAppMsg::SearchSessions(ref query) if !self.is_replay => {
-                        if let Some(session) = params.session {
+                        if let Some(session) = ctx.session {
                             let client = std::sync::Arc::clone(&session.client);
                             let session_id = session.id.clone();
                             let query = query.clone();
-                            let tx = params.msg_tx.clone();
-                            params.background_tasks.push(tokio::spawn(async move {
+                            let tx = ctx.msg_tx.clone();
+                            ctx.background_tasks.push(tokio::spawn(async move {
                                 let msg = match search_sessions(&client, &session_id, &query).await
                                 {
                                     Ok(text) => ChatAppMsg::SystemNotice(text),
@@ -1115,14 +1116,14 @@ impl OilChatRunner {
                     // keystrokes during replay must not hit the daemon.
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
                         tracing::info!(command = %cmd, "Sending slash command to the daemon");
-                        if let Some(session) = params.session {
+                        if let Some(session) = ctx.session {
                             match send_user_message(session, cmd).await {
                                 Ok(Some(result)) => {
-                                    params.app.on_message(ChatAppMsg::SystemNotice(result));
+                                    ctx.app.on_message(ChatAppMsg::SystemNotice(result));
                                 }
                                 Ok(None) => {}
                                 Err(e) => {
-                                    params.app.on_message(ChatAppMsg::Error(e));
+                                    ctx.app.on_message(ChatAppMsg::Error(e));
                                 }
                             }
                         }
@@ -1130,10 +1131,10 @@ impl OilChatRunner {
                     // The catalog is per session: modes, plugins, skills and
                     // the agent's own commands all differ between sessions.
                     ChatAppMsg::FetchCommands if !self.is_replay => {
-                        if let Some(session) = params.session {
+                        if let Some(session) = ctx.session {
                             match session.client.session_commands(&session.id).await {
                                 Ok(commands) => {
-                                    params.app.on_message(ChatAppMsg::CommandsLoaded(commands));
+                                    ctx.app.on_message(ChatAppMsg::CommandsLoaded(commands));
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Failed to fetch the command catalog");
@@ -1145,15 +1146,15 @@ impl OilChatRunner {
                     // recording of the session, so the daemon writes the
                     // export. During replay there is no live session to export.
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
-                        let Some(session_id) = params.session.map(|s| s.id.clone()) else {
-                            params.app.on_message(ChatAppMsg::Error(
+                        let Some(session_id) = ctx.session.map(|s| s.id.clone()) else {
+                            ctx.app.on_message(ChatAppMsg::Error(
                                 "Export failed: no active session".to_string(),
                             ));
                             return Ok(false);
                         };
                         let export_path = export_path.clone();
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
+                        let tx = ctx.msg_tx.clone();
+                        ctx.background_tasks.push(tokio::spawn(async move {
                             let msg = match export_session(&session_id, &export_path).await {
                                 Ok(written) => {
                                     ChatAppMsg::Status(format!("Session exported to {written}"))
@@ -1166,12 +1167,12 @@ impl OilChatRunner {
                     // The user closed daemon notifications. A session without
                     // an id has no daemon notification to close.
                     ChatAppMsg::CloseDaemonNotifications(ref ids) if !self.is_replay => {
-                        if let Some(session_id) = params.session.map(|s| s.id.clone()) {
+                        if let Some(session_id) = ctx.session.map(|s| s.id.clone()) {
                             Self::spawn_notification_close(
                                 session_id,
                                 ids.clone(),
-                                params.msg_tx,
-                                params.background_tasks,
+                                ctx.msg_tx,
+                                ctx.background_tasks,
                             );
                         }
                     }
@@ -1206,25 +1207,29 @@ impl OilChatRunner {
                     }
                     _ => {}
                 }
-                let action = params.app.on_message(msg);
-                Box::pin(self.process_action(ProcessActionParams {
+                let action = ctx.app.on_message(msg);
+                Box::pin(self.process_action(
+                    StageCtx {
+                        app: ctx.app,
+                        session: ctx.session,
+                        msg_tx: ctx.msg_tx,
+                        background_tasks: ctx.background_tasks,
+                    },
                     action,
-                    app: params.app,
-                    session: params.session,
-                    msg_tx: params.msg_tx,
-                    background_tasks: params.background_tasks,
-                }))
+                ))
                 .await
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    if Box::pin(self.process_action(ProcessActionParams {
+                    if Box::pin(self.process_action(
+                        StageCtx {
+                            app: ctx.app,
+                            session: ctx.session,
+                            msg_tx: ctx.msg_tx,
+                            background_tasks: ctx.background_tasks,
+                        },
                         action,
-                        app: params.app,
-                        session: params.session,
-                        msg_tx: params.msg_tx,
-                        background_tasks: params.background_tasks,
-                    }))
+                    ))
                     .await?
                     {
                         return Ok(true);

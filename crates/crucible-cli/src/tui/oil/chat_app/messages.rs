@@ -23,11 +23,11 @@
 //! ```ignore
 //! // After process_action handles side effects (RPC calls, etc.),
 //! // the SAME message flows through app.on_message() for state updates.
-//! let action = params.app.on_message(msg);  // msg is the same ChatAppMsg
-//! Box::pin(self.process_action(ProcessActionParams {
+//! let action = ctx.app.on_message(msg);  // msg is the same ChatAppMsg
+//! Box::pin(self.process_action(
+//!     StageCtx { app: ctx.app, ... },
 //!     action,  // Returned action from on_message()
-//!     ...
-//! }))
+//! ))
 //! ```
 //!
 //! This pass-through pattern means:

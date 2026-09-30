@@ -1,4 +1,5 @@
 use crate::session::LiveSession;
+#[cfg(test)]
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{
     ChatAppMsg, KilnSummary, McpServerDisplay, OilChatApp, PluginStatusEntry,
@@ -33,7 +34,10 @@ pub(crate) use stream::{live_session_event_consumer, session_event_consumer};
 
 /// Parameters for event_loop function.
 ///
-/// `session` is `None` in a replay: a replay reaches no daemon.
+/// `session` is `None` in a replay: a replay reaches no daemon. Owns both
+/// channel ends, so it cannot merge with [`StageCtx`]: the event loop still
+/// holds the receiver, and it hands the sender out to each stage only as a
+/// borrow.
 pub(super) struct EventLoopParams<'a> {
     pub app: &'a mut OilChatApp,
     pub session: Option<&'a LiveSession>,
@@ -42,27 +46,11 @@ pub(super) struct EventLoopParams<'a> {
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
 
-/// Parameters for handle_selected_event function.
-pub(super) struct HandleSelectedEventParams<'a> {
-    pub event: Option<Event>,
-    pub app: &'a mut OilChatApp,
-    pub session: Option<&'a LiveSession>,
-    pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
-    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
-}
-
-/// Parameters for handle_select_outcome function.
-pub(super) struct HandleSelectOutcomeParams<'a> {
-    pub select_outcome: EventLoopSelectOutcome,
-    pub app: &'a mut OilChatApp,
-    pub session: Option<&'a LiveSession>,
-    pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
-    pub background_tasks: &'a mut Vec<JoinHandle<()>>,
-}
-
-/// Parameters for process_action function.
-pub(super) struct ProcessActionParams<'a> {
-    pub action: Action<ChatAppMsg>,
+/// The context every event-loop stage shares: the app, the optional live
+/// session, and the borrowed handles for sending messages and tracking
+/// background tasks. Each stage function takes this plus its own one extra
+/// argument (the event, the select outcome, or the action).
+pub(super) struct StageCtx<'a> {
     pub app: &'a mut OilChatApp,
     pub session: Option<&'a LiveSession>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
@@ -327,13 +315,15 @@ impl OilChatRunner {
     ) -> io::Result<bool> {
         let (msg_tx, _msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
-        self.process_action(ProcessActionParams {
+        self.process_action(
+            StageCtx {
+                app,
+                session,
+                msg_tx: &msg_tx,
+                background_tasks: &mut background_tasks,
+            },
             action,
-            app,
-            session,
-            msg_tx: &msg_tx,
-            background_tasks: &mut background_tasks,
-        })
+        )
         .await
     }
 
@@ -350,13 +340,15 @@ impl OilChatRunner {
     ) -> Vec<ChatAppMsg> {
         let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
-        self.process_action(ProcessActionParams {
+        self.process_action(
+            StageCtx {
+                app,
+                session,
+                msg_tx: &msg_tx,
+                background_tasks: &mut background_tasks,
+            },
             action,
-            app,
-            session,
-            msg_tx: &msg_tx,
-            background_tasks: &mut background_tasks,
-        })
+        )
         .await
         .expect("process_action should not fail");
         drop(msg_tx);

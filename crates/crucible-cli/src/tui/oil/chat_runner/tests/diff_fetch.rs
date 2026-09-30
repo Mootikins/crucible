@@ -13,7 +13,7 @@
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::{
-    DrainMessagesOutcome, EventLoopParams, OilChatRunner, ProcessActionParams,
+    DrainMessagesOutcome, EventLoopParams, OilChatRunner, StageCtx,
 };
 use crate::tui::oil::event::Event;
 use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
@@ -90,13 +90,15 @@ async fn open_the_diff(is_replay: bool) -> (usize, String) {
         "`:diff` asks for the branch diff, got {action:?}"
     );
     runner
-        .process_action(ProcessActionParams {
+        .process_action(
+            StageCtx {
+                app: &mut app,
+                session: Some(&daemon.session),
+                msg_tx: &msg_tx,
+                background_tasks: &mut background_tasks,
+            },
             action,
-            app: &mut app,
-            session: Some(&daemon.session),
-            msg_tx: &msg_tx,
-            background_tasks: &mut background_tasks,
-        })
+        )
         .await
         .expect("the action does not fail");
 

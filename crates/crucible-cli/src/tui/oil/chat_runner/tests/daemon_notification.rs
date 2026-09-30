@@ -223,13 +223,15 @@ async fn closes_started(is_replay: bool) -> usize {
     let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
     runner
-        .process_action(ProcessActionParams {
+        .process_action(
+            StageCtx {
+                app: &mut app,
+                session: Some(&daemon.session),
+                msg_tx: &msg_tx,
+                background_tasks: &mut background_tasks,
+            },
             action,
-            app: &mut app,
-            session: Some(&daemon.session),
-            msg_tx: &msg_tx,
-            background_tasks: &mut background_tasks,
-        })
+        )
         .await
         .expect("process_action does not fail");
 

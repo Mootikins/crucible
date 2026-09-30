@@ -92,13 +92,15 @@ async fn reads_for_a_fetch(is_replay: bool) -> usize {
     let (msg_tx, _msg_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
     runner
-        .process_action(crate::tui::oil::chat_runner::ProcessActionParams {
-            action: Action::Send(ChatAppMsg::FetchSessions),
-            app: &mut app,
-            session: Some(&daemon.session),
-            msg_tx: &msg_tx,
-            background_tasks: &mut background_tasks,
-        })
+        .process_action(
+            crate::tui::oil::chat_runner::StageCtx {
+                app: &mut app,
+                session: Some(&daemon.session),
+                msg_tx: &msg_tx,
+                background_tasks: &mut background_tasks,
+            },
+            Action::Send(ChatAppMsg::FetchSessions),
+        )
         .await
         .expect("process_action does not fail");
     let reads = background_tasks.len();

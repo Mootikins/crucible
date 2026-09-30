@@ -14,8 +14,8 @@ use tokio::task::JoinHandle;
 
 use super::{
     live_session_event_consumer, session_event_consumer, ChatExit, DrainMessagesOutcome,
-    DrainPhaseOutcome, EventLoopParams, EventLoopSelectOutcome, HandleSelectOutcomeParams,
-    HandleSelectedEventParams, OilChatRunner, ProcessActionParams, SessionEventStream,
+    DrainPhaseOutcome, EventLoopParams, EventLoopSelectOutcome, OilChatRunner, SessionEventStream,
+    StageCtx,
 };
 
 impl OilChatRunner {
@@ -306,13 +306,15 @@ impl OilChatRunner {
                     let Some(msg) = action.into_chat_msg() else {
                         continue;
                     };
-                    self.process_action(ProcessActionParams {
-                        action: Action::Send(msg),
-                        app,
-                        session,
-                        msg_tx,
-                        background_tasks,
-                    })
+                    self.process_action(
+                        StageCtx {
+                            app,
+                            session,
+                            msg_tx,
+                            background_tasks,
+                        },
+                        Action::Send(msg),
+                    )
                     .await?;
                 }
             }
@@ -381,13 +383,15 @@ impl OilChatRunner {
             };
 
             if self
-                .handle_select_outcome(HandleSelectOutcomeParams {
+                .handle_select_outcome(
+                    StageCtx {
+                        app: params.app,
+                        session: params.session,
+                        msg_tx: &params.msg_tx,
+                        background_tasks: params.background_tasks,
+                    },
                     select_outcome,
-                    app: params.app,
-                    session: params.session,
-                    msg_tx: &params.msg_tx,
-                    background_tasks: params.background_tasks,
-                })
+                )
                 .await?
             {
                 break;
@@ -418,26 +422,26 @@ impl OilChatRunner {
 
     async fn handle_selected_event(
         &mut self,
-        params: HandleSelectedEventParams<'_>,
+        ctx: StageCtx<'_>,
+        event: Option<Event>,
     ) -> Result<bool> {
-        let Some(ev) = params.event else {
+        let Some(ev) = event else {
             return Ok(false);
         };
 
         // The full-screen view takes its scroll keys and the mouse first.
         if let Some(view) = self.fullscreen.as_mut() {
             use crate::tui::oil::fullscreen::ViewAction;
-            match view.handle_event(&ev, params.app) {
+            match view.handle_event(&ev, ctx.app) {
                 ViewAction::Ignored => {}
                 ViewAction::Handled => return Ok(false),
                 ViewAction::Copy(text) => {
-                    self.copy_text(params.app, &text);
+                    self.copy_text(ctx.app, &text);
                     return Ok(false);
                 }
                 ViewAction::Dump(rows) => {
                     self.terminal.print_to_main_screen(&rows)?;
-                    params
-                        .app
+                    ctx.app
                         .add_notification(crucible_core::types::Notification::toast(format!(
                             "Printed {} rows to the terminal scrollback",
                             rows.len()
@@ -447,7 +451,7 @@ impl OilChatRunner {
                 ViewAction::ToggleMouse => {
                     let on = !self.terminal.mouse_captured();
                     self.terminal.set_mouse_capture(on)?;
-                    params.app.add_notification(crucible_core::types::Notification::toast(
+                    ctx.app.add_notification(crucible_core::types::Notification::toast(
                         if on {
                             "Mouse on: the TUI scrolls and selects (F2 for the terminal's selection)"
                         } else {
@@ -459,19 +463,10 @@ impl OilChatRunner {
             }
         }
 
-        let action = params.app.update(ev.clone());
+        let action = ctx.app.update(ev.clone());
         tracing::trace!(?ev, ?action, "processed event");
 
-        if self
-            .process_action(ProcessActionParams {
-                action,
-                app: params.app,
-                session: params.session,
-                msg_tx: params.msg_tx,
-                background_tasks: params.background_tasks,
-            })
-            .await?
-        {
+        if self.process_action(ctx, action).await? {
             tracing::trace!("quit action received, breaking loop");
             return Ok(true);
         }
@@ -481,22 +476,16 @@ impl OilChatRunner {
 
     async fn handle_select_outcome(
         &mut self,
-        params: HandleSelectOutcomeParams<'_>,
+        ctx: StageCtx<'_>,
+        select_outcome: EventLoopSelectOutcome,
     ) -> Result<bool> {
-        let event = match params.select_outcome {
+        let event = match select_outcome {
             EventLoopSelectOutcome::Event(event) => event,
             EventLoopSelectOutcome::Continue => None,
             EventLoopSelectOutcome::Quit => return Ok(true),
         };
 
-        self.handle_selected_event(HandleSelectedEventParams {
-            event,
-            app: params.app,
-            session: params.session,
-            msg_tx: params.msg_tx,
-            background_tasks: params.background_tasks,
-        })
-        .await
+        self.handle_selected_event(ctx, event).await
     }
 
     fn handle_terminal_event(
