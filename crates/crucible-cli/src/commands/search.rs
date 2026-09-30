@@ -186,7 +186,7 @@ async fn collect_search_kilns(
 ) -> Vec<PathBuf> {
     let mut kilns = vec![primary_kiln.to_path_buf()];
 
-    if let Ok(registered) = client.kiln_list().await {
+    if let Ok(registered) = client.rpc_kiln_list(()).await {
         for kiln_info in registered {
             let path = PathBuf::from(kiln_info.path);
             if path != primary_kiln {

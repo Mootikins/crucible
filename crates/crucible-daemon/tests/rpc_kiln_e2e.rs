@@ -67,7 +67,7 @@ async fn create_seeded_kiln() -> TempDir {
 /// steady state is the only honest way to assert about the list's size.
 async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> {
     for _ in 0..100 {
-        let list = client.kiln_list().await.expect("kiln_list failed");
+        let list = client.rpc_kiln_list(()).await.expect("kiln_list failed");
         // Only the rows that are OPEN. `kiln.list` also reports registered
         // kilns that nothing has opened — the bundled help corpus among them,
         // on a machine where it has been extracted — and these tests are about
@@ -84,7 +84,7 @@ async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> 
     }
     panic!(
         "kiln.list never reached {expected} open kilns: {:?}",
-        client.kiln_list().await
+        client.rpc_kiln_list(()).await
     );
 }
 
@@ -188,7 +188,7 @@ async fn test_kiln_close_removes_from_list() {
 
     // Closed, and only the closed one: the fixture's registered kiln stays
     // open, because closing one kiln says nothing about another.
-    let list = client.kiln_list().await.expect("kiln_list failed");
+    let list = client.rpc_kiln_list(()).await.expect("kiln_list failed");
     let paths: Vec<&str> = list
         .iter()
         .filter(|row| row.open)
@@ -338,7 +338,7 @@ async fn test_kiln_lifecycle_open_query_close() {
 
     // Closed. The fixture's own registered kiln is still open — boot opened
     // it, and closing this one says nothing about it.
-    let list = client.kiln_list().await.expect("kiln_list failed");
+    let list = client.rpc_kiln_list(()).await.expect("kiln_list failed");
     let paths: Vec<&str> = list
         .iter()
         .filter(|row| row.open)

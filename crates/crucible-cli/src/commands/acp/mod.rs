@@ -123,21 +123,22 @@ async fn attach_kiln(config: &CliAppConfig, value: &str) -> Result<AttachedKiln>
 
     let client = crate::common::daemon_client().await?;
     let reply = client
-        .kiln_register_derived(
-            &directory, /* auto */ true, /* make_default */ false,
-        )
+        .rpc_kiln_register(crucible_core::protocol::requests::KilnRegisterRequest {
+            name: None,
+            path: directory.to_string_lossy().to_string(),
+            auto: true,
+            make_default: false,
+        })
         .await
         .with_context(|| format!("registering kiln at {}", directory.display()))?;
 
-    let name = reply["name"]
-        .as_str()
-        .and_then(|n| crucible_core::config::KilnName::parse(n).ok())
-        .ok_or_else(|| anyhow::anyhow!("the daemon returned no usable kiln name: {reply}"))?;
-    let path = reply["path"]
-        .as_str()
-        .map(PathBuf::from)
-        .unwrap_or(directory);
-    let registered = reply["outcome"].as_str() == Some("added");
+    let name = crucible_core::config::KilnName::parse(&reply.name)
+        .map_err(|_| anyhow::anyhow!("the daemon returned no usable kiln name: {}", reply.name))?;
+    let path = PathBuf::from(reply.path);
+    let registered = matches!(
+        reply.outcome,
+        crucible_core::protocol::requests::KilnRegisterOutcome::Added
+    );
     if registered {
         info!(kiln = %name, path = %path.display(), "registered a new kiln");
     }

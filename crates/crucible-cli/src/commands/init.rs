@@ -197,7 +197,13 @@ async fn run_kiln_init(
     if provider_usable {
         let reply = match client.as_ref() {
             Some(client) => client
-                .llm_register_provider(&provider, &model, /* make_default */ true)
+                .rpc_llm_register_provider(
+                    crucible_core::protocol::requests::LlmRegisterProviderRequest {
+                        provider: provider.clone(),
+                        model: model.clone(),
+                        make_default: true,
+                    },
+                )
                 .await
                 .map(Some)
                 .unwrap_or_else(|e| {
@@ -208,15 +214,13 @@ async fn run_kiln_init(
         };
         match reply {
             Some(reply) => {
-                if reply["live"].as_bool().unwrap_or(false) {
+                if reply.live {
                     println!("  {} Provider selection saved", "\u{2713}".green());
                 } else {
                     // Never silent. A user told only "saved" believes the next
                     // `cru chat` uses the provider they just picked, which is
                     // the exact failure this whole path exists to remove.
-                    let serving = reply["still_serving"]
-                        .as_str()
-                        .unwrap_or("the previous one");
+                    let serving = reply.still_serving.as_deref().unwrap_or("the previous one");
                     println!(
                         "  {} Provider selection saved, and it takes effect at the next daemon \
                          start. Until then Crucible keeps using {}. Run `cru daemon restart` to \

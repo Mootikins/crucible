@@ -60,7 +60,7 @@ async fn test_event_streaming_with_background_reader() {
     let ping_result = client.rpc_ping(()).await.expect("ping failed");
     assert_eq!(ping_result, "pong");
 
-    let list_result = client.kiln_list().await.expect("kiln_list failed");
+    let list_result = client.rpc_kiln_list(()).await.expect("kiln_list failed");
     assert!(list_result.is_empty() || !list_result.is_empty());
 
     // Test intent: ping and kiln_list are pure request/response — they must

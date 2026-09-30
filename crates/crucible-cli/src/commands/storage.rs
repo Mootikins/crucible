@@ -8,6 +8,9 @@ use crate::cli::StorageCommands;
 use crate::common::daemon_client;
 use crate::config::CliAppConfig;
 use crate::output;
+use crucible_core::protocol::requests::{
+    KilnPathRequest, NotImplementedReply, StorageBackupRequest, StorageRestoreRequest,
+};
 use crucible_daemon::DaemonClient;
 
 /// Execute storage commands
@@ -18,14 +21,20 @@ pub async fn execute(config: CliAppConfig, command: StorageCommands) -> Result<(
         StorageCommands::Verify { path } => {
             let kiln = path.unwrap_or_else(|| config.kiln_path.clone());
             rpc_stub("Verifying storage integrity...", |c| async move {
-                c.storage_verify(&kiln).await
+                c.rpc_storage_verify(KilnPathRequest {
+                    kiln: kiln.to_string_lossy().to_string(),
+                })
+                .await
             })
             .await
         }
         StorageCommands::Cleanup => {
             let kiln = config.kiln_path.clone();
             rpc_stub("Starting storage cleanup...", |c| async move {
-                c.storage_cleanup(&kiln).await
+                c.rpc_storage_cleanup(KilnPathRequest {
+                    kiln: kiln.to_string_lossy().to_string(),
+                })
+                .await
             })
             .await
         }
@@ -33,7 +42,13 @@ pub async fn execute(config: CliAppConfig, command: StorageCommands) -> Result<(
             let kiln = config.kiln_path.clone();
             rpc_stub(
                 &format!("Starting backup to: {}", dest.display()),
-                |c| async move { c.storage_backup(&kiln, &dest).await },
+                |c| async move {
+                    c.rpc_storage_backup(StorageBackupRequest {
+                        kiln: kiln.to_string_lossy().to_string(),
+                        dest: dest.to_string_lossy().to_string(),
+                    })
+                    .await
+                },
             )
             .await
         }
@@ -47,7 +62,13 @@ pub async fn execute(config: CliAppConfig, command: StorageCommands) -> Result<(
             let kiln = config.kiln_path.clone();
             rpc_stub(
                 &format!("Starting restore from: {}", source.display()),
-                |c| async move { c.storage_restore(&kiln, &source).await },
+                |c| async move {
+                    c.rpc_storage_restore(StorageRestoreRequest {
+                        kiln: kiln.to_string_lossy().to_string(),
+                        source: source.to_string_lossy().to_string(),
+                    })
+                    .await
+                },
             )
             .await
         }
@@ -69,18 +90,12 @@ async fn execute_mode(_config: &CliAppConfig) -> Result<()> {
 async fn rpc_stub<F, Fut>(label: &str, call: F) -> Result<()>
 where
     F: FnOnce(DaemonClient) -> Fut,
-    Fut: Future<Output = Result<serde_json::Value>>,
+    Fut: Future<Output = Result<NotImplementedReply>>,
 {
     output::info(label);
     let client = daemon_client().await?;
     match call(client).await {
-        Ok(result) => {
-            let msg = result
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Done");
-            output::warning(msg);
-        }
+        Ok(result) => output::warning(&result.message),
         Err(e) => output::warning(&format!("Daemon error: {}", e)),
     }
     Ok(())

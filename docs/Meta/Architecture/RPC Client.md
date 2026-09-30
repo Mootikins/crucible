@@ -59,11 +59,11 @@ must not construct a second agent configuration or write pipeline."
 | `crates/crucible-daemon/src/rpc_client/lifecycle.rs` | 183 | Synchronous daemon-process utilities: socket path, log path, log rotation on spawn, log tail read, `is_daemon_running`. |
 | `crates/crucible-daemon/src/rpc_client/storage.rs` | 621 | `DaemonStorageClient` (`KnowledgeRepository` impl) and `DaemonNoteStore` (`NoteStore` impl): adapt canonical storage traits onto `DaemonClient` RPC calls. |
 | `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1139 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/`client_state.*` RPC methods that have no dedicated submodule (kept because `crucible-web`'s `forward_rpc!` calls each by name, or — `plugin_list_info` — decodes a real field). It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
-| `crates/crucible-daemon/src/rpc_client/client/generated.rs` | 58 | One `impl DaemonClient` block, macro-generated: a `rpc_<method>` for every `rpc_methods!` row, each typed as that row's own params/reply pair. Closes gap 1 of step 19 (see Findings below). |
+| `crates/crucible-daemon/src/rpc_client/client/generated.rs` | 76 | One `impl DaemonClient` block, macro-generated: a `rpc_<method>` for every `rpc_methods!` row, each typed as that row's own params/reply pair, and retried by the row's own `read`/`write` word (`call_with_retry` for `read`, `call` once for `write`). Closes gap 1 of step 19 (see Findings below). |
 | `crates/crucible-daemon/src/rpc_client/client/types.rs` | 12 | What is left after the request and reply types moved to core: the `SessionEvent` alias, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
 | `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 338 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `providers.list`, `embeddings.models`, `skills.*`, and the plugin-approval/knob `session.*` RPCs — each kept for a retry policy, a `&Path`-to-wire-`String` transform, or a wire-`String`-to-enum decode (see the per-method doc comments and item 9 of step 19 in the Simplification Plan). `models.list` moved here too (`list_all_models`, retry). `agents.list_profiles`/`agents.list_cards`/`agents.resolve_profile` and the plain (non-summary) `providers.list` had no caller, or one CLI-only caller with no transform, and are gone: their one caller each now calls the generated `rpc_<variant>` method and reads the typed reply. The request and reply types live in `crucible_core::protocol::requests::agent`. |
-| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 485 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
-| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 927 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
+| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 478 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. Reviewed for step 19 item 9 this pass: `session_status` (no caller outside this file) folded into `session_status_items`, `session_generate_title` (no caller) deleted. The rest — mostly a `session_id: &str`-to-`Scoped<...>` transform dozens of callers share, or a reply decode (`session_dismiss_notification`'s `success` bool, `session_list_notifications`' `.notifications` field) — stayed. The request and reply types live in `crucible_core::protocol::requests::session`. |
+| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 602 | `DaemonClient` methods for kiln registration, text/vector search, note CRUD, link graph, pipeline processing, webhook ingress, project and filesystem RPCs, and `diff.*` RPCs (get/file/comment/comments) over branch, session-record and proposal diffset sources. Reviewed for step 19 item 9 this pass: `kiln_list`/`kiln_registry_list`/`kiln_forget`/`kiln_register_derived`/`llm_register_provider`/`fs_read`/`storage_verify`/`storage_cleanup`/`storage_backup`/`storage_restore`/`mcp_start`/`mcp_stop` (each a small, fixed set of callers with no transform beyond building the row's request) and `search_grep`/`mcp_status`/`project_list`/`fs_list_dir`/`diff_resolve_comment`/`diff_delete_comment`/`fs_move`/`fs_mkdir`/`fs_trash`/`project_get`/`note_get`/`note_list` (no caller anywhere) are gone; `diff_file_request` folded into `diff_file` (no external caller of the full-request form); `embed_query` and `process_batch` now decode the row's own typed reply instead of hand-walking a `serde_json::Value` the row had already stopped needing. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
 | `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 132 | `DaemonClient` methods for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes; `list`/`get` retry, and the rest layer default arguments (whole-proposal accept/reject, single-file resolve) onto the `_files`/`_file` row call so no caller repeats an empty `paths`/`files` vec. The request types live in `crucible_core::protocol::requests::proposals`. |
 | `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 37 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`: kept for the borrowed-`&[&str]`-to-owned-`Vec<String>` transform ~30 call sites across the daemon, CLI and web lean on. The request type lives in `crucible_core::protocol::requests::subscription`. |
 | `crates/crucible-daemon/src/rpc_client/client/tests.rs` | 1015 | The test module for the whole `client` submodule: unit tests, wire-format round-trips, live in-process server integration tests, response-correlation tests, and signal-reaper tests. |
@@ -580,6 +580,73 @@ either; they are exercised, if at all, outside this page's file set.
   would need either 169 marker types (disfavored) or rewiring dispatch
   through a shared macro-generated helper (left to a follow-up, same as
   part A recorded).
+- **Step 19 items 9 and 10, second pass.** `rpc_methods!` rows now carry a
+  `read`/`write` word right after `$variant =` (for example `SessionGet =
+  read "session.get": Scoped<()> => SessionDetail,`), matched by a small
+  `rpc_methods! { (@safety read) => true; (@safety write) => false; }` arm
+  pair so a row that names anything else fails to compile. `RpcMethod::
+  is_replay_safe` is now generated straight from the word (`Self::$variant
+  => rpc_methods!(@safety $safety)`), and the old ~250-line hand-written
+  match with the same 77-read/94-write split is deleted — one table, not
+  two, closes item 10. `crucible-web`'s `ReconnectingDaemon::rpc_forward`
+  and its retry tests needed no change: the function name and signature
+  `is_replay_safe(self) -> bool` did not move. **Gate proof:** marking
+  `SessionSendMessage` (a write) as `read` breaks
+  `a_read_is_replay_safe_and_a_write_is_not` (`assert!(!RpcMethod::
+  SessionSendMessage.is_replay_safe())` fails), proved and reverted.
+  `for_each_rpc_method!`'s callback tuple gained the same word
+  (`Variant, "wire.name", read|write, ReqTy, RespTy;`), so `generated.rs`'s
+  `rpc_<variant>` methods now retry by it too: a `read` row calls
+  `call_with_retry`, a `write` row calls `call` once — the same decision
+  `is_replay_safe` answers, read by both the browser's retry and the
+  native client's, with no second place to keep in sync. `call_with_retry`'s
+  policy (2 retries, 200ms/400ms backoff, the client's 30s default timeout)
+  fits every `read` row but two — `embeddings.models`'s download path needs
+  up to 1800s and `scm.clone` needs up to 600s — so `DaemonClient::
+  embedding_models` and `DaemonClient::scm_clone` stay hand-written,
+  calling `call_with_timeout` directly instead of the generated method;
+  `embedding_models`'s non-download branch now calls
+  `rpc_embeddings_models` directly, since that path needs no policy the
+  generated method lacks. Item 9's own count: 140 hand-written `pub async
+  fn` methods before this pass (`generated.rs` excluded), 113 after.
+  `storage.rs` and `session.rs`, named "a separate pass" above, are the
+  ones this pass reviewed: `storage.rs` lost 19 (12 with no caller anywhere
+  — `search_grep`, `mcp_status`, `project_list`, `fs_list_dir`,
+  `diff_resolve_comment`, `diff_delete_comment`, `fs_move`, `fs_mkdir`,
+  `fs_trash`, `project_get`, `note_get`, `note_list` — plus 6 with a small,
+  fixed caller set and no transform beyond building the row's request —
+  `kiln_list`, `kiln_registry_list`, `kiln_forget`, `kiln_register_derived`,
+  `llm_register_provider`, `fs_read`, `storage_verify`, `storage_cleanup`,
+  `storage_backup`, `storage_restore`, `mcp_start`, `mcp_stop` — and
+  `diff_file_request` folded into `diff_file`); `session.rs` lost 2
+  (`session_status`, no caller outside the file, folded into
+  `session_status_items`; `session_generate_title`, no caller anywhere).
+  Each caller of a deleted method now calls the matching `rpc_<variant>`
+  method with the row's own request type; three callers
+  (`crates/crucible-cli/src/commands/acp/mod.rs`'s `attach_kiln`,
+  `crates/crucible-cli/src/commands/kiln.rs`'s `Forget` arm,
+  `crates/crucible-cli/src/commands/init.rs`'s provider-save path) also
+  moved off a raw `serde_json::Value` reply onto the row's already-typed
+  reply (`KilnRegisterReply`, `KilnForgetReply`, `LlmRegisterProviderReply`)
+  in the same change, since the generated method returns the typed struct
+  and there is no untyped form left to call. One caller crossed a crate
+  boundary the wrong way at first: `crucible-web`'s `ReconnectingDaemon::
+  fs_read` (`services/daemon.rs`, a `forward_rpc!` row) called
+  `DaemonClient::fs_read` by the bare identifier `$client_method` the macro
+  expands to, which a text search for `.fs_read(` — a leading-dot grep —
+  does not find; deleting `DaemonClient::fs_read` broke that forwarder
+  until it was repointed at `rpc_fs_read`. Every other deletion in this
+  pass was checked against `crucible-web/src/services/daemon.rs`'s
+  `forward_rpc!` invocations by bare method name (not by a dot-prefixed
+  grep) before it happened, precisely to avoid repeating that mistake.
+  **Not closed:** `agent.rs`'s, `mod.rs`'s, `proposals.rs`'s and
+  `subscription.rs`'s methods are unaudited beyond the previous pass and
+  this one's `embed_query`/`process_batch` fix-ups; several — `proposal_
+  list`/`proposal_get` in particular — now call `call_with_retry` for a
+  `read` row the generated method already retries the same way, which is
+  redundant but not incorrect, and is left for a later pass rather than
+  widened here. `crucible-web`'s other `services/*.rs` `forward_rpc!`
+  domains (item 11) are untouched.
 - Step 19 part A (typed `rpc_methods!` rows) found that roughly half the
   169 methods have a reply the daemon still builds with `json!`, not a
   named core type: about 91 rows carry `serde_json::Value` on one or both

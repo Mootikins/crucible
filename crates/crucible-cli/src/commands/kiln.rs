@@ -47,7 +47,7 @@ pub async fn handle(cmd: KilnCommands) -> Result<()> {
         KilnCommands::List => {
             let client = crate::common::daemon_client().await?;
             let response = client
-                .kiln_registry_list()
+                .rpc_kiln_registry_list(())
                 .await
                 .context("listing the kiln registry")?;
 
@@ -66,14 +66,14 @@ pub async fn handle(cmd: KilnCommands) -> Result<()> {
         KilnCommands::Forget { name } => {
             let client = crate::common::daemon_client().await?;
             let response = client
-                .kiln_forget(&name)
+                .rpc_kiln_forget(crucible_core::protocol::requests::NameRequest {
+                    name: name.clone(),
+                })
                 .await
                 .with_context(|| format!("forgetting kiln '{name}'"))?;
 
             println!("Forgot kiln '{name}'.");
-            if let Some(file) = response["state_file"].as_str() {
-                println!("  in {file}");
-            }
+            println!("  in {}", response.state_file);
             // A running daemon still answers to the name: removing one changes
             // what an already-persisted session reference means, so it waits
             // for the freeze that protects that.

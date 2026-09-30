@@ -110,7 +110,7 @@ async fn test_complete_user_flow() {
     // ── Step 1: Open kiln ─────────────────────────────────────────────────
     client.kiln_open(&kiln_dir).await.expect("kiln.open failed");
 
-    let kilns = client.kiln_list().await.expect("kiln.list failed");
+    let kilns = client.rpc_kiln_list(()).await.expect("kiln.list failed");
     assert!(
         !kilns.is_empty(),
         "Kiln should appear in list after opening"
@@ -315,7 +315,10 @@ async fn test_complete_user_flow() {
     // the registry's entries as well, so that a registered kiln is reachable
     // without something having opened it first. Closing changes `open`, not
     // whether the directory is a kiln.
-    let kilns = client.kiln_list().await.expect("kiln.list after close");
+    let kilns = client
+        .rpc_kiln_list(())
+        .await
+        .expect("kiln.list after close");
     assert!(
         kilns.iter().all(|row| !row.open),
         "no kiln should be open after close: {kilns:?}"

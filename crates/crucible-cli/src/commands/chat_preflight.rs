@@ -189,7 +189,7 @@ pub async fn ensure_valid_kiln(config: &mut CliAppConfig) -> Result<()> {
 /// named for itself, not a kiln the user chose.
 async fn registered_default_kiln() -> Option<std::path::PathBuf> {
     let client = crate::common::daemon_client().await.ok()?;
-    let reply = client.kiln_registry_list().await.ok()?;
+    let reply = client.rpc_kiln_registry_list(()).await.ok()?;
     let rows = reply["kilns"].as_array()?;
 
     let usable = |row: &&serde_json::Value| {

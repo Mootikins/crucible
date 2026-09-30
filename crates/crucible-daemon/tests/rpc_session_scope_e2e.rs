@@ -222,7 +222,7 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     // kiln now, so the claim is not that the row is absent — it is that the row
     // is still CLOSED. An opened kiln is one the daemon indexes and serves
     // files from, and the trust floor refused exactly that.
-    let listed = client.kiln_list().await.expect("kiln.list failed");
+    let listed = client.rpc_kiln_list(()).await.expect("kiln.list failed");
     let row = listed
         .iter()
         .find(|row| row.name == "classified")

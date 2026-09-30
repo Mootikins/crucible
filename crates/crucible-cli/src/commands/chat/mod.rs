@@ -372,7 +372,7 @@ fn build_initial_sets(
 /// is information, and a session with no banner is better than a session that
 /// refuses to start over one.
 async fn attached_kilns(client: &DaemonClient) -> Vec<crate::tui::oil::KilnSummary> {
-    let rows = match client.kiln_list().await {
+    let rows = match client.rpc_kiln_list(()).await {
         Ok(rows) => rows,
         Err(e) => {
             debug!("kiln.list failed; the startup banner is skipped: {e}");

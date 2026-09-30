@@ -80,21 +80,20 @@ impl DaemonClient {
         Ok(serde_json::from_value(reply)?)
     }
 
-    /// `session.status` — the status list of a session.
-    ///
-    /// Returned as raw JSON (`{"status": [StatusDisplayItem, …]}`) for the
-    /// web route, which forwards it verbatim.
-    pub async fn session_status(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call(RpcMethod::SessionStatus, session_id)
-            .await
-    }
+    // `session_status` (the raw-`Value` form) had no caller outside this
+    // file — the web reaches `session.status` through `POST
+    // /api/rpc/{method}` now, not a named client method — and is folded
+    // into `session_status_items` below (step 19 item 9).
 
     /// `session.status`, decoded into the items that the TUI draws.
     pub async fn session_status_items(
         &self,
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::StatusDisplayItem>> {
-        decode_status_items(self.session_status(session_id).await?)
+        let reply = self
+            .session_id_call(RpcMethod::SessionStatus, session_id)
+            .await?;
+        decode_status_items(reply)
     }
 
     /// `session.list_notifications`: every notification the daemon delivers
@@ -326,15 +325,9 @@ impl DaemonClient {
         .await
     }
 
-    /// Generate a topic-based title for a session (idempotent — returns the
-    /// existing title if one is already set).
-    pub async fn session_generate_title(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::SessionGenerateTitle,
-            Scoped::session(session_id.to_string()),
-        )
-        .await
-    }
+    // `session_generate_title` had no caller and is gone; a caller now calls
+    // `rpc_session_generate_title(Scoped::session(session_id))` directly
+    // (step 19 item 9).
 
     /// Search session transcripts within `kilns` — the caller's whole kiln set,
     /// not one member of it. Scope is kiln-set *overlap*, so a caller that

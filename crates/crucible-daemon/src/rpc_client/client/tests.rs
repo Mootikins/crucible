@@ -443,7 +443,7 @@ async fn test_client_kiln_list_names_the_registered_kiln() {
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
     for _ in 0..100 {
-        let list = client.kiln_list().await.unwrap();
+        let list = client.rpc_kiln_list(()).await.unwrap();
         if list.iter().any(|row| row.name == "kiln") {
             return;
         }
@@ -451,7 +451,7 @@ async fn test_client_kiln_list_names_the_registered_kiln() {
     }
     panic!(
         "the registered kiln never opened: {:?}",
-        client.kiln_list().await.unwrap()
+        client.rpc_kiln_list(()).await.unwrap()
     );
 }
 

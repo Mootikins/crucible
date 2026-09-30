@@ -8,7 +8,7 @@ use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 
 use super::{DaemonClient, NO_PARAMS};
-use crucible_core::protocol::requests::{KilnPathRequest, NameRequest, PathRequest};
+use crucible_core::protocol::requests::PathRequest;
 
 use crate::storage::sqlite::FtsResult;
 
@@ -22,16 +22,9 @@ impl DaemonClient {
             .await
     }
 
-    /// Read one file through the daemon's enclosing-root rule. The answer is
-    /// a [`crucible_core::file_write::FileReadReply`] with `"ok": true`, or a
-    /// refusal with `"ok": false` and a `failure` kind, as `fs.write` answers.
-    pub async fn fs_read(
-        &self,
-        request: &crucible_core::file_write::FileReadRequest,
-    ) -> Result<serde_json::Value> {
-        self.call(RpcMethod::FsRead, serde_json::to_value(request)?)
-            .await
-    }
+    // `fs_read` had one caller and only built the row's request from a
+    // borrowed one; `crucible-web`'s `routes/kiln.rs` now calls
+    // `rpc_fs_read` directly (step 19 item 9).
 
     // =========================================================================
     // Kiln RPC Methods
@@ -71,37 +64,10 @@ impl DaemonClient {
         auto: bool,
         make_default: bool,
     ) -> Result<serde_json::Value> {
-        self.kiln_register_opt(Some(name), path, auto, make_default)
-            .await
-    }
-
-    /// Register a directory, letting the daemon derive the name.
-    ///
-    /// For `--kiln <path>` and kiln discovery, where the user named a
-    /// directory and not a name. The derivation belongs to the daemon because
-    /// it depends on what is already registered: a caller that derived its own
-    /// would derive against a different set and pick a name the daemon then
-    /// refuses.
-    pub async fn kiln_register_derived(
-        &self,
-        path: &Path,
-        auto: bool,
-        make_default: bool,
-    ) -> Result<serde_json::Value> {
-        self.kiln_register_opt(None, path, auto, make_default).await
-    }
-
-    async fn kiln_register_opt(
-        &self,
-        name: Option<&str>,
-        path: &Path,
-        auto: bool,
-        make_default: bool,
-    ) -> Result<serde_json::Value> {
         self.call(
             RpcMethod::KilnRegister,
             KilnRegisterRequest {
-                name: name.map(str::to_string),
+                name: Some(name.to_string()),
                 path: path.to_string_lossy().to_string(),
                 auto,
                 make_default,
@@ -110,50 +76,13 @@ impl DaemonClient {
         .await
     }
 
-    /// Record which LLM provider and model to use.
-    ///
-    /// The daemon owns `<data_home>/llm.json`. The reply's `live` says whether
-    /// the running daemon took the selection now or whether it waits for the
-    /// next start, and `still_serving` names what it keeps using until then.
-    pub async fn llm_register_provider(
-        &self,
-        provider: &str,
-        model: &str,
-        make_default: bool,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::LlmRegisterProvider,
-            LlmRegisterProviderRequest {
-                provider: provider.to_string(),
-                model: model.to_string(),
-                make_default,
-            },
-        )
-        .await
-    }
-
-    /// Every kiln name Crucible knows, with the layer that owns it.
-    ///
-    /// Not [`Self::kiln_list`], which lists the kilns that happen to be OPEN.
-    /// This is the registry: what a session may name.
-    pub async fn kiln_registry_list(&self) -> Result<serde_json::Value> {
-        self.call(RpcMethod::KilnRegistryList, NO_PARAMS).await
-    }
-
-    /// Remove one registration from the daemon's state store.
-    pub async fn kiln_forget(&self, name: &str) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::KilnForget,
-            NameRequest {
-                name: name.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn kiln_list(&self) -> Result<Vec<KilnRow>> {
-        self.call(RpcMethod::KilnList, NO_PARAMS).await
-    }
+    // `kiln_register_derived` had one caller
+    // (`crates/crucible-cli/src/commands/acp/mod.rs`), which now calls
+    // `rpc_kiln_register` with `name: None` directly (step 19 item 9).
+    // `llm_register_provider`, `kiln_registry_list`, `kiln_forget` and
+    // `kiln_list` are gone the same way: each had a small, fixed set of
+    // callers that now call the generated `rpc_<variant>` method with the
+    // row's own request type.
 
     // =========================================================================
     // Search RPC Methods
@@ -168,24 +97,13 @@ impl DaemonClient {
     /// to ensure the kiln is open before the call, not to pick the
     /// provider.
     pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> Result<Vec<f32>> {
-        let result: serde_json::Value = self
-            .call(
-                RpcMethod::EmbedQuery,
-                EmbedQueryRequest {
-                    kiln: kiln_path.to_string_lossy().to_string(),
-                    text: text.to_string(),
-                },
-            )
+        let reply = self
+            .rpc_embed_query(EmbedQueryRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                text: text.to_string(),
+            })
             .await?;
-
-        let vector = result
-            .get("vector")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| anyhow::anyhow!("embed.query response missing vector field"))?
-            .iter()
-            .filter_map(|v| v.as_f64().map(|f| f as f32))
-            .collect();
-        Ok(vector)
+        Ok(reply.vector)
     }
 
     /// Full-text search over note titles and bodies.
@@ -235,32 +153,9 @@ impl DaemonClient {
         .await
     }
 
-    /// Ripgrep-style content search over `root` (which must be inside a
-    /// registered project or open kiln — the daemon enforces containment).
-    /// `regex` switches `query` from literal substring to regex matching.
-    /// Returns the hits plus whether they were capped at `limit`.
-    pub async fn search_grep(
-        &self,
-        root: &str,
-        query: &str,
-        regex: bool,
-        glob: Option<&str>,
-        limit: usize,
-        case_insensitive: bool,
-    ) -> Result<crate::GrepSearchResponse> {
-        self.call(
-            RpcMethod::SearchGrep,
-            GrepSearchRequest {
-                root: root.to_string(),
-                query: query.to_string(),
-                regex,
-                glob: glob.map(str::to_string),
-                limit,
-                case_insensitive,
-            },
-        )
-        .await
-    }
+    // `search_grep` had no caller and is gone; a caller that wants
+    // `search_grep` now builds `GrepSearchRequest` and calls
+    // `rpc_search_grep` directly (step 19 item 9).
 
     /// List notes by metadata filter. `scope = None` defaults to the kiln's
     /// workspace authority server-side.
@@ -396,15 +291,12 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn note_get(
-        &self,
-        kiln_path: &Path,
-        path: &str,
-    ) -> Result<Option<crucible_core::storage::NoteRecord>> {
-        self.note_get_scoped(kiln_path, path, None).await
-    }
+    // `note_get` (the `scope: None` default of `note_get_scoped`) had no
+    // caller and is gone (step 19 item 9).
 
-    /// Scope-aware variant of [`Self::note_get`].
+    /// Read one note, decoding the row's `null`-or-record reply into
+    /// `None`/`Some`. Used by the `NoteStore` backend that reads through the
+    /// daemon (`crates/crucible-daemon/src/rpc_client/storage.rs`).
     pub async fn note_get_scoped(
         &self,
         kiln_path: &Path,
@@ -444,14 +336,11 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn note_list(
-        &self,
-        kiln_path: &Path,
-    ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
-        self.note_list_scoped(kiln_path, None).await
-    }
+    // `note_list` (the `scope: None` default of `note_list_scoped`) had no
+    // caller and is gone (step 19 item 9).
 
-    /// Scope-aware variant of [`Self::note_list`].
+    /// List a kiln's notes, scoped. Used by the same `NoteStore` backend as
+    /// [`Self::note_get_scoped`].
     pub async fn note_list_scoped(
         &self,
         kiln_path: &Path,
@@ -471,6 +360,9 @@ impl DaemonClient {
     // Pipeline RPC Methods
     // =========================================================================
 
+    /// Turns `&[PathBuf]` into the row's wire `Vec<String>`, and its typed
+    /// reply into the `(processed, skipped, errors)` tuple every caller
+    /// wants.
     pub async fn process_batch(
         &self,
         kiln_path: &Path,
@@ -481,127 +373,31 @@ impl DaemonClient {
             .map(|p| p.to_string_lossy().to_string())
             .collect();
 
-        let result: serde_json::Value = self
-            .call(
-                RpcMethod::ProcessBatch,
-                ProcessBatchRequest {
-                    kiln: kiln_path.to_string_lossy().to_string(),
-                    paths,
-                },
-            )
+        let reply = self
+            .rpc_process_batch(ProcessBatchRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                paths,
+            })
             .await?;
 
-        let processed = result
-            .get("processed")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
-        let skipped = result.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-
-        let errors: Vec<(String, String)> = result
-            .get("errors")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|e| {
-                        let path = e.get("path")?.as_str()?.to_string();
-                        let error = e.get("error")?.as_str()?.to_string();
-                        Some((path, error))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok((processed, skipped, errors))
+        let errors = reply
+            .errors
+            .into_iter()
+            .map(|e| (e.path, e.error))
+            .collect();
+        Ok((reply.processed, reply.skipped, errors))
     }
 
-    // =========================================================================
-    // Storage Maintenance RPC Methods (stubs)
-    // =========================================================================
-
-    pub async fn storage_verify(&self, kiln_path: &Path) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::StorageVerify,
-            KilnPathRequest {
-                kiln: kiln_path.to_string_lossy().to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn storage_cleanup(&self, kiln_path: &Path) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::StorageCleanup,
-            KilnPathRequest {
-                kiln: kiln_path.to_string_lossy().to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn storage_backup(&self, kiln_path: &Path, dest: &Path) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::StorageBackup,
-            StorageBackupRequest {
-                kiln: kiln_path.to_string_lossy().to_string(),
-                dest: dest.to_string_lossy().to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn storage_restore(
-        &self,
-        kiln_path: &Path,
-        source: &Path,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::StorageRestore,
-            StorageRestoreRequest {
-                kiln: kiln_path.to_string_lossy().to_string(),
-                source: source.to_string_lossy().to_string(),
-            },
-        )
-        .await
-    }
-
-    // =========================================================================
-    // MCP Server RPC Methods
-    // =========================================================================
-
-    /// Start the daemon-managed MCP server.
-    ///
-    /// Spawns an MCP server exposing Crucible's tools for the given kiln.
-    /// Supports SSE (default) and stdio transports.
-    pub async fn mcp_start(
-        &self,
-        kiln_path: &str,
-        transport: Option<&str>,
-        port: Option<u16>,
-        no_just: bool,
-        just_dir: Option<&str>,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::McpStart,
-            McpStartRequest {
-                kiln_path: kiln_path.to_string(),
-                no_just,
-                transport: transport.map(|t| t.to_string()),
-                port,
-                just_dir: just_dir.map(|d| d.to_string()),
-            },
-        )
-        .await
-    }
-
-    /// Stop the daemon-managed MCP server.
-    pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
-        self.call(RpcMethod::McpStop, NO_PARAMS).await
-    }
-
-    /// Get the status of the daemon-managed MCP server.
-    pub async fn mcp_status(&self) -> Result<crate::McpStatus> {
-        self.call(RpcMethod::McpStatus, NO_PARAMS).await
-    }
+    // `storage_verify`, `storage_cleanup`, `storage_backup` and
+    // `storage_restore` each had one caller
+    // (`crates/crucible-cli/src/commands/storage.rs`) and only built the
+    // row's request from a `Path`; that caller now calls the generated
+    // `rpc_storage_*` method directly (step 19 item 9).
+    //
+    // `mcp_start` and `mcp_stop` are gone the same way — their one caller
+    // (`crates/crucible-cli/src/commands/mcp.rs`) now calls
+    // `rpc_mcp_start`/`rpc_mcp_stop` directly. `mcp_status` had no caller and
+    // is gone too.
 
     /// Turn one verified webhook delivery into a `webhook:received` event.
     ///
@@ -685,10 +481,8 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
-        self.call_with_retry(RpcMethod::ProjectList, NO_PARAMS)
-            .await
-    }
+    // `project_list` had no caller and is gone; a caller now calls
+    // `rpc_project_list(())` directly (step 19 item 9).
 
     /// Every project name Crucible knows, with the layer that owns it.
     ///
@@ -699,30 +493,9 @@ impl DaemonClient {
         self.call(RpcMethod::ProjectRegistryList, NO_PARAMS).await
     }
 
-    /// List one directory level inside a registered project. Read-only,
-    /// metadata only.
-    ///
-    /// Returns the listing envelope verbatim — `{ entries, truncated }`. It was
-    /// an unwrapped array; the flag has to survive to the client, or a directory
-    /// cut short by the per-entry cap is indistinguishable from a complete one.
-    pub async fn fs_list_dir(
-        &self,
-        root: &str,
-        rel_path: &str,
-        show_ignored: bool,
-        show_hidden: bool,
-    ) -> Result<crate::FsListing> {
-        self.call(
-            RpcMethod::FsListDir,
-            FsListDirRequest {
-                root: root.to_string(),
-                rel_path: rel_path.to_string(),
-                show_ignored,
-                show_hidden,
-            },
-        )
-        .await
-    }
+    // `fs_list_dir` had no caller and is gone; a caller now builds
+    // `FsListDirRequest` and calls `rpc_fs_list_dir` directly (step 19 item
+    // 9).
 
     /// `diff.get`: the files of one diffset, with counts and no text.
     ///
@@ -740,7 +513,10 @@ impl DaemonClient {
         .await
     }
 
-    /// `diff.file`: the two texts of one file of a diffset.
+    /// `diff.file`: the two texts of one file of a diffset, with no `root`
+    /// (a session record source needs `root`, because a session can have
+    /// more than one root; a caller that has one builds `DiffFileRequest`
+    /// and calls `rpc_diff_file` directly).
     ///
     /// `from` is the old path of a renamed file. A read, so the client
     /// retries it.
@@ -750,22 +526,16 @@ impl DaemonClient {
         path: &str,
         from: Option<&str>,
     ) -> Result<crucible_core::diff::DiffFileText> {
-        self.diff_file_request(DiffFileRequest {
-            source: source.clone(),
-            path: path.to_string(),
-            from: from.map(str::to_string),
-            root: None,
-        })
+        self.call_with_retry(
+            RpcMethod::DiffFile,
+            DiffFileRequest {
+                source: source.clone(),
+                path: path.to_string(),
+                from: from.map(str::to_string),
+                root: None,
+            },
+        )
         .await
-    }
-
-    /// `diff.file` with the whole request. A session record source needs
-    /// `root`, because a session can have more than one root.
-    pub async fn diff_file_request(
-        &self,
-        request: DiffFileRequest,
-    ) -> Result<crucible_core::diff::DiffFileText> {
-        self.call_with_retry(RpcMethod::DiffFile, request).await
     }
 
     /// `diff.comment`: anchor a comment to a line range of one file.
@@ -775,41 +545,10 @@ impl DaemonClient {
         self.call(RpcMethod::DiffComment, request).await
     }
 
-    /// `diff.resolve_comment`: mark one comment of a diffset resolved.
-    ///
-    /// A write, so the client sends it once.
-    pub async fn diff_resolve_comment(
-        &self,
-        source: &crucible_core::diff::DiffsetSource,
-        comment_id: &str,
-    ) -> Result<DiffResolveCommentReply> {
-        self.call(
-            RpcMethod::DiffResolveComment,
-            DiffCommentKey {
-                source: source.clone(),
-                comment_id: comment_id.to_string(),
-            },
-        )
-        .await
-    }
-
-    /// `diff.delete_comment`: remove one comment of a diffset from the store.
-    ///
-    /// A write, so the client sends it once.
-    pub async fn diff_delete_comment(
-        &self,
-        source: &crucible_core::diff::DiffsetSource,
-        comment_id: &str,
-    ) -> Result<DiffDeleteCommentReply> {
-        self.call(
-            RpcMethod::DiffDeleteComment,
-            DiffCommentKey {
-                source: source.clone(),
-                comment_id: comment_id.to_string(),
-            },
-        )
-        .await
-    }
+    // `diff_resolve_comment` and `diff_delete_comment` had no caller and are
+    // gone; a caller now builds `DiffCommentKey` and calls
+    // `rpc_diff_resolve_comment`/`rpc_diff_delete_comment` directly (step 19
+    // item 9).
 
     /// `diff.comments`: the comments of a diffset, each projected onto the
     /// current text of its side.
@@ -828,61 +567,9 @@ impl DaemonClient {
         .await
     }
 
-    /// Move/rename a file or directory within a registered project or open
-    /// kiln. All containment checks are daemon-side; overwrites are rejected.
-    pub async fn fs_move(
-        &self,
-        root: &str,
-        kind: FsRootKind,
-        from_rel: &str,
-        to_rel: &str,
-    ) -> Result<crate::FsMoveReply> {
-        self.call(
-            RpcMethod::FsMove,
-            FsMoveRequest {
-                root: root.to_string(),
-                kind,
-                from_rel: from_rel.to_string(),
-                to_rel: to_rel.to_string(),
-            },
-        )
-        .await
-    }
-
-    /// Create a folder (and missing parents) inside a registered project or
-    /// open kiln.
-    pub async fn fs_mkdir(&self, root: &str, kind: FsRootKind, rel_path: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .call(
-                RpcMethod::FsMkdir,
-                FsPathRequest {
-                    root: root.to_string(),
-                    kind,
-                    rel_path: rel_path.to_string(),
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
-    /// Move a file/directory to the root's `.crucible/trash/`. Kiln notes are
-    /// dropped from the index inline (backlinks re-resolve immediately).
-    pub async fn fs_trash(
-        &self,
-        root: &str,
-        kind: FsRootKind,
-        rel_path: &str,
-    ) -> Result<crate::FsTrashReply> {
-        self.call(
-            RpcMethod::FsTrash,
-            FsPathRequest {
-                root: root.to_string(),
-                kind,
-                rel_path: rel_path.to_string(),
-            },
-        )
-        .await
-    }
+    // `fs_move`, `fs_mkdir` and `fs_trash` had no caller and are gone; a
+    // caller now builds `FsMoveRequest`/`FsPathRequest` and calls
+    // `rpc_fs_move`/`rpc_fs_mkdir`/`rpc_fs_trash` directly (step 19 item 9).
 
     /// Clone a remote git repo and register it as a project.
     ///
@@ -908,20 +595,8 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
-        let result: serde_json::Value = self
-            .call_with_retry(
-                RpcMethod::ProjectGet,
-                PathRequest {
-                    path: path.to_string_lossy().to_string(),
-                },
-            )
-            .await?;
-
-        if result.is_null() {
-            Ok(None)
-        } else {
-            Ok(Some(serde_json::from_value(result)?))
-        }
-    }
+    // `project_get` had no caller and is gone; a caller now builds
+    // `PathRequest` and calls `rpc_project_get` directly — the row already
+    // answers `Option<Project>`, so no null-check decode is needed (step 19
+    // item 9).
 }

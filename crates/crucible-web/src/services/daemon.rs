@@ -318,9 +318,8 @@ impl ReconnectingDaemon {
         -> Vec<f32> = embed_query(&kiln_path, &text);
     }
 
-    // `DaemonClient::mcp_status` itself stays for now: deleting a
-    // hand-written `DaemonClient` method that only forwards one row is
-    // step 19 item 9, a separate pass.
+    // `DaemonClient::mcp_status` had no caller anywhere and is gone (step 19
+    // item 9); nothing here forwarded it either.
 
     // `DaemonClient::skills_list`/`skills_get`/`skills_search` stay, because
     // they reshape an ergonomic `&Path` argument into the wire request's
@@ -526,16 +525,18 @@ impl ReconnectingDaemon {
         daemon.scm_clone(url, dest, name).await
     }
 
-    // `DaemonClient::diff_get`/`diff_file_request`/`diff_comment`/
-    // `diff_resolve_comment`/`diff_delete_comment`/`diff_comments` stay
-    // (item 9 is a separate pass); `daemon_retry_tests.rs` now proves the
-    // `Once` replay policy of a decision through `rpc_forward` directly,
-    // since no named forwarder is left to call.
+    // `DaemonClient::diff_get`/`diff_comment`/`diff_comments` stay, each with
+    // a caller; `diff_file_request` folded into `diff_file` (no external
+    // caller of the full-request form), and `diff_resolve_comment`/
+    // `diff_delete_comment` are gone (no caller anywhere) — step 19 item 9.
+    // `daemon_retry_tests.rs` proves the `Once` replay policy of a decision
+    // through `rpc_forward` directly, since no named forwarder is left to
+    // call.
 
     forward_rpc! {
         Safe FsRead =>
         fs_read(request: &crucible_core::file_write::FileReadRequest)
-        -> serde_json::Value = fs_read(&request);
+        -> serde_json::Value = rpc_fs_read(request);
     }
 
     forward_rpc! {

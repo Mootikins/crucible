@@ -273,7 +273,7 @@ async fn show_status(json: bool) -> Result<()> {
             Ok(client) => {
                 client.rpc_ping(()).await?;
                 let kilns = client
-                    .kiln_list()
+                    .rpc_kiln_list(())
                     .await?
                     .into_iter()
                     .map(|k| KilnStatus {

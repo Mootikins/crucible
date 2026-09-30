@@ -755,7 +755,7 @@ fn is_writable_dir(path: &Path) -> bool {
 async fn registry_listings() -> anyhow::Result<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
     let client = crate::common::daemon_client().await?;
     let projects = client.project_registry_list().await?;
-    let kilns = client.kiln_registry_list().await?;
+    let kilns = client.rpc_kiln_registry_list(()).await?;
     Ok((
         projects["projects"].as_array().cloned().unwrap_or_default(),
         kilns["kilns"].as_array().cloned().unwrap_or_default(),

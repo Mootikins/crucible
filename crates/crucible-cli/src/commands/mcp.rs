@@ -89,13 +89,13 @@ pub async fn execute(config: CliAppConfig, args: McpArgs) -> Result<()> {
 
     // Start MCP server via daemon RPC
     client
-        .mcp_start(
-            &kiln_path_str,
-            transport,
-            Some(args.port),
-            args.no_just,
-            None,
-        )
+        .rpc_mcp_start(crucible_core::protocol::requests::McpStartRequest {
+            kiln_path: kiln_path_str.clone(),
+            no_just: args.no_just,
+            transport: transport.map(str::to_string),
+            port: Some(args.port),
+            just_dir: None,
+        })
         .await?;
 
     // Display server info and wait
@@ -114,7 +114,7 @@ pub async fn execute(config: CliAppConfig, args: McpArgs) -> Result<()> {
 
     // Stop MCP server on shutdown
     info!("Shutdown signal received");
-    let _ = client.mcp_stop().await;
+    let _ = client.rpc_mcp_stop(()).await;
 
     info!("MCP server terminated");
     Ok(())

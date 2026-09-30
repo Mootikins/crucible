@@ -317,7 +317,10 @@ async fn test_multiple_clients_query_same_kiln() {
     }
 
     // Verify kiln appears in list
-    let list = setup_client.kiln_list().await.expect("kiln_list failed");
+    let list = setup_client
+        .rpc_kiln_list(())
+        .await
+        .expect("kiln_list failed");
     assert!(!list.is_empty(), "Kiln should be in list after opening");
 
     server.shutdown().await;
