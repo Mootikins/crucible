@@ -1013,6 +1013,17 @@ still load, shown by a fixture captured before the change.
 **Status: part A done (typed `rpc_methods!` rows); the route itself (parts
 1-6 of the change below) is not started.**
 
+**Open after part A.** Two gaps stay, and the route needs both closed:
+1. A Rust call site is not bound to its row. `DaemonClient::call<Req, Resp>`
+   lets the caller pick the types, so a caller that disagrees with the row
+   still compiles. Fix: the macro emits one typed client function per row
+   (the row's params in, its reply out). Functions, not types, so the type
+   count does not grow; the hand-written client methods then go.
+2. 91 of 169 rows still reply `serde_json::Value`, so the generated TS map
+   says `unknown` for them. Each needs a core reply type, as step 10 gave
+   the other domains; a daemon-local reply type moves to core. The route is
+   only as typed as these replies.
+
 **Part A, done.** Every row in `rpc_methods!`
 (`crates/crucible-core/src/protocol/rpc/method.rs`) now names its params and
 reply type: `Variant = "wire.name": Req => Resp`. The macro's grammar makes
