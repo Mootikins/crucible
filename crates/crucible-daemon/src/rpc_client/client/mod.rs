@@ -544,25 +544,61 @@ impl DaemonClient {
         }
     }
 
-    /// Send a JSON-RPC request with automatic retry on transient failures.
+    /// Default per-request timeout for [`Self::call`] (event mode only).
+    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// Send a JSON-RPC request and deserialize its reply.
+    ///
+    /// Generic over the request and reply, so a caller gets the same
+    /// compile-time check that a mismatched pair used to get only through
+    /// `typed_call`: the wrong `Resp` for a call site fails inference here,
+    /// not at a runtime `serde_json::from_value`. `Req = Resp =
+    /// serde_json::Value` (inferred from context) behaves exactly like the
+    /// old raw, untyped `call`, so a Value-in-Value-out call site needs no
+    /// change — this replaces both `call` and `typed_call`.
+    ///
+    /// The [`RpcMethod`] row this method is named after ([`rpc_methods!`] in
+    /// `crucible-core`) records its own `Req`/`Resp` pair for documentation
+    /// and for the generated TS method map; nothing here enforces that a
+    /// caller's `Req`/`Resp` matches that row — see the module doc of
+    /// `crucible_core::protocol::rpc::method` for why (no marker type per
+    /// method) and what is enforced instead.
+    pub async fn call<Req, Resp>(&self, method: RpcMethod, params: Req) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        self.call_with_timeout(method, params, Self::DEFAULT_TIMEOUT)
+            .await
+    }
+
+    /// [`Self::call`] with automatic retry on a transient failure.
     ///
     /// Retries up to 2 times with exponential backoff (200ms, 400ms) on timeout errors.
     /// RPC-level errors (application errors from the daemon) are NOT retried.
-    pub async fn call_with_retry(
-        &self,
-        method: RpcMethod,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    ///
+    /// Serializes `params` once, then retries the same wire bytes — so `Req`
+    /// needs no `Clone` bound, only `Serialize`.
+    pub async fn call_with_retry<Req, Resp>(&self, method: RpcMethod, params: Req) -> Result<Resp>
+    where
+        Req: serde::Serialize,
+        Resp: serde::de::DeserializeOwned,
+    {
+        let params = serde_json::to_value(params)?;
         if !self.timeout_retries {
-            return self.call(method, params).await;
+            let result = self.send_raw(method, params, Self::DEFAULT_TIMEOUT).await?;
+            return Ok(serde_json::from_value(result)?);
         }
         const MAX_RETRIES: u32 = 2;
         const INITIAL_DELAY_MS: u64 = 200;
 
         let mut last_err = None;
         for attempt in 0..=MAX_RETRIES {
-            match self.call(method, params.clone()).await {
-                Ok(result) => return Ok(result),
+            match self
+                .send_raw(method, params.clone(), Self::DEFAULT_TIMEOUT)
+                .await
+            {
+                Ok(result) => return Ok(serde_json::from_value(result)?),
                 Err(e) => {
                     if !Self::is_transient_error(&e) || attempt >= MAX_RETRIES {
                         return Err(e);
@@ -598,24 +634,12 @@ impl DaemonClient {
             .any(|pattern| msg.contains(pattern))
     }
 
-    /// Send a typed JSON-RPC request and deserialize the response.
+    /// [`Self::call`] with an explicit per-request timeout.
     ///
-    /// Wraps `call()` with automatic serialization/deserialization.
-    pub async fn typed_call<Req, Resp>(&self, method: RpcMethod, params: Req) -> Result<Resp>
-    where
-        Req: serde::Serialize,
-        Resp: serde::de::DeserializeOwned,
-    {
-        let result = self.call(method, serde_json::to_value(params)?).await?;
-        Ok(serde_json::from_value(result)?)
-    }
-
-    /// Send a typed JSON-RPC request with an explicit per-request timeout.
-    ///
-    /// Wraps `call_with_timeout()` with automatic serialization/deserialization
-    /// for long-running methods (e.g. `scm.clone`). Not retried — a clone that
-    /// times out should surface, not silently restart.
-    pub async fn typed_call_with_timeout<Req, Resp>(
+    /// Slow operations (e.g. `scm.clone` cloning a large repo) need a generous
+    /// timeout well past the 30s default. The timeout only applies in event
+    /// mode; simple mode blocks on a direct socket read.
+    pub async fn call_with_timeout<Req, Resp>(
         &self,
         method: RpcMethod,
         params: Req,
@@ -626,38 +650,20 @@ impl DaemonClient {
         Resp: serde::de::DeserializeOwned,
     {
         let result = self
-            .call_with_timeout(method, serde_json::to_value(params)?, timeout)
-            .await?;
-        Ok(serde_json::from_value(result)?)
-    }
-
-    /// Send a typed JSON-RPC request with retry and deserialize the response.
-    ///
-    /// Wraps `call_with_retry()` with automatic serialization/deserialization.
-    pub async fn typed_call_with_retry<Req, Resp>(
-        &self,
-        method: RpcMethod,
-        params: Req,
-    ) -> Result<Resp>
-    where
-        Req: serde::Serialize,
-        Resp: serde::de::DeserializeOwned,
-    {
-        let result = self
-            .call_with_retry(method, serde_json::to_value(params)?)
+            .send_raw(method, serde_json::to_value(params)?, timeout)
             .await?;
         Ok(serde_json::from_value(result)?)
     }
 
     /// Send a typed JSON-RPC request and discard the response.
     ///
-    /// Wraps `typed_call()` for methods that return unit (Ok(())).
-    /// Discards the response value to avoid unused variable warnings.
+    /// For methods that answer `Ok(())` in all but the error case; discards
+    /// the reply value so a caller has no unused-value warning to suppress.
     pub(super) async fn typed_unit_call<Req>(&self, method: RpcMethod, params: Req) -> Result<()>
     where
         Req: serde::Serialize,
     {
-        let _: serde_json::Value = self.typed_call(method, params).await?;
+        let _: serde_json::Value = self.call(method, params).await?;
         Ok(())
     }
 
@@ -667,30 +673,16 @@ impl DaemonClient {
         method: RpcMethod,
         session_id: &str,
     ) -> Result<serde_json::Value> {
-        self.typed_call(method, Scoped::session(session_id.to_string()))
+        self.call(method, Scoped::session(session_id.to_string()))
             .await
     }
 
-    /// Default per-request timeout for [`Self::call`] (event mode only).
-    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-    /// Send a JSON-RPC request and get the response, using the default 30s
-    /// per-request timeout in event mode.
-    pub async fn call(
-        &self,
-        method: RpcMethod,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
-        self.call_with_timeout(method, params, Self::DEFAULT_TIMEOUT)
-            .await
-    }
-
-    /// Send a JSON-RPC request with an explicit per-request timeout.
-    ///
-    /// Slow operations (e.g. `scm.clone` cloning a large repo) need a generous
-    /// timeout well past the 30s default. The timeout only applies in event
-    /// mode; simple mode blocks on a direct socket read.
-    pub async fn call_with_timeout(
+    /// The wire round trip: serialize the envelope, write it, correlate the
+    /// reply by request id, and unwrap `{result}` or raise `{error}`. Every
+    /// public `call*` method above serializes its typed params down to this
+    /// and deserializes its typed reply back up from it — this is the one
+    /// place that speaks raw `serde_json::Value` on the wire.
+    async fn send_raw(
         &self,
         method: RpcMethod,
         params: serde_json::Value,
@@ -844,18 +836,17 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn ping(&self) -> Result<String> {
-        let result: serde_json::Value = self.typed_call(RpcMethod::Ping, NO_PARAMS).await?;
+        let result: serde_json::Value = self.call(RpcMethod::Ping, NO_PARAMS).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        let _: serde_json::Value = self.typed_call(RpcMethod::Shutdown, NO_PARAMS).await?;
+        let _: serde_json::Value = self.call(RpcMethod::Shutdown, NO_PARAMS).await?;
         Ok(())
     }
 
     pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        self.typed_call(RpcMethod::DaemonCapabilities, NO_PARAMS)
-            .await
+        self.call(RpcMethod::DaemonCapabilities, NO_PARAMS).await
     }
 
     pub async fn check_version(&self) -> Result<VersionCheck> {
@@ -881,7 +872,7 @@ impl DaemonClient {
         &self,
         name: &str,
     ) -> Result<crucible_core::types::PluginReloadReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::PluginReload,
             NameRequest {
                 name: name.to_string(),
@@ -892,7 +883,7 @@ impl DaemonClient {
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
         let result: crucible_core::types::PluginListReply =
-            self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
+            self.call(RpcMethod::PluginList, NO_PARAMS).await?;
         Ok(result.plugins)
     }
 
@@ -900,14 +891,14 @@ impl DaemonClient {
     /// (name, version, source, state, dir, capability counts).
     pub async fn plugin_list_info(&self) -> Result<Vec<crucible_core::types::PluginInfo>> {
         let result: crucible_core::types::PluginListReply =
-            self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
+            self.call(RpcMethod::PluginList, NO_PARAMS).await?;
         Ok(result.plugin_info)
     }
 
     /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
     /// An older daemon answers no `spec`, which reads as an empty list.
     pub async fn plugin_list_spec(&self) -> Result<Vec<PluginSpecRow>> {
-        let result: serde_json::Value = self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
+        let result: serde_json::Value = self.call(RpcMethod::PluginList, NO_PARAMS).await?;
         match result.get("spec") {
             Some(rows) => Ok(serde_json::from_value(rows.clone())?),
             None => Ok(Vec::new()),
@@ -928,7 +919,7 @@ impl DaemonClient {
         key: Option<&str>,
     ) -> Result<crucible_core::types::PluginPublications> {
         let result: crucible_core::types::PluginPublicationsReply = self
-            .typed_call(
+            .call(
                 RpcMethod::PluginPublications,
                 PluginPublicationsRequest {
                     key: key.map(str::to_string),
@@ -945,7 +936,7 @@ impl DaemonClient {
     /// first. The registry's row cap is what keeps the response bounded.
     pub async fn surface_list(&self) -> Result<Vec<crucible_core::types::Surface>> {
         let result: SurfaceListReply = self
-            .typed_call(RpcMethod::SurfaceList, SurfaceRequest::default())
+            .call(RpcMethod::SurfaceList, SurfaceRequest::default())
             .await?;
         Ok(result.surfaces)
     }
@@ -953,7 +944,7 @@ impl DaemonClient {
     /// One surface by name, or `None` when nothing declares it.
     pub async fn surface_get(&self, name: &str) -> Result<Option<crucible_core::types::Surface>> {
         let result: SurfaceGetReply = self
-            .typed_call(
+            .call(
                 RpcMethod::SurfaceGet,
                 SurfaceRequest {
                     plugin: None,
@@ -975,7 +966,7 @@ impl DaemonClient {
         ui: &str,
     ) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
         let result: crucible_core::types::PluginOptionsReply = self
-            .typed_call(
+            .call(
                 RpcMethod::PluginOptions,
                 PluginOptionsRequest {
                     ui: Some(ui.to_string()),
@@ -994,7 +985,7 @@ impl DaemonClient {
         ui: &str,
     ) -> Result<serde_json::Value> {
         let result: crucible_core::types::PluginOptionValue = self
-            .typed_call(
+            .call(
                 RpcMethod::PluginOptionGet,
                 PluginOptionCallRequest {
                     plugin: plugin.to_string(),
@@ -1016,7 +1007,7 @@ impl DaemonClient {
         ui: &str,
     ) -> Result<()> {
         let _: crucible_core::types::PluginAck = self
-            .typed_call(
+            .call(
                 RpcMethod::PluginOptionSet,
                 PluginOptionCallRequest {
                     plugin: plugin.to_string(),
@@ -1037,7 +1028,7 @@ impl DaemonClient {
         ui: &str,
     ) -> Result<()> {
         let _: crucible_core::types::PluginAck = self
-            .typed_call(
+            .call(
                 RpcMethod::PluginOptionExecute,
                 PluginOptionCallRequest {
                     plugin: plugin.to_string(),
@@ -1054,9 +1045,8 @@ impl DaemonClient {
     /// `hint`, `parameters`. Served from the daemon so TUI and web show the
     /// same slash-command set.
     pub async fn plugin_commands(&self) -> Result<Vec<crucible_core::types::PluginCommand>> {
-        let result: crucible_core::types::PluginCommandsReply = self
-            .typed_call(RpcMethod::PluginCommands, NO_PARAMS)
-            .await?;
+        let result: crucible_core::types::PluginCommandsReply =
+            self.call(RpcMethod::PluginCommands, NO_PARAMS).await?;
         Ok(result.commands)
     }
 
@@ -1078,7 +1068,7 @@ impl DaemonClient {
         args: serde_json::Value,
         session: Option<&str>,
     ) -> Result<crucible_core::types::PluginRunCommandReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::PluginRunCommand,
             PluginRunCommandRequest {
                 name: name.to_string(),
@@ -1097,7 +1087,7 @@ impl DaemonClient {
         branch: Option<&str>,
         pin: Option<&str>,
     ) -> Result<crucible_core::types::PluginInstallReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::PluginInstall,
             PluginInstallRequest {
                 url: url.to_string(),
@@ -1115,7 +1105,7 @@ impl DaemonClient {
         name: &str,
         purge: bool,
     ) -> Result<crucible_core::types::PluginRemoveReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::PluginRemove,
             PluginRemoveRequest {
                 name: name.to_string(),

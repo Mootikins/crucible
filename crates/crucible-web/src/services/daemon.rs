@@ -97,11 +97,11 @@ impl ReconnectingDaemon {
         }
     }
 
-    forward_rpc! { Safe BaseQuery => base_query(params: crucible_daemon::bases::QueryParams) -> crucible_daemon::bases::QueryResult = typed_call(RpcMethod::BaseQuery, params); }
-    forward_rpc! { Safe BaseViews => base_views(params: crucible_daemon::bases::ViewsParams) -> Vec<crucible_daemon::bases::ViewSummary> = typed_call(RpcMethod::BaseViews, params); }
-    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: crucible_daemon::bases::CreateEntryParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseCreateEntry, params); }
-    forward_rpc! { Once BaseSetProperty => base_set_property(params: crucible_daemon::bases::SetPropertyParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseSetProperty, params); }
-    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: crucible_daemon::bases::ReorderGroupsParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseReorderGroups, params); }
+    forward_rpc! { Safe BaseQuery => base_query(params: crucible_daemon::bases::QueryParams) -> crucible_daemon::bases::QueryResult = call(RpcMethod::BaseQuery, params); }
+    forward_rpc! { Safe BaseViews => base_views(params: crucible_daemon::bases::ViewsParams) -> Vec<crucible_daemon::bases::ViewSummary> = call(RpcMethod::BaseViews, params); }
+    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: crucible_daemon::bases::CreateEntryParams) -> crucible_daemon::bases::WriteOutcome = call(RpcMethod::BaseCreateEntry, params); }
+    forward_rpc! { Once BaseSetProperty => base_set_property(params: crucible_daemon::bases::SetPropertyParams) -> crucible_daemon::bases::WriteOutcome = call(RpcMethod::BaseSetProperty, params); }
+    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: crucible_daemon::bases::ReorderGroupsParams) -> crucible_daemon::bases::WriteOutcome = call(RpcMethod::BaseReorderGroups, params); }
 
     /// The daemon's cheapest RPC, for the readiness probe.
     ///

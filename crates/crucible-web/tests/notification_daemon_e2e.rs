@@ -37,7 +37,7 @@ async fn a_plugin_notification_reaches_a_web_session_stream() {
     let caller = DaemonClient::connect_to(&socket).await.expect("connect");
     let code = format!("cru.log.notify({message:?}, cru.log.levels.WARN)");
     caller
-        .call(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
+        .call::<_, serde_json::Value>(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
         .await
         .expect("lua.eval");
 
@@ -81,7 +81,7 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
     let mut ids = Vec::new();
     for message in ["mine", "other"] {
         let created = client
-            .call(
+            .call::<_, serde_json::Value>(
                 RpcMethod::SessionCreate,
                 serde_json::json!({ "type": "chat" }),
             )
@@ -90,7 +90,7 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
         let id = created["session_id"].as_str().unwrap().to_string();
         let notification = crucible_core::types::Notification::warning(message);
         client
-            .call(
+            .call::<_, serde_json::Value>(
                 RpcMethod::SessionAddNotification,
                 serde_json::json!({ "session_id": id, "notification": notification }),
             )
@@ -146,7 +146,7 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     let mut sessions = Vec::new();
     for _ in 0..2 {
         let created = client
-            .call(
+            .call::<_, serde_json::Value>(
                 RpcMethod::SessionCreate,
                 serde_json::json!({ "type": "chat" }),
             )
@@ -155,7 +155,7 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
         sessions.push(created["session_id"].as_str().unwrap().to_string());
     }
     client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::LuaEval,
             serde_json::json!({ "code": "cru.log.notify('shared')" }),
         )
@@ -165,7 +165,7 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     let shared_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let listed = client
-                .call(
+                .call::<_, serde_json::Value>(
                     RpcMethod::NotificationList,
                     serde_json::json!({ "all": true }),
                 )

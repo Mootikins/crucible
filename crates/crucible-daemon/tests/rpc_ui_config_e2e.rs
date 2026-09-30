@@ -38,7 +38,7 @@ async fn ui_config_delivers_the_lua_theme_to_a_client() {
         .expect("client connects");
 
     let resp = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::UiConfig,
             json!({ "background": "dark", "color_depth": "truecolor" }),
         )
@@ -82,7 +82,7 @@ async fn ui_config_ships_colors_unresolved_in_authoring_form() {
         .expect("client connects");
 
     let resp = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::UiConfig,
             json!({ "background": "dark", "color_depth": "truecolor" }),
         )
@@ -115,7 +115,7 @@ async fn ui_set_theme_rejects_an_unknown_name() {
         .expect("client connects");
 
     let err = client
-        .call(RpcMethod::UiSetTheme, json!({ "name": "no-such-theme" }))
+        .call::<_, serde_json::Value>(RpcMethod::UiSetTheme, json!({ "name": "no-such-theme" }))
         .await
         .expect_err("an unknown theme must be an error");
     assert!(
@@ -137,7 +137,7 @@ async fn ui_set_theme_refuses_path_traversal() {
 
     for name in ["../../etc/passwd", "sub/theme", "..", ""] {
         let err = client
-            .call(RpcMethod::UiSetTheme, json!({ "name": name }))
+            .call::<_, serde_json::Value>(RpcMethod::UiSetTheme, json!({ "name": name }))
             .await
             .expect_err("traversal must be refused");
         assert!(
@@ -162,7 +162,7 @@ async fn ui_config_does_not_resolve_adaptive_colors_daemon_side() {
         .expect("client connects");
 
     let dark = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::UiConfig,
             json!({ "background": "dark", "color_depth": "truecolor" }),
         )
@@ -170,7 +170,7 @@ async fn ui_config_does_not_resolve_adaptive_colors_daemon_side() {
         .expect("ui.config is a known method");
 
     let light = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::UiConfig,
             json!({ "background": "light", "color_depth": "truecolor" }),
         )

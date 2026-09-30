@@ -116,7 +116,7 @@ pub async fn select(name: &str, format: Option<OutputFormat>) -> Result<()> {
     let effective = catalog.configured.clone();
     let client = daemon_client().await?;
     let stale = stale_provider_keys(&client).await;
-    let saved = client
+    let saved: serde_json::Value = client
         .call(
             RpcMethod::ConfigSave,
             serde_json::json!({ "values": fastembed_provider_delta(&name) }),
@@ -228,7 +228,7 @@ fn describe_pin(row: &serde_json::Value) -> String {
 /// it.
 async fn stale_provider_keys(client: &crucible_daemon::rpc_client::DaemonClient) -> Vec<String> {
     let Ok(response) = client
-        .call(RpcMethod::ConfigEffective, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::ConfigEffective, serde_json::json!({}))
         .await
     else {
         return Vec::new();

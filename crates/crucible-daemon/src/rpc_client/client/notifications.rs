@@ -17,7 +17,7 @@ impl DaemonClient {
         all: bool,
     ) -> Result<Vec<Notification>> {
         let resp: NotificationListResponse = self
-            .typed_call(
+            .call(
                 RpcMethod::NotificationList,
                 NotificationListRequest {
                     workspace: workspace.map(|w| w.to_string_lossy().into_owned()),
@@ -32,7 +32,7 @@ impl DaemonClient {
     /// Drop one notification. `false` when the ring did not hold it.
     pub async fn notification_dismiss(&self, id: &str) -> Result<bool> {
         let resp: NotificationDismissResponse = self
-            .typed_call(
+            .call(
                 RpcMethod::NotificationDismiss,
                 NotificationDismissRequest { id: id.to_string() },
             )

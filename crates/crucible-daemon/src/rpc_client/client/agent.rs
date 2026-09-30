@@ -46,7 +46,7 @@ impl DaemonClient {
     /// Read one knob's value, in the same [`KnobValue`] shape
     /// [`Self::session_knob_set`] writes.
     pub async fn session_knob_get(&self, session_id: &str, knob: SessionKnob) -> Result<KnobValue> {
-        self.typed_call_with_retry(
+        self.call_with_retry(
             RpcMethod::SessionKnobGet,
             Scoped::new(session_id.to_string(), KnobRef { knob }),
         )
@@ -60,7 +60,7 @@ impl DaemonClient {
         session_id: &str,
         kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionConnectKiln,
             Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
         )
@@ -74,7 +74,7 @@ impl DaemonClient {
         session_id: &str,
         kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionDisconnectKiln,
             Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
         )
@@ -87,7 +87,7 @@ impl DaemonClient {
         session_id: &str,
         workspace: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionSetWorkspace,
             Scoped::new(
                 session_id.to_string(),
@@ -124,7 +124,7 @@ impl DaemonClient {
         plugin: &str,
     ) -> Result<crucible_core::session::PluginApproval> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::SessionGetPluginApproval,
                 Scoped::new(
                     session_id.to_owned(),
@@ -142,7 +142,7 @@ impl DaemonClient {
         session_id: &str,
     ) -> Result<std::collections::BTreeMap<String, crucible_core::session::PluginApproval>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::SessionListPluginApprovals,
                 Scoped::session(session_id.to_owned()),
             )
@@ -152,7 +152,7 @@ impl DaemonClient {
 
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::SessionListModels,
                 Scoped::session(session_id.to_string()),
             )
@@ -167,7 +167,7 @@ impl DaemonClient {
     /// registry — two sessions in different projects can offer different modes.
     /// The settings this session's external agent advertised for itself.
     pub async fn session_list_agent_options(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call_with_retry(
+        self.call_with_retry(
             RpcMethod::SessionListAgentOptions,
             Scoped::session(session_id.to_string()),
         )
@@ -188,7 +188,7 @@ impl DaemonClient {
             value: &'a str,
         }
         let _: serde_json::Value = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionSetAgentOption,
                 Params {
                     session_id,
@@ -205,7 +205,7 @@ impl DaemonClient {
         &self,
         session_id: &str,
     ) -> Result<crucible_core::types::SessionKnobSupport> {
-        self.typed_call_with_retry(
+        self.call_with_retry(
             RpcMethod::SessionListKnobs,
             Scoped::session(session_id.to_string()),
         )
@@ -222,7 +222,7 @@ impl DaemonClient {
             commands: Vec<crucible_core::types::SessionCommand>,
         }
         let reply: Reply = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::SessionCommands,
                 Scoped::session(session_id.to_string()),
             )
@@ -234,7 +234,7 @@ impl DaemonClient {
         &self,
         session_id: &str,
     ) -> Result<crucible_core::types::mode::SessionModes> {
-        self.typed_call_with_retry(
+        self.call_with_retry(
             RpcMethod::SessionListModes,
             Scoped::session(session_id.to_string()),
         )
@@ -247,7 +247,7 @@ impl DaemonClient {
     /// and filters providers whose trust level doesn't satisfy it.
     pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::ModelsList,
                 ListAllModelsRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
@@ -276,10 +276,10 @@ impl DaemonClient {
             download,
         };
         if download {
-            self.typed_call_with_timeout(RpcMethod::EmbeddingsModels, params, DOWNLOAD_TIMEOUT)
+            self.call_with_timeout(RpcMethod::EmbeddingsModels, params, DOWNLOAD_TIMEOUT)
                 .await
         } else {
-            self.typed_call_with_retry(RpcMethod::EmbeddingsModels, params)
+            self.call_with_retry(RpcMethod::EmbeddingsModels, params)
                 .await
         }
     }
@@ -309,7 +309,7 @@ impl DaemonClient {
         include_models: Option<bool>,
     ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
+            .call_with_retry(
                 RpcMethod::ProvidersList,
                 ListProvidersRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
@@ -335,7 +335,7 @@ impl DaemonClient {
         count: usize,
     ) -> Result<Vec<crucible_core::types::UndoSummary>> {
         let resp: serde_json::Value = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionUndo,
                 Scoped::new(session_id.to_string(), UndoCount { count: Some(count) }),
             )
@@ -360,7 +360,7 @@ impl DaemonClient {
         workspace: Option<&Path>,
         scope_filter: Option<&str>,
     ) -> Result<crucible_core::types::SkillsReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::SkillsList,
             SkillsListRequest {
                 kiln_path: kiln_path.to_string_lossy().to_string(),
@@ -378,7 +378,7 @@ impl DaemonClient {
         kiln_path: &Path,
         workspace: Option<&Path>,
     ) -> Result<crucible_core::types::SkillDetail> {
-        self.typed_call(
+        self.call(
             RpcMethod::SkillsGet,
             SkillsGetRequest {
                 name: name.to_string(),
@@ -397,7 +397,7 @@ impl DaemonClient {
         workspace: Option<&Path>,
         limit: Option<usize>,
     ) -> Result<crucible_core::types::SkillsReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::SkillsSearch,
             SkillsSearchRequest {
                 query: query.to_string(),
@@ -411,8 +411,7 @@ impl DaemonClient {
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<crate::AgentProfilesReply> {
-        self.typed_call(RpcMethod::AgentsListProfiles, NO_PARAMS)
-            .await
+        self.call(RpcMethod::AgentsListProfiles, NO_PARAMS).await
     }
 
     /// List the agent cards a session started from `workspace` would resolve.
@@ -421,7 +420,7 @@ impl DaemonClient {
         workspace: &Path,
         kiln_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::AgentsListCards,
             AgentsListCardsRequest {
                 workspace: workspace.to_string_lossy().to_string(),
@@ -433,7 +432,7 @@ impl DaemonClient {
 
     /// Resolve a named agent profile.
     pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::AgentsResolveProfile,
             NameRequest {
                 name: name.to_string(),

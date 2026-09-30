@@ -69,7 +69,7 @@ fn lua_session_exists(home: &Path, session_id: &str) -> Result<(), String> {
             .await
             .map_err(|e| format!("connect: {e}"))?;
         client
-            .call(
+            .call::<_, serde_json::Value>(
                 RpcMethod::LuaRegisterCommands,
                 serde_json::json!({ "session_id": session_id, "commands": [] }),
             )

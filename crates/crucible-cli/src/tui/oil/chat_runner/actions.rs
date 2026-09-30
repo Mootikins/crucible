@@ -38,7 +38,7 @@ async fn write_app_config_key(
         .await
         .map_err(|e| format!("daemon connect failed: {e}"))?;
 
-    let written = client
+    let written: serde_json::Value = client
         .call(
             RpcMethod::ConfigSet,
             to_params(crucible_core::protocol::requests::ConfigValuesRequest {
@@ -57,7 +57,7 @@ async fn write_app_config_key(
         ));
     }
 
-    let read_back = client
+    let read_back: serde_json::Value = client
         .call(RpcMethod::ConfigGet, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
@@ -85,7 +85,7 @@ async fn read_app_config_key(
 
     // Same lookup as the write's read-back, so `:set k=v` and `:set k?`
     // cannot disagree about which key they named.
-    let read = client
+    let read: serde_json::Value = client
         .call(RpcMethod::ConfigGet, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
@@ -97,7 +97,7 @@ async fn read_app_config_key(
     if !history {
         return Ok((value, None));
     }
-    let origin = client
+    let origin: serde_json::Value = client
         .call(RpcMethod::ConfigOrigin, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
@@ -121,7 +121,7 @@ async fn drop_app_config_key(
         .map_err(|e| format!("daemon connect failed: {e}"))?;
 
     let method = kind.method();
-    let row = client
+    let row: serde_json::Value = client
         .call(
             method,
             to_params(crucible_core::protocol::requests::ConfigKeyRequest {
@@ -805,7 +805,7 @@ impl OilChatRunner {
                                 match (crucible_daemon::DaemonClient::connect().await, request) {
                                     (_, Err(e)) => Err(e),
                                     (Ok(client), Ok(request)) => client
-                                        .call(RpcMethod::LuaEval, request)
+                                        .call::<_, serde_json::Value>(RpcMethod::LuaEval, request)
                                         .await
                                         .map(|resp| {
                                             resp.get("result")
@@ -1348,7 +1348,7 @@ async fn fetch_resumable_sessions(
             .as_ref()
             .map(|w| w.to_string_lossy().to_string());
     }
-    let listed: serde_json::Value = client.typed_call(RpcMethod::SessionList, request).await?;
+    let listed: serde_json::Value = client.call(RpcMethod::SessionList, request).await?;
     Ok(resumable_sessions(
         current.unwrap_or_default(),
         &listed,
@@ -1445,13 +1445,16 @@ async fn fetch_surface(
 ) -> anyhow::Result<Option<ChatAppMsg>> {
     let value = match name {
         Some(name) => client
-            .call(RpcMethod::SurfaceGet, serde_json::json!({ "name": name }))
+            .call::<_, serde_json::Value>(
+                RpcMethod::SurfaceGet,
+                serde_json::json!({ "name": name }),
+            )
             .await?["surface"]
             .clone(),
         // No name: take the first of the list, so `:surfaces` shows something
         // instead of asking the user to know a name they have not been told.
         None => client
-            .call(RpcMethod::SurfaceList, serde_json::json!({}))
+            .call::<_, serde_json::Value>(RpcMethod::SurfaceList, serde_json::json!({}))
             .await?
             .get("surfaces")
             .and_then(|s| s.as_array())

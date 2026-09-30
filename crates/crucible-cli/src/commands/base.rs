@@ -91,13 +91,13 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
     match cmd {
         BaseCommands::List { kiln } => {
             let files: Vec<String> = client
-                .typed_call(RpcMethod::BaseList, ListParams { kiln })
+                .call(RpcMethod::BaseList, ListParams { kiln })
                 .await?;
             print_json(&files)
         }
         BaseCommands::Views { file, kiln } => {
             let views: Vec<ViewSummary> = client
-                .typed_call(
+                .call(
                     RpcMethod::BaseViews,
                     ViewsParams {
                         kiln,
@@ -115,7 +115,7 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
             format,
         } => {
             let result: QueryResult = client
-                .typed_call(
+                .call(
                     RpcMethod::BaseQuery,
                     QueryParams {
                         kiln,
@@ -191,7 +191,7 @@ async fn write(
     method: crucible_core::protocol::RpcMethod,
     params: impl Serialize,
 ) -> Result<()> {
-    let outcome: WriteOutcome = client.typed_call(method, params).await?;
+    let outcome: WriteOutcome = client.call(method, params).await?;
     let text = serde_json::to_string_pretty(&outcome)?;
     match outcome {
         WriteOutcome::Applied { .. }

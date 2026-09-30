@@ -153,7 +153,7 @@ async fn session_fork_emits_session_created_for_the_fork() {
         .await
         .expect("the parent's own event");
 
-    let forked = client
+    let forked: serde_json::Value = client
         .call(
             RpcMethod::SessionFork,
             serde_json::json!({ "session_id": parent_id }),

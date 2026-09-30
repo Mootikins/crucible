@@ -157,7 +157,7 @@ async fn comment(client: &DaemonClient, root: &PhysicalRoot) -> CommentRef {
 /// on loopback.
 async fn configure_endpoint(client: &DaemonClient, endpoint: &str) {
     client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::ConfigSet,
             serde_json::json!({ "values": { "chat.endpoint": endpoint } }),
         )

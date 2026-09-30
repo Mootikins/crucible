@@ -26,7 +26,7 @@ impl DaemonClient {
     /// resolved `agent_model`. An unknown ACP profile then fails with
     /// `INVALID_PARAMS`, and no session is made.
     pub async fn session_create(&self, request: SessionCreateRequest) -> Result<SessionSummary> {
-        self.typed_call(RpcMethod::SessionCreate, request).await
+        self.call(RpcMethod::SessionCreate, request).await
     }
 
     pub async fn session_list(
@@ -59,7 +59,7 @@ impl DaemonClient {
         include_archived: Option<bool>,
         include_children: Option<bool>,
     ) -> Result<SessionListReply> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionList,
             SessionListRequest {
                 session_type: session_type.map(|t| t.to_string()),
@@ -118,7 +118,7 @@ impl DaemonClient {
         notification_id: &str,
     ) -> Result<bool> {
         let reply: serde_json::Value = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionDismissNotification,
                 Scoped::new(
                     session_id.to_string(),
@@ -149,7 +149,7 @@ impl DaemonClient {
     }
 
     pub async fn session_delete(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionDelete,
             Scoped::session(session_id.to_string()),
         )
@@ -157,7 +157,7 @@ impl DaemonClient {
     }
 
     pub async fn session_archive(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionArchive,
             Scoped::session(session_id.to_string()),
         )
@@ -165,7 +165,7 @@ impl DaemonClient {
     }
 
     pub async fn session_unarchive(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionUnarchive,
             Scoped::session(session_id.to_string()),
         )
@@ -177,7 +177,7 @@ impl DaemonClient {
         recording_path: &Path,
         speed: f64,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionReplay,
             SessionReplayRequest {
                 recording_path: recording_path.to_string_lossy().to_string(),
@@ -192,7 +192,7 @@ impl DaemonClient {
         session_id: &str,
         page: Page,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionResumeFromStorage,
             Scoped::new(session_id, page),
         )
@@ -203,7 +203,7 @@ impl DaemonClient {
     /// [`Self::session_resume_from_storage`], the session stays as it is: an
     /// ended session stays ended, and no start hook runs.
     pub async fn session_history(&self, session_id: &str, page: Page) -> Result<serde_json::Value> {
-        self.typed_call(RpcMethod::SessionHistory, Scoped::new(session_id, page))
+        self.call(RpcMethod::SessionHistory, Scoped::new(session_id, page))
             .await
     }
 
@@ -224,7 +224,7 @@ impl DaemonClient {
         is_interactive: bool,
         permission_mode: Option<String>,
     ) -> Result<SendOutcome> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionSendMessage,
             Scoped::new(
                 session_id.to_string(),
@@ -249,7 +249,7 @@ impl DaemonClient {
         comments: &[crucible_core::diff::CommentRef],
         is_interactive: bool,
     ) -> Result<SendOutcome> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionSendMessage,
             Scoped::new(
                 session_id.to_string(),
@@ -293,17 +293,18 @@ impl DaemonClient {
     /// Clear the model context of the session, as the user. The transcript
     /// stays; the daemon sends `context_cleared`.
     pub async fn session_clear(&self, session_id: &str) -> Result<()> {
-        self.call(
-            RpcMethod::SessionClear,
-            serde_json::json!({ "session_id": session_id }),
-        )
-        .await
-        .map(drop)
+        let _: serde_json::Value = self
+            .call(
+                RpcMethod::SessionClear,
+                serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let resp: SessionCancelResponse = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionCancel,
                 Scoped::session(session_id.to_string()),
             )
@@ -328,7 +329,7 @@ impl DaemonClient {
     /// Generate a topic-based title for a session (idempotent — returns the
     /// existing title if one is already set).
     pub async fn session_generate_title(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionGenerateTitle,
             Scoped::session(session_id.to_string()),
         )
@@ -344,7 +345,7 @@ impl DaemonClient {
         kilns: &[KilnName],
         limit: Option<usize>,
     ) -> Result<crucible_core::session::SessionSearchResponse> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionSearch,
             SessionSearchRequest {
                 query: query.to_string(),
@@ -367,7 +368,7 @@ impl DaemonClient {
         session_id: &str,
         after: u64,
     ) -> Result<Vec<crucible_core::protocol::SessionEventMessage>> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionEventsAfter,
             Scoped::new(session_id.to_string(), EventCursor { after }),
         )
@@ -383,7 +384,7 @@ impl DaemonClient {
         session_type: Option<&str>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionListPersisted,
             SessionListPersistedRequest {
                 kilns: kilns.iter().map(KilnName::to_string).collect(),
@@ -404,7 +405,7 @@ impl DaemonClient {
         max_content_length: Option<usize>,
     ) -> Result<String> {
         let resp: SessionRenderMarkdownResponse = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionRenderMarkdown,
                 Scoped::new(
                     session_id.to_string(),
@@ -428,7 +429,7 @@ impl DaemonClient {
         include_timestamps: Option<bool>,
     ) -> Result<String> {
         let resp: SessionExportToFileResponse = self
-            .typed_call(
+            .call(
                 RpcMethod::SessionExportToFile,
                 Scoped::new(
                     session_id.to_string(),
@@ -455,7 +456,7 @@ impl DaemonClient {
         dry_run: bool,
         all_kilns: bool,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
+        self.call(
             RpcMethod::SessionCleanup,
             SessionCleanupRequest {
                 kilns: kilns.iter().map(KilnName::to_string).collect(),

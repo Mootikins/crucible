@@ -37,7 +37,7 @@ async fn retrying_an_unacknowledged_write_after_restart_preserves_the_other_writ
         let request = json!({ "path": path, "operation": "put", "content": ours, "base_hash": disk_hash(base), "base_text": base });
         assert_eq!(
             client
-                .call(RpcMethod::FsWrite, request.clone())
+                .call::<_, serde_json::Value>(RpcMethod::FsWrite, request.clone())
                 .await
                 .unwrap()["ok"],
             true
@@ -56,7 +56,7 @@ async fn retrying_an_unacknowledged_write_after_restart_preserves_the_other_writ
         let task = tokio::spawn(server.run());
         let client = DaemonClient::connect_to(&socket).await.unwrap();
         client.kiln_open(&kiln).await.unwrap();
-        let result = client.call(RpcMethod::FsWrite, request).await.unwrap();
+        let result: serde_json::Value = client.call(RpcMethod::FsWrite, request).await.unwrap();
         if let Some(expected) = expected {
             assert_eq!(result["ok"], true, "{result}");
             assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
@@ -101,15 +101,15 @@ async fn two_clients_merge_writes_through_the_daemon() {
         "base_hash": disk_hash(base), "base_text": base })
     };
     let (left, right) = tokio::join!(
-        a.call(RpcMethod::FsWrite, request("ONE\ntwo\nthree\n")),
-        b.call(RpcMethod::FsWrite, request("one\ntwo\nTHREE\n")),
+        a.call::<_, serde_json::Value>(RpcMethod::FsWrite, request("ONE\ntwo\nthree\n")),
+        b.call::<_, serde_json::Value>(RpcMethod::FsWrite, request("one\ntwo\nTHREE\n")),
     );
     assert!(left.unwrap()["ok"].as_bool().unwrap());
     assert!(right.unwrap()["ok"].as_bool().unwrap());
     assert_eq!(std::fs::read_to_string(path).unwrap(), "ONE\ntwo\nTHREE\n");
     let outside = dir.path().join("outside.md");
     let refused = a
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::FsWrite,
             json!({"path": outside, "operation": "put", "content": "no"}),
         )
@@ -279,7 +279,7 @@ async fn fs_write_fields_map_to_the_same_answers() {
     let write = |body: serde_json::Value| {
         let mut body = body;
         body["path"] = json!(path);
-        client.call(RpcMethod::FsWrite, body)
+        client.call::<_, serde_json::Value>(RpcMethod::FsWrite, body)
     };
 
     // No base: the write replaces the text with no check.
@@ -332,7 +332,7 @@ async fn fs_write_fields_map_to_the_same_answers() {
     // An empty hash with no text on an absent file writes.
     let fresh = kiln.join("fresh.md");
     let answer = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::FsWrite,
             json!({"path": fresh, "operation": "put", "content": "new\n", "base_hash": ""}),
         )

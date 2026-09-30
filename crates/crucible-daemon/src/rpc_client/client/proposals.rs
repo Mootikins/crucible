@@ -14,13 +14,13 @@ impl DaemonClient {
     /// `proposal.list`: the proposals in the Inbox, oldest first. With
     /// `all`, every stored proposal.
     pub async fn proposal_list(&self, all: bool) -> Result<Vec<Proposal>> {
-        self.typed_call_with_retry(RpcMethod::ProposalList, ProposalListRequest { all })
+        self.call_with_retry(RpcMethod::ProposalList, ProposalListRequest { all })
             .await
     }
 
     /// `proposal.get`: one proposal.
     pub async fn proposal_get(&self, id: &ProposalId) -> Result<Proposal> {
-        self.typed_call_with_retry(RpcMethod::ProposalGet, ProposalIdRequest { id: *id })
+        self.call_with_retry(RpcMethod::ProposalGet, ProposalIdRequest { id: *id })
             .await
     }
 
@@ -46,7 +46,7 @@ impl DaemonClient {
         paths: &[String],
         files: &[ProposalFile],
     ) -> Result<Proposal> {
-        self.typed_call(
+        self.call(
             RpcMethod::ProposalAccept,
             ProposalAcceptRequest {
                 id: *id,
@@ -81,7 +81,7 @@ impl DaemonClient {
         files: &[ProposalFile],
         reason: Option<&str>,
     ) -> Result<Proposal> {
-        self.typed_call(
+        self.call(
             RpcMethod::ProposalReject,
             ProposalRejectRequest {
                 id: *id,
@@ -96,7 +96,7 @@ impl DaemonClient {
     /// `proposal.dismiss`: take the proposal out of the Inbox with no
     /// decision.
     pub async fn proposal_dismiss(&self, id: &ProposalId) -> Result<Proposal> {
-        self.typed_call(RpcMethod::ProposalDismiss, ProposalIdRequest { id: *id })
+        self.call(RpcMethod::ProposalDismiss, ProposalIdRequest { id: *id })
             .await
     }
 
@@ -118,7 +118,7 @@ impl DaemonClient {
         root: Option<&crucible_core::session::PhysicalRoot>,
         text: &str,
     ) -> Result<Proposal> {
-        self.typed_call(
+        self.call(
             RpcMethod::ProposalResolve,
             ProposalResolveRequest {
                 id: *id,

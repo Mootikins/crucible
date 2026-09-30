@@ -35,7 +35,7 @@ async fn test_lua_session_lifecycle() {
 
     // Init a Lua session
     let init_result = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::LuaInitSession,
             serde_json::json!({
                 "session_id": "test-lua-session-1",
@@ -58,7 +58,7 @@ async fn test_lua_session_lifecycle() {
 
     // Shutdown the Lua session
     let shutdown_result = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::LuaShutdownSession,
             serde_json::json!({
                 "session_id": "test-lua-session-1",
@@ -75,7 +75,7 @@ async fn test_lua_session_lifecycle() {
 
     // Shutting down again should return false (already removed)
     let shutdown_again = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::LuaShutdownSession,
             serde_json::json!({
                 "session_id": "test-lua-session-1",
@@ -107,7 +107,7 @@ async fn test_plugin_list_returns_list() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::PluginList, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::PluginList, serde_json::json!({}))
         .await
         .expect("plugin.list RPC failed");
 
@@ -142,7 +142,7 @@ async fn test_project_list_returns_list() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::ProjectList, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::ProjectList, serde_json::json!({}))
         .await
         .expect("project.list RPC failed");
 
@@ -170,7 +170,7 @@ async fn test_storage_verify_returns_status() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::StorageVerify, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::StorageVerify, serde_json::json!({}))
         .await
         .expect("storage.verify RPC failed");
 
@@ -203,7 +203,7 @@ async fn test_mcp_status_returns_status() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::McpStatus, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::McpStatus, serde_json::json!({}))
         .await
         .expect("mcp.status RPC failed");
 
@@ -234,7 +234,7 @@ async fn test_skills_list_returns_list() {
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let result = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SkillsList,
             serde_json::json!({
                 "kiln_path": kiln_dir.path().to_string_lossy(),
@@ -271,7 +271,7 @@ async fn test_agents_list_profiles_returns_list() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::AgentsListProfiles, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::AgentsListProfiles, serde_json::json!({}))
         .await
         .expect("agents.list_profiles RPC failed");
 
@@ -313,7 +313,7 @@ async fn test_agents_resolve_profile_builtin() {
 
     // Resolve a known built-in profile
     let result = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::AgentsResolveProfile,
             serde_json::json!({
                 "name": "claude",
@@ -337,7 +337,7 @@ async fn test_agents_resolve_profile_builtin() {
 
     // Non-existent profile should return null
     let missing = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::AgentsResolveProfile,
             serde_json::json!({
                 "name": "nonexistent-agent-xyz",
@@ -361,7 +361,7 @@ async fn test_storage_cleanup_returns_status() {
         .expect("Failed to connect");
 
     let result = client
-        .call(RpcMethod::StorageCleanup, serde_json::json!({}))
+        .call::<_, serde_json::Value>(RpcMethod::StorageCleanup, serde_json::json!({}))
         .await
         .expect("storage.cleanup RPC failed");
 

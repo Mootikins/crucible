@@ -531,7 +531,7 @@ async fn test_call_with_retry_succeeds_on_valid_method() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    let result = client
+    let result: serde_json::Value = client
         .call_with_retry(RpcMethod::Ping, serde_json::json!({}))
         .await
         .unwrap();
@@ -543,7 +543,7 @@ async fn test_call_with_retry_does_not_retry_rpc_errors() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    let result = client
+    let result: anyhow::Result<serde_json::Value> = client
         .call_with_retry(RpcMethod::SessionGet, serde_json::json!({}))
         .await;
     assert!(
@@ -680,13 +680,17 @@ mod simple_mode_correlation {
 
         let a = tokio::spawn({
             let client = client.clone();
-            async move { client.call(RpcMethod::Ping, serde_json::Value::Null).await }
+            async move {
+                client
+                    .call::<_, serde_json::Value>(RpcMethod::Ping, serde_json::Value::Null)
+                    .await
+            }
         });
         let b = tokio::spawn({
             let client = client.clone();
             async move {
                 client
-                    .call(RpcMethod::KilnList, serde_json::Value::Null)
+                    .call::<_, serde_json::Value>(RpcMethod::KilnList, serde_json::Value::Null)
                     .await
             }
         });
@@ -743,7 +747,7 @@ mod simple_mode_correlation {
         });
 
         let client = DaemonClient::connect_to(&sock).await.expect("connect");
-        let result = client
+        let result: serde_json::Value = client
             .call(RpcMethod::Ping, serde_json::Value::Null)
             .await
             .expect("call");

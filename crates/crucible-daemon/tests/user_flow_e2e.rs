@@ -300,7 +300,7 @@ async fn test_complete_user_flow() {
 
     // ── Step 11: Close kiln ───────────────────────────────────────────────
     let close_result = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::KilnClose,
             serde_json::json!({"path": kiln_dir.to_string_lossy()}),
         )

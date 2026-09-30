@@ -53,7 +53,7 @@ pub async fn fetch_effective_from_daemon(
     let Some(client) = crate::common::daemon_client_if_running().await else {
         return Ok(None);
     };
-    let resp = client
+    let resp: serde_json::Value = client
         .call(
             crucible_core::protocol::RpcMethod::ConfigEffective,
             serde_json::json!({}),

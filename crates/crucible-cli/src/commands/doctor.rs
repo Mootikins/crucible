@@ -93,7 +93,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     if init_lua_path.exists() || explicit_override {
         let daemon_boot_hash = match DaemonClient::connect().await {
             Ok(client) => client
-                .call(RpcMethod::ConfigEffective, serde_json::json!({}))
+                .call::<_, serde_json::Value>(RpcMethod::ConfigEffective, serde_json::json!({}))
                 .await
                 .ok()
                 .and_then(|resp| resp["boot_hash"].as_str().map(String::from)),

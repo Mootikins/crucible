@@ -13,14 +13,14 @@ impl DaemonClient {
         &self,
         params: Scoped<LuaSessionInit>,
     ) -> Result<LuaInitSessionResponse> {
-        self.typed_call(RpcMethod::LuaInitSession, params).await
+        self.call(RpcMethod::LuaInitSession, params).await
     }
 
     pub async fn lua_shutdown_session(
         &self,
         params: Scoped<()>,
     ) -> Result<LuaShutdownSessionResponse> {
-        self.typed_call(RpcMethod::LuaShutdownSession, params).await
+        self.call(RpcMethod::LuaShutdownSession, params).await
     }
 
     // =========================================================================
@@ -32,7 +32,7 @@ impl DaemonClient {
         &self,
         params: LuaDiscoverPluginsRequest,
     ) -> Result<LuaDiscoverPluginsResponse> {
-        self.typed_call(RpcMethod::LuaDiscoverPlugins, params).await
+        self.call(RpcMethod::LuaDiscoverPlugins, params).await
     }
 
     /// Run health checks for a plugin.
@@ -40,7 +40,7 @@ impl DaemonClient {
         &self,
         params: LuaPluginHealthRequest,
     ) -> Result<LuaPluginHealthResponse> {
-        self.typed_call(RpcMethod::LuaPluginHealth, params).await
+        self.call(RpcMethod::LuaPluginHealth, params).await
     }
 
     /// Generate or verify Lua type stubs.
@@ -48,7 +48,7 @@ impl DaemonClient {
         &self,
         params: LuaGenerateStubsRequest,
     ) -> Result<LuaGenerateStubsResponse> {
-        self.typed_call(RpcMethod::LuaGenerateStubs, params).await
+        self.call(RpcMethod::LuaGenerateStubs, params).await
     }
 
     /// Run plugin test files.
@@ -56,6 +56,6 @@ impl DaemonClient {
         &self,
         params: LuaRunPluginTestsRequest,
     ) -> Result<LuaRunPluginTestsResponse> {
-        self.typed_call(RpcMethod::LuaRunPluginTests, params).await
+        self.call(RpcMethod::LuaRunPluginTests, params).await
     }
 }

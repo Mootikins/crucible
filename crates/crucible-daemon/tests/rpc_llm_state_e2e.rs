@@ -50,7 +50,7 @@ async fn a_recorded_provider_reaches_the_daemons_provider_table() {
         .expect("connect");
 
     let listed = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::ProvidersList,
             serde_json::json!({ "include_models": false }),
         )
@@ -88,7 +88,7 @@ async fn a_daemon_with_no_recorded_selection_starts_normally() {
         .expect("connect");
 
     let listed = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::ProvidersList,
             serde_json::json!({ "include_models": false }),
         )

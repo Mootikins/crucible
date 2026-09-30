@@ -95,7 +95,7 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
     let client = server.connect().await;
 
     let created = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
@@ -137,7 +137,7 @@ async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
     let client = server.connect().await;
 
     let created = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
@@ -162,7 +162,7 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
     let client = server.connect().await;
 
     let created = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
@@ -196,7 +196,7 @@ async fn agent_card_and_agent_name_together_are_rejected() {
     let before = session_count(&client).await;
 
     let err = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
@@ -231,7 +231,7 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
     let before = session_count(&client).await;
 
     let err = client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
@@ -344,7 +344,7 @@ async fn configure_agent_keeps_an_acp_profile_name() {
     // default, and spelling only the load-bearing fields keeps the test
     // readable when the struct grows.
     client
-        .call(
+        .call::<_, serde_json::Value>(
             RpcMethod::SessionConfigureAgent,
             serde_json::json!({
                 "session_id": session_id,
@@ -574,7 +574,7 @@ async fn configure_agent_refuses_an_internal_endpoint() {
 
     for endpoint in INTERNAL_ENDPOINTS {
         let err = client
-            .call(
+            .call::<_, serde_json::Value>(
                 RpcMethod::SessionConfigureAgent,
                 serde_json::json!({
                     "session_id": session_id,

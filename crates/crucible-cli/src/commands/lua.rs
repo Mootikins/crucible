@@ -32,12 +32,10 @@ pub async fn execute(code: Option<String>, file: Option<PathBuf>) -> Result<()> 
     };
 
     let client = daemon_client().await?;
-    let response = client
+    let response: serde_json::Value = client
         .call(
             RpcMethod::LuaEval,
-            serde_json::to_value(crucible_core::protocol::requests::LuaEvalRequest {
-                code: source,
-            })?,
+            crucible_core::protocol::requests::LuaEvalRequest { code: source },
         )
         .await?;
 

@@ -55,7 +55,7 @@ async fn test_interaction_event_flows_to_receiver() {
         .await
         .expect("subscribe failed");
 
-    let interact_result = client
+    let interact_result: serde_json::Value = client
         .call(
             RpcMethod::SessionTestInteraction,
             serde_json::json!({
@@ -222,7 +222,7 @@ async fn test_client_handles_rpc_errors() {
         .expect("Failed to connect");
 
     // Make a raw call that will trigger an error (missing required param)
-    let result = client
+    let result: anyhow::Result<serde_json::Value> = client
         .call(RpcMethod::KilnOpen, serde_json::json!({}))
         .await;
 
