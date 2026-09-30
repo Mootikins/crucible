@@ -2,17 +2,18 @@
  * The chrome on the rails: the controls of the old top bar, in the ribbon's
  * head and tail slots, where the current app keeps its own.
  */
-import { createSignal } from 'solid-js';
+import { Show, createSignal } from 'solid-js';
 import { Contrast, Plus, Search, Settings, SlidersHorizontal } from 'lucide-solid';
 import { RibbonCommand } from '@/windowing/components/RibbonButton';
 import type { WindowingSlots } from '@/windowing/components/context';
 import type { EdgePanelPosition } from '@/windowing/model/types';
 import { windowActions, windowStore } from '@/windowing/store';
+import { Notice } from '../components/primitives/Notice';
 import { Popover } from '../components/primitives/Popover';
 import { InboxButton } from '../components/rail/InboxButton';
 import { RailButton } from '../components/rail/RailButton';
 import { SettingsPanel } from '../components/rail/SettingsPanel';
-import { SpawnButton } from '../components/rail/SpawnButton';
+import { SpawnButton, spawnText } from '../components/rail/SpawnButton';
 import { setState, state } from '../state';
 import { setTweak, toggleToolbox, tweaks } from '../tweaks';
 import { InboxContainer, waitingCount } from './InboxContainer';
@@ -32,6 +33,19 @@ function openPop(kind: Exclude<Pop, null>, e: MouseEvent) {
   setPop(kind);
 }
 const closePop = () => setPop(null);
+
+/** The notice after a swap. Each press makes a new one, so its fade starts again. */
+const [notice, setNotice] = createSignal<{ text: string; anchor: DOMRect } | null>(null);
+let noticeTimer: number | undefined;
+
+/** Swap what opens in the centre. Nothing moves, so a notice says what changed. */
+function toggleSpawn(e: MouseEvent) {
+  const next = state.spawn === 'docs' ? 'sessions' : 'docs';
+  setState('spawn', next);
+  setNotice({ text: spawnText(next), anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => setNotice(null), 2200);
+}
 
 /**
  * Open the settings popover at the rail's settings button, for a command
@@ -61,7 +75,10 @@ export function mockSlots(onNewSession: () => void, onSearch: () => void): Windo
           <RibbonCommand title="Look" testId="mk-look" onClick={toggleToolbox}><SlidersHorizontal class="w-4 h-4" /></RibbonCommand>
           {/* The core's own swap button (it swaps the rails) is hidden by the
               mockup stylesheet; this one swaps what opens in the centre. */}
-          <SpawnButton spawn={state.spawn} onToggle={() => setState('spawn', state.spawn === 'docs' ? 'sessions' : 'docs')} />
+          <SpawnButton spawn={state.spawn} onToggle={toggleSpawn} />
+          <Show when={notice()} keyed>
+            {(n) => <Notice text={n.text} anchor={n.anchor} />}
+          </Show>
           <RailButton title="Settings" testId="mk-settings" onClick={(e) => openPop('settings', e)}><Settings class="w-4 h-4" /></RailButton>
           <Popover open={pop() === 'inbox'} anchor={anchor()} onClose={closePop}>
             <InboxContainer onDone={closePop} />

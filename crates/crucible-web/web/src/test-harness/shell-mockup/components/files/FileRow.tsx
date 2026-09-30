@@ -28,7 +28,7 @@ export const FileRow: Component<FileRowProps> = (props) => {
     <button
       type="button"
       class="mk-trow"
-      style={{ 'padding-left': `${18 + props.depth * 14}px` }}
+      style={{ '--mk-depth': props.depth }}
       aria-current={props.current ? 'page' : undefined}
       onClick={(e) => props.onOpen(e)}
     >

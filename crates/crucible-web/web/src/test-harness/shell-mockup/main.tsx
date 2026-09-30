@@ -20,7 +20,7 @@ import { WindowManager } from '@/windowing/components/WindowManager';
 import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
 import { applyTweaks } from './tweaks';
-import { setFocusedNote } from './state';
+import { setFocusedNote, state } from './state';
 import { focusComposer, openNote } from './actions';
 import { TerminalView } from './components/terminal/TerminalView';
 import { ChangesContainer } from './containers/ChangesContainer';
@@ -53,6 +53,21 @@ function FocusedNoteTracker() {
   return null;
 }
 
+/**
+ * The right rail's session tab takes the active session's title, so the
+ * ribbon tooltip names the session. The seed calls it "Session".
+ */
+function SessionTabTitle() {
+  createEffect(() => {
+    const title = state.sessions[state.active]?.title;
+    const group = Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === 'session'));
+    const tab = group?.tabs.find((t) => t.id === 'session');
+    // Only a changed title writes: the write makes a new tab object.
+    if (group && tab && title && tab.title !== title) windowActions.updateTab(group.id, 'session', { title });
+  });
+  return null;
+}
+
 const renderContent = (tab: () => Tab) => {
   const t = tab() as Tab<MockType>;
   switch (t.contentType) {
@@ -79,6 +94,7 @@ render(
       slots={mockSlots(focusComposer, () => openNote('Index'))}
     >
       <FocusedNoteTracker />
+      <SessionTabTitle />
     </WindowManager>
   ),
   document.getElementById('root')!,

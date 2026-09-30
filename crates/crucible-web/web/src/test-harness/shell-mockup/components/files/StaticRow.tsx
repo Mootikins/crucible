@@ -9,7 +9,6 @@ export const StaticRow: Component<{ name: string; dir?: boolean; quiet?: boolean
   <div
     class="mk-trow"
     classList={{ 'mk-dir': !!props.dir, 'mk-quiet': !!props.quiet }}
-    style={{ 'padding-left': props.dir ? '4px' : '18px' }}
   >
     <Show when={props.dir}>
       <Caret open={false} />
