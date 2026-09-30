@@ -8,8 +8,8 @@
   "paths": {
     "/api/agents": {
       "get": {
-        "summary": "ACP agent profiles with probed availability, for the session-creation\nagent picker.",
-        "description": "Served through the SWR catalog cache — the daemon probe takes ~0.5s and\nmust not gate every splash render.",
+        "summary": "Read the `profiles` array out of the daemon's `agents.list_profiles`\nanswer, failing safe to an empty list. A missing, non-array or unreadable\nkey must not leak `null` to the client — the picker expects `agents` to be\niterable.\nACP agent profiles with probed availability, for the session-creation\nagent picker.",
+        "description": "Cached in the daemon (`agents.list_profiles`,\n`crate::agent_manager::CATALOG_CACHE_TTL`) — the probe takes ~0.5s and\nmust not gate every splash render. Every caller of that RPC method shares\nthe cache now; it used to be a cache in this crate alone.",
         "operationId": "list_agents",
         "responses": {
           "200": {
@@ -384,7 +384,7 @@
       },
       "put": {
         "summary": "`PUT /api/canvas` — write a canvas document.",
-        "description": "This is the authoritative layer: the document is parsed and every reference\nchecked before anything touches disk. A canvas naming a file outside its\nkiln is refused wholesale with the offending node ids, rather than being\nwritten and cleaned up later.",
+        "description": "The document is parsed here, but the authoritative reference check runs in\nthe daemon's `fs.write`: it checks the bytes this route actually sends,\nafter [`restore_redacted`] has put back any reference the read path\nblanked, so a historical bad reference cannot ride back to disk unchecked\non an unrelated edit. A canvas naming a file outside its kiln is refused\nwholesale with the offending node ids, rather than being written and\ncleaned up later.",
         "operationId": "put_canvas",
         "requestBody": {
           "content": {
@@ -1779,9 +1779,6 @@
               }
             }
           },
-          "400": {
-            "description": "The content is too large, or the name carries a traversal sequence"
-          },
           "403": {
             "description": "The root refuses writes"
           },
@@ -1795,7 +1792,7 @@
             "description": "The file on disk is not UTF-8 text"
           },
           "422": {
-            "description": "The path is invalid, or escapes its root"
+            "description": "The content is too large, the name carries a traversal sequence, or the path is otherwise invalid — `fs.write`'s own gates, shared by every caller"
           },
           "502": {
             "description": "The daemon could not be reached"
@@ -2232,7 +2229,7 @@
     "/api/project/register": {
       "post": {
         "summary": "`POST /api/project/register` — make a directory a registered project.",
-        "description": "Registering a root also grants the file API read access to everything\nbeneath it, so the path is canonicalized and checked before AND after the\ndaemon acts: the daemon resolves a registration inside a git repo up to the\nrepo root, which can land above what was checked.",
+        "description": "The credential-store, config-tree and filesystem-floor refusals live in\nthe daemon now (`project_manager::register_untrusted`, reached through\n`project.register`'s `untrusted` flag): this route asks for the untrusted\npath, so every caller of that RPC method gets the same refusal, not only\nrequests that arrive through this route. `[web] registration_roots`\nstays here: it is an operator setting of the web process, not a daemon\nconcept, so it is checked before AND after the daemon acts — the daemon\nresolves a registration inside a git repo up to the repo root, which can\nland above what was checked.",
         "operationId": "register_project",
         "requestBody": {
           "content": {
@@ -2256,7 +2253,10 @@
             }
           },
           "403": {
-            "description": "The web API may not make this path a root, and the body says why"
+            "description": "The path is outside a configured `[web] registration_roots` entry"
+          },
+          "422": {
+            "description": "The daemon refuses this path as a root for an untrusted caller, and the body says why"
           },
           "502": {
             "description": "The daemon could not register the project"
@@ -2552,7 +2552,7 @@
     },
     "/api/providers": {
       "get": {
-        "summary": "Served through the SWR catalog cache — provider probing takes ~0.7s and\nmust not gate every splash render. Shape: `{providers: [ProviderInfo]}`.",
+        "summary": "Cached in the daemon (`providers.list`,\n`crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s\nand must not gate every splash render. Every caller of that RPC method\nshares the cache now; it used to be a cache in this crate alone. Shape:\n`{providers: [ProviderInfo]}`.",
         "description": "Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and\nforward the raw directory to the daemon, which fed it to\n`find_workspace_and_resolve_classification` — so an arbitrary directory\ncould influence which providers a caller was told about, an input door\nstanding outside the registry floor every other kiln input now passes\nthrough. Nothing ever sent it (`listProviders()` takes no argument), so\nconverting it to a name would have preserved a door for no caller.",
         "operationId": "list_providers",
         "responses": {
@@ -13540,59 +13540,6 @@
           }
         }
       },
-      "ProviderRow": {
-        "type": "object",
-        "description": "One LLM provider the daemon found.\n\nMirrors `crucible_core::types::ProviderInfo` field for field. It is\ndeclared here rather than re-exported because `crucible-core` takes no\nutoipa dependency, and a schema is what puts the fields in the document.",
-        "required": [
-          "name",
-          "provider_type",
-          "available",
-          "models",
-          "is_local"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "provider_type": {
-            "type": "string",
-            "description": "The backend behind the provider, such as `ollama` or `openai`."
-          },
-          "available": {
-            "type": "boolean",
-            "description": "Whether the provider answered its probe."
-          },
-          "default_model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "endpoint": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why the provider is unavailable, when it is."
-          },
-          "is_local": {
-            "type": "boolean",
-            "description": "Whether the provider runs on this machine."
-          }
-        }
-      },
       "ProvidersListReply": {
         "type": "object",
         "description": "What `providers.list` answers.",
@@ -13624,7 +13571,7 @@
       },
       "ProvidersResponse": {
         "type": "object",
-        "description": "What `GET /api/providers` answers.",
+        "description": "What `GET /api/providers` answers.\n\n`crucible_core::types::ProviderInfo` is the daemon's own reply type now\nthat `list_providers` is typed end to end; this route no longer keeps a\nfield-for-field copy of it.",
         "required": [
           "providers"
         ],
@@ -13632,7 +13579,7 @@
           "providers": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProviderRow"
+              "$ref": "#/components/schemas/ProviderInfo"
             }
           }
         }
@@ -14132,7 +14079,7 @@
             "description": "The session was resident and merely paused."
           }
         ],
-        "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
+        "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session — a decision `session.resume` itself makes and\nreports (`SessionTransitionReply::resumed_from_storage`), not something\nthis route infers from which daemon call happened to succeed.\n\nThe warm path answers the state change alone. The cold path (the session\nwas not held in memory, or was held but not `Paused` — most commonly\n`Ended`) also answers the full history, read with `session.history`\nafter the daemon's own resume, because the browser's view of a session it\ndid not just have open may be stale.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
       },
       "ReviewPayload": {
         "oneOf": [
@@ -16203,6 +16150,10 @@
           },
           "state": {
             "type": "string"
+          },
+          "resumed_from_storage": {
+            "type": "boolean",
+            "description": "`session.resume` only: the session was not resumable in memory (not\nheld at all, or held but not `Paused`), so the daemon reloaded it\nfrom storage and revived it. A caller that needs the full transcript\nafter a resume — the web client does — reads this to decide whether\nits own view is stale and it must also call `session.history`.\nOmitted, not `false`, for `session.pause`, which never sets it."
           }
         }
       },

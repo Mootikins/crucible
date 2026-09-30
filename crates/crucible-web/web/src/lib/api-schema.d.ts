@@ -12,10 +12,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * ACP agent profiles with probed availability, for the session-creation
+         * Read the `profiles` array out of the daemon's `agents.list_profiles`
+         *     answer, failing safe to an empty list. A missing, non-array or unreadable
+         *     key must not leak `null` to the client — the picker expects `agents` to be
+         *     iterable.
+         *     ACP agent profiles with probed availability, for the session-creation
          *     agent picker.
-         * @description Served through the SWR catalog cache — the daemon probe takes ~0.5s and
-         *     must not gate every splash render.
+         * @description Cached in the daemon (`agents.list_profiles`,
+         *     `crate::agent_manager::CATALOG_CACHE_TTL`) — the probe takes ~0.5s and
+         *     must not gate every splash render. Every caller of that RPC method shares
+         *     the cache now; it used to be a cache in this crate alone.
          */
         get: operations["list_agents"];
         put?: never;
@@ -150,10 +156,13 @@ export interface paths {
         get: operations["get_canvas"];
         /**
          * `PUT /api/canvas` — write a canvas document.
-         * @description This is the authoritative layer: the document is parsed and every reference
-         *     checked before anything touches disk. A canvas naming a file outside its
-         *     kiln is refused wholesale with the offending node ids, rather than being
-         *     written and cleaned up later.
+         * @description The document is parsed here, but the authoritative reference check runs in
+         *     the daemon's `fs.write`: it checks the bytes this route actually sends,
+         *     after [`restore_redacted`] has put back any reference the read path
+         *     blanked, so a historical bad reference cannot ride back to disk unchecked
+         *     on an unrelated edit. A canvas naming a file outside its kiln is refused
+         *     wholesale with the offending node ids, rather than being written and
+         *     cleaned up later.
          */
         put: operations["put_canvas"];
         post?: never;
@@ -1061,10 +1070,15 @@ export interface paths {
         put?: never;
         /**
          * `POST /api/project/register` — make a directory a registered project.
-         * @description Registering a root also grants the file API read access to everything
-         *     beneath it, so the path is canonicalized and checked before AND after the
-         *     daemon acts: the daemon resolves a registration inside a git repo up to the
-         *     repo root, which can land above what was checked.
+         * @description The credential-store, config-tree and filesystem-floor refusals live in
+         *     the daemon now (`project_manager::register_untrusted`, reached through
+         *     `project.register`'s `untrusted` flag): this route asks for the untrusted
+         *     path, so every caller of that RPC method gets the same refusal, not only
+         *     requests that arrive through this route. `[web] registration_roots`
+         *     stays here: it is an operator setting of the web process, not a daemon
+         *     concept, so it is checked before AND after the daemon acts — the daemon
+         *     resolves a registration inside a git repo up to the repo root, which can
+         *     land above what was checked.
          */
         post: operations["register_project"];
         delete?: never;
@@ -1217,8 +1231,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Served through the SWR catalog cache — provider probing takes ~0.7s and
-         *     must not gate every splash render. Shape: `{providers: [ProviderInfo]}`.
+         * Cached in the daemon (`providers.list`,
+         *     `crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s
+         *     and must not gate every splash render. Every caller of that RPC method
+         *     shares the cache now; it used to be a cache in this crate alone. Shape:
+         *     `{providers: [ProviderInfo]}`.
          * @description Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and
          *     forward the raw directory to the daemon, which fed it to
          *     `find_workspace_and_resolve_classification` — so an arbitrary directory
@@ -6162,27 +6179,6 @@ export interface components {
             provider_type: string;
             reason?: string | null;
         };
-        /**
-         * @description One LLM provider the daemon found.
-         *
-         *     Mirrors `crucible_core::types::ProviderInfo` field for field. It is
-         *     declared here rather than re-exported because `crucible-core` takes no
-         *     utoipa dependency, and a schema is what puts the fields in the document.
-         */
-        ProviderRow: {
-            /** @description Whether the provider answered its probe. */
-            available: boolean;
-            default_model?: string | null;
-            endpoint?: string | null;
-            /** @description Whether the provider runs on this machine. */
-            is_local: boolean;
-            models: string[];
-            name: string;
-            /** @description The backend behind the provider, such as `ollama` or `openai`. */
-            provider_type: string;
-            /** @description Why the provider is unavailable, when it is. */
-            reason?: string | null;
-        };
         ProvidersListedPayload: {
             providers: components["schemas"]["ProviderInfo"][];
         };
@@ -6190,9 +6186,15 @@ export interface components {
         ProvidersListReply: {
             providers: components["schemas"]["ProviderInfo"][];
         };
-        /** @description What `GET /api/providers` answers. */
+        /**
+         * @description What `GET /api/providers` answers.
+         *
+         *     `crucible_core::types::ProviderInfo` is the daemon's own reply type now
+         *     that `list_providers` is typed end to end; this route no longer keeps a
+         *     field-for-field copy of it.
+         */
         ProvidersResponse: {
-            providers: components["schemas"]["ProviderRow"][];
+            providers: components["schemas"]["ProviderInfo"][];
         };
         /**
          * @description A plugin's published data changed, delivered to the browser.
@@ -6430,11 +6432,15 @@ export interface components {
         };
         /**
          * @description What `POST /api/session/{id}/resume` answers, which depends on the path
-         *     that resumed the session.
+         *     that resumed the session — a decision `session.resume` itself makes and
+         *     reports (`SessionTransitionReply::resumed_from_storage`), not something
+         *     this route infers from which daemon call happened to succeed.
          *
-         *     The warm path answers the state change. The cold path reloads the session
-         *     from the store and answers its history, because that call is also what
-         *     `GET /api/session/{id}/history` serves.
+         *     The warm path answers the state change alone. The cold path (the session
+         *     was not held in memory, or was held but not `Paused` — most commonly
+         *     `Ended`) also answers the full history, read with `session.history`
+         *     after the daemon's own resume, because the browser's view of a session it
+         *     did not just have open may be stale.
          *
          *     **`Restored` must stay first.** The daemon sends no tag, so the variants
          *     are told apart by their fields, and `Live`'s required fields
@@ -7384,6 +7390,15 @@ export interface components {
          */
         SessionTransitionReply: {
             previous_state: string;
+            /**
+             * @description `session.resume` only: the session was not resumable in memory (not
+             *     held at all, or held but not `Paused`), so the daemon reloaded it
+             *     from storage and revived it. A caller that needs the full transcript
+             *     after a resume — the web client does — reads this to decide whether
+             *     its own view is stale and it must also call `session.history`.
+             *     Omitted, not `false`, for `session.pause`, which never sets it.
+             */
+            resumed_from_storage?: boolean;
             session_id: string;
             state: string;
         };
@@ -9358,7 +9373,6 @@ export type SchemaProposalResolveRequest = components['schemas']['ProposalResolv
 export type SchemaProposalState = components['schemas']['ProposalState'];
 export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
 export type SchemaProviderInfo = components['schemas']['ProviderInfo'];
-export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersListedPayload = components['schemas']['ProvidersListedPayload'];
 export type SchemaProvidersListReply = components['schemas']['ProvidersListReply'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
@@ -11255,13 +11269,6 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSavedResponse"];
                 };
             };
-            /** @description The content is too large, or the name carries a traversal sequence */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description The root refuses writes */
             403: {
                 headers: {
@@ -11290,7 +11297,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The path is invalid, or escapes its root */
+            /** @description The content is too large, the name carries a traversal sequence, or the path is otherwise invalid — `fs.write`'s own gates, shared by every caller */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -11803,8 +11810,15 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
-            /** @description The web API may not make this path a root, and the body says why */
+            /** @description The path is outside a configured `[web] registration_roots` entry */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon refuses this path as a root for an untrusted caller, and the body says why */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
