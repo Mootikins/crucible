@@ -1252,12 +1252,21 @@ route.
    and client state in the daemon, the four rules in the daemon.
 6. Map daemon error codes to one error shape in the browser, in one place.
 
+7. Delete the hand-written `DaemonClient` methods that only forward one
+   row. Gap 1 added one generated `rpc_<method>` function per row, so each
+   such method is now a second way to make the same call. About 160 stay
+   because the web's `forward_rpc!` calls them by name; the one route of
+   this step removes those callers. Keep a method only where it adds
+   behavior (a retry or timeout policy, a derived value, an argument
+   transform), and name the behavior.
+
 **Done when.**
 - The web server has the routes in the "keep" rows, one event stream and the
   RPC route, and no route that only forwards one RPC. About 90 types and
   about 70 TS functions are gone.
 - The change cost of a browser method falls from about 9 places to 3 (plus
   one allow-list line), measured by adding a scratch method.
+- No hand-written `DaemonClient` method only forwards one row.
 - Each local-admin method answers 403 through the real HTTP route.
 - The four moved rules refuse a bad call from the TUI and from Lua too,
   tested through the daemon RPC, not only through the web.
