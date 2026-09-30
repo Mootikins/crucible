@@ -1,0 +1,3 @@
+[
+  {"name": "claude", "description": "Claude Code", "command": "claude", "is_builtin": true, "args": ["--acp"], "env": {"FOO": "bar"}}
+]

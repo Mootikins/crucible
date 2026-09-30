@@ -1,0 +1,3 @@
+[
+  {"processed": 2, "skipped": 1, "errors": [{"path": "notes/b.md", "error": "invalid frontmatter"}]}
+]

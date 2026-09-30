@@ -1,0 +1,5 @@
+[
+  {"status": "ok"},
+  {"status": "ok", "discovered": 3, "processed": 2, "skipped": 1, "errors": [{"path": "a.md", "error": "parse failed"}]},
+  {"status": "ok", "process_error": "kiln root vanished"}
+]

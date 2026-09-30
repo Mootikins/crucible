@@ -1,0 +1,16 @@
+[
+  {
+    "providers": [
+      {
+        "name": "OpenAI",
+        "provider_type": "openai",
+        "available": true,
+        "default_model": "gpt-4o",
+        "models": ["gpt-4o"],
+        "endpoint": null,
+        "reason": "config",
+        "is_local": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {"matched": false, "opened": [], "skipped": []},
+  {
+    "matched": true,
+    "project": "my-project",
+    "opened": [{"kiln": "docs", "path": "/home/user/docs"}],
+    "skipped": [{"kiln": "archive", "reason": "lazy"}],
+    "errors": [{"kiln": null, "path": "/home/user/missing", "error": "not found"}]
+  }
+]

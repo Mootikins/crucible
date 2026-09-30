@@ -1,0 +1,8 @@
+[
+  {
+    "from": "notes/old.md",
+    "to": "notes/new.md",
+    "rewritten_sources": ["notes/a.md"],
+    "skipped": [{"source_path": "notes/b.md", "raw_target": "Old", "reason": "stale-span"}]
+  }
+]

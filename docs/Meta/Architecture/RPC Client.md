@@ -548,14 +548,31 @@ either; they are exercised, if at all, outside this page's file set.
   named core type: about 91 rows carry `serde_json::Value` on one or both
   sides, in three groups — (1) 49 client methods already returned
   `Result<serde_json::Value>` before this step; (2) about 15 more whose
-  true wire type lives in `crucible-daemon` (`McpStatus`, `ScmCloneResponse`,
+  true wire type lived in `crucible-daemon` (`McpStatus`, `ScmCloneResponse`,
   `GrepSearchResponse`, `FtsResult`, `FsListing`/`FsMoveReply`/`FsTrashReply`,
   `SuggestLinksReply`, `WebhookReceiveReply`, `AgentProfilesReply`, and the
-  six `base.*` params/reply pairs in `crucible_daemon::bases`) — `crucible-core`
-  cannot name a daemon-crate type without a dependency cycle, so these stay
-  `Value` until that type moves to core, unfinished step 6/10 work; (3)
-  about 27 more behind a handler in `rpc/dispatch.rs` that still reads a raw
+  six `base.*` params/reply pairs in `crucible_daemon::bases`); (3) about 27
+  more behind a handler in `rpc/dispatch.rs` that still reads a raw
   `&Request` (mostly `config.*`, `session.can_undo`/`undo_depth`/
   `cache_stats`/`list_models`/`list_notifications`, `ui.*`), never having
   called `typed_params`, so their reply was hand-built `json!` from the
   start and never had a shape to name.
+- Step 19 part B, gap 2 (storage-side rows) closed group (2) above and the
+  storage-side share of groups (1)/(3): every `kiln.*`, `note.*`, `fs.*`,
+  `base.*`, `diff.*`, `proposal.*`, `storage.*`, `mcp.*`, `skills.*`,
+  `agents.*`, `models.*`, `providers.*`, `embeddings.*`, `project.*`,
+  `scm.*`, `webhook.*`, `llm.*`, `embed.*` row, plus the bare
+  `search_vectors`/`search_text`/`search_grep`/`list_notes`/
+  `get_note_by_name`/`get_backlinks`/`process_file`/`process_batch`/
+  `suggest_links` methods, now names a real core reply type except the
+  seven documented in `rpc_methods!` itself (`kiln.registry_list`,
+  `project.registry_list`, `fs.read`, `fs.write`, and the six `base.*`
+  rows — each reply is a merge of mutually exclusive shapes that a single
+  struct can only express as an Option-per-field merge, which this pass's
+  own design rule forbids). `McpStatus`, `ScmCloneResponse`,
+  `GrepSearchResponse`, `FtsResult`, `FsListing`/`FsMoveReply`/
+  `FsTrashReply`/`FsMkdirReply`, `SkipReason`/`SkippedRef`,
+  `SuggestLinksReply`, `WebhookReceiveReply`, `AgentProfilesReply`/
+  `AgentProfileEntry` moved from `crucible-daemon` to
+  `crucible-core/src/protocol/requests/storage.rs` (and `agent.rs` for the
+  agent/model/provider replies); the daemon crate now only re-exports them.

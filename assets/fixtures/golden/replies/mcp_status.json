@@ -1,0 +1,4 @@
+[
+  {"running": false},
+  {"running": true, "transport": "sse", "port": 3847, "kiln_path": "/home/user/docs", "finished": false}
+]

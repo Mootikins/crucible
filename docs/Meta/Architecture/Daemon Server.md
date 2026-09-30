@@ -300,6 +300,24 @@ type per method exists to bind them — see the module doc of
 `serde_json::Value` on one or both sides — see [[RPC Client#Findings]] for
 the three reasons and the counts.
 
+Step 19 part B, gap 2 typed the storage-side share of those rows: every
+`kiln.*`, `note.*`, `fs.*`, `base.*`, `diff.*`, `proposal.*`, `storage.*`,
+`mcp.*`, `skills.*`, `agents.*`, `models.*`, `providers.*`, `embeddings.*`,
+`project.*`, `scm.*`, `webhook.*`, `llm.*`, `embed.*` row now names a real
+core reply type, built as a struct literal in its handler rather than
+`json!`, except `kiln.registry_list`, `project.registry_list`, `fs.read`,
+`fs.write` and the six `base.*` rows — each documented inline in
+`rpc_methods!` with the reason it stays `serde_json::Value` (a merge of
+mutually exclusive shapes, or a handler that answers six operations from
+one raw `&Request`). `McpStatus`, `ScmCloneResponse`, `GrepSearchResponse`,
+`FtsResult`, `FsListing`/`FsMoveReply`/`FsTrashReply`/`FsMkdirReply` (with
+`SkipReason`/`SkippedRef`), `SuggestLinksReply`, `WebhookReceiveReply` and
+`AgentProfilesReply`/`AgentProfileEntry` — previously daemon-local — moved
+to `crucible-core`; `crucible-daemon`'s `mcp_server.rs`, `scm.rs`,
+`tools/grep_engine.rs`, `storage/sqlite/fts.rs`, `server/fs/mod.rs`,
+`server/note_refactor.rs`, `tools/autolink.rs` and `server/platform.rs`
+now `pub use` them from core instead of defining a second copy.
+
 **`LuaSessionState`** (`crates/crucible-daemon/src/server/mod.rs`) pairs a
 per-session `LuaExecutor` with an `end_hooks_fired: bool` guard, because both
 `session.end` (`crates/crucible-daemon/src/rpc/dispatch.rs`) and

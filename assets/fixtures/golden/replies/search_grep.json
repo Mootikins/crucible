@@ -1,0 +1,3 @@
+[
+  {"hits": [{"path": "/repo/a.rs", "rel_path": "a.rs", "line": 3, "text": "fn main() {}", "match_start": 3, "match_end": 7}], "truncated": false}
+]

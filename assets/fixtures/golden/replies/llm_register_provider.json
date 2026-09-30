@@ -1,0 +1,4 @@
+[
+  {"status": "ok", "provider": "openai", "model": "gpt-4o", "state_file": "/home/user/.crucible/llm.json", "outcome": "additive", "live": true, "still_serving": null},
+  {"status": "ok", "provider": "openai", "model": "gpt-4o", "state_file": "/home/user/.crucible/llm.json", "outcome": "deferred", "live": false, "still_serving": "anthropic"}
+]

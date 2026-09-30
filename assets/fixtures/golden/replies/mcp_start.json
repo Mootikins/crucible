@@ -1,0 +1,4 @@
+[
+  {"status": "started", "transport": "sse", "port": 3847, "tool_count": 12},
+  {"status": "started", "transport": "stdio", "port": null, "tool_count": 12}
+]

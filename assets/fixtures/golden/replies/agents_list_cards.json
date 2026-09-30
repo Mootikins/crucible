@@ -1,0 +1,17 @@
+[
+  {
+    "cards": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "reviewer",
+        "version": "1.0.0",
+        "description": "Reviews code changes",
+        "tags": ["review"],
+        "system_prompt": "You review code.",
+        "mcp_servers": [],
+        "config": {},
+        "loaded_at": "2026-01-01T00:00:00Z"
+      }
+    ]
+  }
+]

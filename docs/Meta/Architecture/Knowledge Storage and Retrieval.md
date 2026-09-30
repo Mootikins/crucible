@@ -812,3 +812,17 @@ flowchart LR
   handling with kiln/project registration, not because it is part of the
   index; a reader looking for turn-lifecycle ownership should also read
   [[Agent Manager]].
+- Step 19 part B, gap 2 gave the storage RPC replies real core types:
+  `note.upsert` answers `NoteUpsertReply` (was a `json!` literal),
+  `note.delete` answers `StatusReply`, `search_text` answers
+  `Vec<FtsResult>` (moved from `crucible_daemon::storage::sqlite::fts` to
+  `crucible-core`, with a re-export left behind), `search_grep` answers
+  `GrepSearchResponse` (moved from `crucible_daemon::tools::grep_engine`),
+  `process_file`/`process_batch` answer `ProcessFileReply`/
+  `ProcessBatchReply`, `suggest_links` answers `SuggestLinksReply` (moved
+  from `crucible_daemon::tools::autolink`), and `note.rename`/`note.move`
+  answer `NoteRenameReply` (moved from `crucible_daemon::server::
+  note_refactor::RenameOutcome`, renamed in the move). `kiln.open` answers
+  `KilnOpenReply`, an untagged enum of the three shapes the handler could
+  already return (opened only, opened-and-indexed, indexing failed) — see
+  `crates/crucible-core/src/protocol/requests/storage.rs`.

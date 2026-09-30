@@ -1,0 +1,4 @@
+[
+  {"status": "processed", "path": "notes/a.md"},
+  {"status": "skipped", "path": "notes/a.md"}
+]

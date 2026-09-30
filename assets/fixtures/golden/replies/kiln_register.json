@@ -1,0 +1,4 @@
+[
+  {"status": "ok", "name": "docs", "path": "/home/user/docs", "outcome": "added", "state_file": "/home/user/.crucible/kilns.json"},
+  {"status": "ok", "name": "docs", "path": "/home/user/docs", "outcome": "already_present", "state_file": "/home/user/.crucible/kilns.json"}
+]

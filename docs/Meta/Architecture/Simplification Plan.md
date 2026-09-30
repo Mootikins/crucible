@@ -1107,6 +1107,44 @@ needs either 169 marker types (disfavored) or rewiring dispatch through a
 shared macro-generated helper, left to a follow-up, as part A already
 recorded.
 
+   **Part B, storage-side rows, done.** Of the 91, the storage-owned share —
+   every `kiln.*`, `note.*`, `fs.*`, `base.*`, `diff.*`, `proposal.*`,
+   `storage.*`, `mcp.*`, `skills.*`, `agents.*`, `models.*`, `providers.*`,
+   `embeddings.*`, `project.*`, `scm.*`, `webhook.*`, `llm.*`, `embed.*`
+   row, plus the bare `search_vectors`/`search_text`/`search_grep`/
+   `list_notes`/`get_note_by_name`/`get_backlinks`/`process_file`/
+   `process_batch`/`suggest_links` methods — is typed. 45 of these rows
+   named `serde_json::Value` before this pass; 38 now name a real core
+   type (`KilnOpenReply`, `StatusReply`, `KilnRegisterReply`,
+   `KilnForgetReply`, `LlmRegisterProviderReply`, `Vec<FtsResult>`,
+   `GrepSearchResponse`, `EmbedQueryReply`, `NoteUpsertReply`,
+   `ProcessFileReply`, `ProcessBatchReply`, `ProjectOpenKilnsReply`,
+   `ScmCloneResponse`, `FsListing`, `FsMoveReply`, `FsMkdirReply`,
+   `FsTrashReply`, `NoteRenameReply`, `NotImplementedReply` (the four
+   `storage.*` methods), `McpStartReply`, `McpStopReply`, `McpStatus`,
+   `AgentProfilesReply`, `AgentCardsListReply`,
+   `Option<AgentProfileResolved>`, `ModelsListReply`,
+   `ProvidersListReply`, `WebhookReceiveReply`, `SuggestLinksReply`). 7 stay
+   `Value`, each with the reason inline in `rpc_methods!`:
+   `kiln.registry_list` and `project.registry_list` (a row is a real record
+   or a hand-built stand-in for one, plus injected keys — no single struct
+   names both starting shapes without an Option-per-field merge); `fs.read`
+   and `fs.write` (one of five-plus mutually exclusive shapes chosen at
+   runtime by a multi-way retry/merge/restore); and the six `base.*` rows
+   (one handler answers six operations from a raw `&Request`, merging
+   `req.params` with a resolved `kiln` key before a per-operation dispatch
+   this pass does not restructure). `McpStatus`, `ScmCloneResponse`,
+   `GrepSearchResponse`, `FtsResult`, `FsListing`/`FsMoveReply`/
+   `FsTrashReply` (with `SkipReason`/`SkippedRef`), `SuggestLinksReply`,
+   `WebhookReceiveReply` and `AgentProfilesReply`/`AgentProfileEntry` moved
+   from `crucible-daemon` to core, with no daemon-side copy left (the
+   daemon crate re-exports them). `crates/crucible-core/src/protocol/requests/golden_reply_tests.rs`
+   and `assets/fixtures/golden/replies/*.json` pin each changed reply's
+   wire JSON, captured from the code before this change. The session-side
+   share of the 91 (session, lua, plugin, surface, config, ui,
+   notification, workflow, subagent, daemon, ping, shutdown) is a separate
+   pass.
+
 **Part A, done.** Every row in `rpc_methods!`
 (`crates/crucible-core/src/protocol/rpc/method.rs`) now names its params and
 reply type: `Variant = "wire.name": Req => Resp`. The macro's grammar makes
