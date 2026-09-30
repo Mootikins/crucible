@@ -570,6 +570,22 @@ body { background: var(--mk-nav); }
 }
 [data-testid='edge-host-left'] .wm-ribbon-tail { margin-top: auto; }
 
+/* The same rule in the right rail: an open lower pane (the terminal) shows
+   its icon at its own top edge, and the tab joins it there: the cutout is
+   flush with the pane top and has no top foot, and the pane's corner under
+   the tab is square. A folded lower pane keeps its icon at the far end. */
+[data-testid='edge-host-right']:not(:has(.wm-pane[data-pane-collapsed])) .wm-ribbon-trailing {
+  position: absolute;
+  inset-inline: 0;
+  top: clamp(var(--wm-ribbon-ceiling), var(--wm-trailing-pane-top), calc(var(--wm-ribbon-floor) - var(--wm-ribbon-trailing-height)));
+}
+[data-testid='edge-host-right']:not(:has(.wm-pane[data-pane-collapsed])) .wm-ribbon-tail { margin-top: auto; }
+[data-testid='edge-host-right'] .wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::before { top: 0; }
+[data-testid='edge-host-right'] .wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::after {
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) bottom / var(--mk-foot) var(--mk-foot) no-repeat;
+}
+:root[data-mk-darkpanes] [data-testid='edge-host-right'] [data-edge-panel-body] .wm-splitter + div .wm-pane { border-top-right-radius: 0; }
+
 /* Left list rows: a little in from both pane edges, rounded, with less
    padding inside. A selected row then never touches the edge where the open
    tab joins the pane. */
