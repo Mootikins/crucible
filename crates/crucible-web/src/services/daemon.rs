@@ -126,7 +126,21 @@ impl ReconnectingDaemon {
     }
 
     /// Every forwarder declares replay safety. A lost response to a write is
-    /// ambiguous, so only replay-safe calls reconnect and submit again.
+    /// ambiguous, so only a replay-safe call is RESUBMITTED after a dropped
+    /// connection.
+    ///
+    /// The connection itself is healed either way. Reconnecting performs no
+    /// daemon-side action of its own and so carries none of the
+    /// double-execution risk a resubmitted write does — the risk lives in
+    /// calling `call` a second time, not in swapping the socket underneath
+    /// it. Healing on every policy is what lets `POST /api/rpc/{method}`
+    /// (`ReplayPolicy::Once`, since it carries an arbitrary method chosen at
+    /// the HTTP layer) recover after the daemon restarts: its own first call
+    /// still surfaces the error, unretried, but the reconnect it triggers
+    /// lets the NEXT call — the next poll of a caller like
+    /// `kiln-restart.live.spec.ts` — succeed, rather than failing forever
+    /// because nothing else was polling a `Safe` method to notice the daemon
+    /// came back.
     pub(super) async fn forward_rpc<T>(
         &self,
         policy: ReplayPolicy,
@@ -141,13 +155,18 @@ impl ReconnectingDaemon {
 
         match first_attempt {
             Ok(value) => Ok(value),
-            Err(err) if policy == ReplayPolicy::Safe && Self::is_connection_error(&err) => {
+            Err(err) if Self::is_connection_error(&err) => {
                 tracing::warn!(
                     method = method.as_str(),
                     error = %err,
-                    "Daemon connection failed, reconnecting and retrying once"
+                    policy = ?policy,
+                    "Daemon connection failed, reconnecting"
                 );
                 self.reconnect_if_stale(observed_generation).await?;
+
+                if policy != ReplayPolicy::Safe {
+                    return Err(err);
+                }
 
                 let daemon = self.daemon.read().await;
                 call(&daemon).await
@@ -265,34 +284,15 @@ impl ReconnectingDaemon {
         false
     }
 
-    forward_rpc! {
-        Safe KilnList =>
-        kiln_list()
-        -> Vec<KilnRow> = kiln_list();
-    }
-
-    forward_rpc! {
-        Safe ListNotes =>
-        list_notes(kiln_path: &Path, path_filter: Option<&str> => path_filter.map(str::to_owned))
-        -> Vec<NoteListRow> = list_notes(&kiln_path, path_filter.as_deref(), None);
-    }
-
-    forward_rpc! {
-        Safe GetNoteByName =>
-        get_note_by_name(kiln_path: &Path, name: &str)
-        -> Option<NoteByNameReply> = get_note_by_name(&kiln_path, &name, None);
-    }
+    // kiln.list/list_notes/get_note_by_name/kiln.graph: the browser calls
+    // them through `POST /api/rpc/{method}` now (Simplification Plan step 19
+    // item 3, the kiln/note migration), so these forwarders are gone; no
+    // other caller in this crate named them.
 
     forward_rpc! {
         Safe GetBacklinks =>
         get_backlinks(kiln_path: &Path, name: &str)
         -> Option<GetBacklinksReply> = get_backlinks(&kiln_path, &name, None);
-    }
-
-    forward_rpc! {
-        Safe KilnGraph =>
-        kiln_graph(kiln_path: &Path)
-        -> KilnGraphReply = kiln_graph(&kiln_path, None);
     }
 
     forward_rpc! {
@@ -316,18 +316,10 @@ impl ReconnectingDaemon {
         -> Vec<f32> = embed_query(&kiln_path, &text);
     }
 
-    forward_rpc! {
-        /// Ripgrep-style content search. `root` containment (registered project or
-        /// open kiln) is enforced daemon-side. `regex` switches `query` from
-        /// literal substring to regex matching.
-        Safe SearchGrep =>
-        search_grep(
-            root: &str, query: &str, regex: bool,
-            glob: Option<&str> => glob.map(str::to_owned),
-            limit: usize, case_insensitive: bool,
-        )
-        -> crucible_daemon::GrepSearchResponse = search_grep(&root, &query, regex, glob.as_deref(), limit, case_insensitive);
-    }
+    // search_grep: the browser calls `search_grep` through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
+    // this forwarder is gone; `routes/search.rs`'s own route was its only
+    // caller.
 
     // mcp.status: the browser calls it through `POST /api/rpc/{method}` now
     // (Simplification Plan step 19), so this forwarder is gone.
@@ -652,17 +644,20 @@ impl ReconnectingDaemon {
         -> crucible_core::Project = project_register_untrusted(&path);
     }
 
+    // The HTTP route's own rollback calls this after a registration lands
+    // outside a configured `[web] registration_roots` entry; the browser
+    // reaches `project.unregister` itself through `POST /api/rpc/{method}`
+    // now (Simplification Plan step 19 item 3), so this method keeps only
+    // that internal caller.
     forward_rpc! {
         Once ProjectUnregister =>
         project_unregister(path: &Path)
         -> () = project_unregister(&path);
     }
 
-    forward_rpc! {
-        Safe ProjectList =>
-        project_list()
-        -> Vec<crucible_core::Project> = project_list();
-    }
+    // project.list: the browser calls it through `POST /api/rpc/{method}`
+    // now (Simplification Plan step 19 item 3), so this forwarder is gone;
+    // `routes/project.rs`'s own route was its only caller.
 
     pub async fn scm_clone(
         &self,
@@ -677,11 +672,9 @@ impl ReconnectingDaemon {
         daemon.scm_clone(url, dest, name).await
     }
 
-    forward_rpc! {
-        Safe FsListDir =>
-        fs_list_dir(root: &str, rel_path: &str, show_ignored: bool, show_hidden: bool)
-        -> crucible_daemon::FsListing = fs_list_dir(&root, &rel_path, show_ignored, show_hidden);
-    }
+    // fs.list_dir: the browser calls it through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19 item 3, the fs migration), so this
+    // forwarder is gone; `routes/fs.rs` (deleted) was its only caller.
 
     // diff.get/file/comment/resolve_comment/delete_comment/comments: the
     // browser calls them through `POST /api/rpc/{method}` now
@@ -704,29 +697,14 @@ impl ReconnectingDaemon {
         -> serde_json::Value = fs_write(&request);
     }
 
-    forward_rpc! {
-        Once FsMove =>
-        fs_move(root: &str, kind: FsRootKind, from_rel: &str, to_rel: &str)
-        -> crucible_daemon::FsMoveReply = fs_move(&root, kind, &from_rel, &to_rel);
-    }
+    // fs.move/fs.mkdir/fs.trash: the browser calls them through
+    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3), so
+    // these forwarders are gone; `routes/fs.rs` (deleted) was their only
+    // caller.
 
-    forward_rpc! {
-        Once FsMkdir =>
-        fs_mkdir(root: &str, kind: FsRootKind, rel_path: &str)
-        -> () = fs_mkdir(&root, kind, &rel_path);
-    }
-
-    forward_rpc! {
-        Once FsTrash =>
-        fs_trash(root: &str, kind: FsRootKind, rel_path: &str)
-        -> crucible_daemon::FsTrashReply = fs_trash(&root, kind, &rel_path);
-    }
-
-    forward_rpc! {
-        Safe ProjectGet =>
-        project_get(path: &Path)
-        -> Option<crucible_core::Project> = project_get(&path);
-    }
+    // project.get: the browser calls it through `POST /api/rpc/{method}` now
+    // (Simplification Plan step 19 item 3), so this forwarder is gone;
+    // `routes/project.rs`'s own route was its only caller.
 
     forward_rpc! {
         Once WebhookReceive =>

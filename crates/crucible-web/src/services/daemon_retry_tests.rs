@@ -203,6 +203,52 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
     }
 }
 
+/// `POST /api/rpc/{method}` (`rpc_forward`, `ReplayPolicy::Once`) carries an
+/// arbitrary method chosen at the HTTP layer, so a lost reply still reaches
+/// its caller as an error — the same ambiguous-write guard the test above
+/// proves for the dedicated `Once` forwarders. But the connection itself
+/// still heals: reconnecting performs no daemon-side call of its own, so it
+/// carries none of the double-execution risk a resubmitted write does. A
+/// poll like `kiln-restart.live.spec.ts`'s (stop the daemon, then retry the
+/// same generic call until it succeeds) needs exactly this — before this
+/// test's own fix, nothing ever reconnected the shared handle unless some
+/// OTHER, `Safe`-policy call happened to be in flight at the same time.
+#[tokio::test]
+async fn a_lost_reply_through_the_generic_forwarder_still_heals_the_connection() {
+    let peer = Peer::losing_first_reply("kiln.list").await;
+
+    let first = timeout(
+        Duration::from_secs(2),
+        peer.daemon
+            .rpc_forward(crucible_core::protocol::RpcMethod::KilnList, Value::Null),
+    )
+    .await
+    .expect("a disconnected request must finish promptly");
+    assert!(first.is_err(), "an ambiguous outcome must reach the caller");
+    assert_eq!(
+        peer.applied.load(Ordering::SeqCst),
+        1,
+        "the daemon saw one call"
+    );
+
+    // The SAME generic call, not a different `Safe` one: the failed `Once`
+    // call above must have reconnected the handle by itself.
+    let second = timeout(
+        Duration::from_secs(2),
+        peer.daemon
+            .rpc_forward(crucible_core::protocol::RpcMethod::KilnList, Value::Null),
+    )
+    .await
+    .expect("the retry must finish promptly")
+    .expect("the healed connection answers the retry");
+    assert_eq!(second, json!({}));
+    assert_eq!(
+        peer.applied.load(Ordering::SeqCst),
+        2,
+        "the write was never resubmitted; this is the caller's own retry"
+    );
+}
+
 #[tokio::test]
 async fn replay_safe_reads_reconnect_once_and_restore_active_events() {
     let peer = Peer::losing_first_reply("plugin.commands").await;
