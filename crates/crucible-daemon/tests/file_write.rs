@@ -571,3 +571,86 @@ async fn a_read_answers_the_content_in_the_requested_encoding() {
         assert_eq!(answer["content"], Value::Null, "{answer}");
     }
 }
+
+/// `fs.write`'s content-size and path-containment gates, through the live
+/// RPC method — the path the TUI and a Lua script use, not a web route.
+///
+/// The web's `put_note` used to re-check a note's size and its name's
+/// traversal safety before calling `fs.write`, as if this gate did not
+/// already exist. It does: `write_locked`'s `MAX_CONTENT_SIZE` and
+/// `enclosing_root`'s path-containment check are this critical section's own
+/// gates, shared by every caller of `fs.write`, including the browser. These
+/// tests prove that directly, with no web route in the path, so deleting the
+/// web's redundant pre-checks does not open a gap for the TUI or Lua either.
+mod fs_write_size_and_containment {
+    use super::*;
+
+    #[tokio::test]
+    async fn fs_write_refuses_content_over_the_size_limit() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let dir = tempfile::tempdir().unwrap();
+        let kiln = dir.path().join("kiln");
+        std::fs::create_dir(&kiln).unwrap();
+        let socket = dir.path().join("daemon.sock");
+        let data = dir.path().join("data");
+
+        let server = Server::bind_with_data_home_and_kilns(&socket, data, &[("notes", &kiln)])
+            .await
+            .unwrap();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+        let client = DaemonClient::connect_to(&socket).await.unwrap();
+        client.kiln_open(&kiln).await.unwrap();
+
+        let oversized = "x".repeat(10 * 1024 * 1024 + 1);
+        let request = json!({
+            "path": kiln.join("Too Big.md"),
+            "operation": "put",
+            "content": oversized,
+        });
+        let answer: Value = client.call(RpcMethod::FsWrite, request).await.unwrap();
+        assert_eq!(answer["ok"], false, "{answer}");
+        assert_eq!(answer["failure"], "invalid", "{answer}");
+        assert!(!kiln.join("Too Big.md").exists());
+
+        drop(client);
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    /// A path that escapes the kiln through a literal parent-directory
+    /// component is refused before any byte is written, whether or not the
+    /// caller pre-validated the name — `enclosing_root` checks the joined
+    /// path, not the caller's own bookkeeping.
+    #[tokio::test]
+    async fn fs_write_refuses_a_path_that_escapes_the_kiln() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let dir = tempfile::tempdir().unwrap();
+        let kiln = dir.path().join("kiln");
+        std::fs::create_dir(&kiln).unwrap();
+        let socket = dir.path().join("daemon.sock");
+        let data = dir.path().join("data");
+
+        let server = Server::bind_with_data_home_and_kilns(&socket, data, &[("notes", &kiln)])
+            .await
+            .unwrap();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+        let client = DaemonClient::connect_to(&socket).await.unwrap();
+        client.kiln_open(&kiln).await.unwrap();
+
+        let escaping = format!("{}/{}/evil.md", kiln.display(), "..");
+        let request = json!({
+            "path": escaping,
+            "operation": "put",
+            "content": "stolen",
+        });
+        let answer: Value = client.call(RpcMethod::FsWrite, request).await.unwrap();
+        assert_eq!(answer["ok"], false, "{answer}");
+        assert!(!dir.path().join("evil.md").exists());
+
+        drop(client);
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+    }
+}

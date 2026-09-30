@@ -1,4 +1,4 @@
-use super::helpers::{validate_note_name, KilnPathQuery, MAX_CONTENT_SIZE};
+use super::helpers::{validate_note_name, KilnPathQuery};
 use crucible_core::protocol::requests::{
     BacklinkEntry, KilnRow, NoteByNameReply, NoteListRow, VectorHit,
 };
@@ -505,12 +505,11 @@ struct NoteSavedResponse {
     request_body = PutNoteRequest,
     responses(
         (status = 200, body = NoteSavedResponse),
-        (status = 400, description = "The content is too large, or the name carries a traversal sequence"),
         (status = 403, description = "The root refuses writes"),
         (status = 404, description = "No root holds the path"),
         (status = 409, description = "The file moved on since `base_hash` was read"),
         (status = 415, description = "The file on disk is not UTF-8 text"),
-        (status = 422, description = "The path is invalid, or escapes its root"),
+        (status = 422, description = "The content is too large, the name carries a traversal sequence, or the path is otherwise invalid — `fs.write`'s own gates, shared by every caller"),
         (status = 502, description = "The daemon could not be reached"),
     )
 )]
@@ -519,17 +518,13 @@ async fn put_note(
     Path(name): Path<String>,
     Json(req): Json<PutNoteRequest>,
 ) -> Result<Json<NoteSavedResponse>, WebError> {
-    // Security: Validate content size to prevent DoS
-    if req.content.len() > MAX_CONTENT_SIZE {
-        return Err(WebError::Chat(format!(
-            "Note content too large: {} bytes (max {} bytes)",
-            req.content.len(),
-            MAX_CONTENT_SIZE
-        )));
-    }
-
-    // Security: Validate note name doesn't contain path traversal
-    validate_note_name(&name)?;
+    // The content-size limit and the traversal check both live in the
+    // daemon's `fs.write` now (`crucible_daemon::file_write`'s
+    // `MAX_CONTENT_SIZE` and `enclosing_root`), because they must hold for
+    // every caller of that method, not only this route. This route no
+    // longer re-checks either; `check_file_answer` below turns the daemon's
+    // refusal into the same 422 it already gives for every other invalid
+    // `fs.write` path.
 
     // Build the full file path (ensure .md extension). The daemon's `fs.write`
     // decides which root holds it, and refuses a path that no root holds.
@@ -803,8 +798,8 @@ fn map_grep_err(e: impl std::fmt::Display) -> WebError {
 mod tests {
     use super::*;
     use crate::test_support::{
-        arb_safe_path, arb_traversal_path, request_json, shape, shape_in_kilns, survives,
-        MOCK_DAEMON_KILN_PATH,
+        arb_safe_path, arb_traversal_path, request_json, request_json_in_kilns, shape,
+        shape_in_kilns, survives, MOCK_DAEMON_KILN_PATH,
     };
     use proptest::prelude::*;
     use tempfile::TempDir;
@@ -1070,6 +1065,68 @@ mod tests {
         );
     }
 
+    /// `put_note` still refuses oversized content through a REAL daemon now
+    /// that this route no longer checks the size itself. The server's own
+    /// `DefaultBodyLimit` (`server.rs`, also 10 MB) answers 413 before the
+    /// body is even parsed here; either that or the daemon's `fs.write`
+    /// (proved directly in
+    /// `crates/crucible-daemon/tests/file_write.rs::fs_write_size_and_containment`)
+    /// refuses it — the request never lands on disk either way.
+    #[tokio::test]
+    async fn put_note_refuses_content_over_the_size_limit() {
+        let kiln = TempDir::new().unwrap();
+        let oversized = "x".repeat(10 * 1024 * 1024 + 1);
+
+        let (status, body) = request_json_in_kilns(
+            "PUT",
+            "/api/notes/TooBig",
+            Some(serde_json::json!({
+                "kiln": kiln.path(),
+                "content": oversized,
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert!(
+            status == axum::http::StatusCode::PAYLOAD_TOO_LARGE
+                || status == axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "expected a refusal, got {status}: {body}"
+        );
+        assert!(!kiln.path().join("TooBig.md").exists());
+    }
+
+    /// `put_note` still refuses a name that escapes the kiln through a
+    /// literal parent-directory component, now that this route no longer
+    /// validates the name itself — `enclosing_root`'s containment check
+    /// (proved directly in
+    /// `crates/crucible-daemon/tests/file_write.rs::fs_write_size_and_containment`)
+    /// catches it on the joined path. `%2F` reaches `Path<String>` as a plain
+    /// `/` inside the one route segment, so `name` becomes `../evil` without
+    /// the request ever naming a second URL segment.
+    #[tokio::test]
+    async fn put_note_refuses_a_name_that_escapes_the_kiln() {
+        let kiln = TempDir::new().unwrap();
+
+        let (status, body) = request_json_in_kilns(
+            "PUT",
+            "/api/notes/..%2Fevil",
+            Some(serde_json::json!({
+                "kiln": kiln.path(),
+                "content": "stolen",
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(
+            status,
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        assert!(!kiln.path().parent().unwrap().join("evil.md").exists());
+    }
+
     // =====================================================================
     // The rows write back what the daemon sent
     // =====================================================================
@@ -1262,43 +1319,10 @@ mod tests {
         }
     }
 
-    // ===== Content Size Tests =====
-
-    #[test]
-    fn test_content_size_limit_constant() {
-        assert_eq!(
-            MAX_CONTENT_SIZE,
-            10 * 1024 * 1024,
-            "Max size should be 10MB"
-        );
-    }
-
-    #[test]
-    fn test_content_size_validation_rejects_oversized() {
-        let oversized = "x".repeat(MAX_CONTENT_SIZE + 1);
-        assert!(
-            oversized.len() > MAX_CONTENT_SIZE,
-            "Content should exceed limit"
-        );
-    }
-
-    #[test]
-    fn test_content_size_validation_accepts_max_size() {
-        let max_content = "x".repeat(MAX_CONTENT_SIZE);
-        assert!(
-            max_content.len() <= MAX_CONTENT_SIZE,
-            "Content at max size should be accepted"
-        );
-    }
-
-    #[test]
-    fn test_content_size_validation_accepts_normal_size() {
-        let normal_content = "# My Note\n\nSome content here.";
-        assert!(
-            normal_content.len() <= MAX_CONTENT_SIZE,
-            "Normal content should be accepted"
-        );
-    }
+    // The content-size limit is `fs.write`'s own gate now, proved through the
+    // live RPC method in
+    // `crates/crucible-daemon/tests/file_write.rs::fs_write_size_and_containment`.
+    // A route-level test here would only re-check a constant against itself.
 
     // ===== Path Escape Tests =====
 
@@ -1367,29 +1391,6 @@ mod tests {
     fn test_extract_title_trims_whitespace() {
         let content = "#    Lots of spaces   \n\nContent";
         assert_eq!(extract_title(content), "Lots of spaces");
-    }
-
-    #[test]
-    fn test_put_note_content_exactly_ten_megabytes_is_allowed() {
-        let content = "x".repeat(MAX_CONTENT_SIZE);
-        assert_eq!(content.len(), 10 * 1024 * 1024);
-        assert!(content.len() <= MAX_CONTENT_SIZE);
-        assert!(content.len() <= MAX_CONTENT_SIZE);
-    }
-
-    #[test]
-    fn test_put_note_content_ten_megabytes_plus_one_is_rejected() {
-        let content = "x".repeat(MAX_CONTENT_SIZE + 1);
-        assert_eq!(content.len(), (10 * 1024 * 1024) + 1);
-        assert!(content.len() > MAX_CONTENT_SIZE);
-        assert_eq!(
-            format!(
-                "Note content too large: {} bytes (max {} bytes)",
-                content.len(),
-                MAX_CONTENT_SIZE
-            ),
-            "Note content too large: 10485761 bytes (max 10485760 bytes)"
-        );
     }
 
     #[test]
