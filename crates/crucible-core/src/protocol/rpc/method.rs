@@ -281,7 +281,7 @@ rpc_methods! {
     // `config.controls` is.
     UiConfig = "ui.config": crucible_core::protocol::requests::UiConfigRequest => serde_json::Value,
     UiSetTheme = "ui.set_theme": crucible_core::protocol::requests::UiSetThemeRequest => crucible_core::protocol::requests::UiSetThemeReply,
-    ProjectRegister = "project.register": crucible_core::protocol::requests::PathRequest => crucible_core::project::Project,
+    ProjectRegister = "project.register": crucible_core::protocol::requests::ProjectRegisterRequest => crucible_core::project::Project,
     ProjectUnregister = "project.unregister": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     ProjectList = "project.list": () => Vec<crucible_core::project::Project>,
     ProjectGet = "project.get": crucible_core::protocol::requests::PathRequest => Option<crucible_core::project::Project>,

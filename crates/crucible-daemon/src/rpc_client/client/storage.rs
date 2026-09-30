@@ -631,11 +631,29 @@ impl DaemonClient {
     // Project RPC Methods
     // =========================================================================
 
+    /// Register `path` for a local caller: the CLI, the TUI, a Lua script.
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
         self.call(
             RpcMethod::ProjectRegister,
-            PathRequest {
+            crucible_core::protocol::requests::ProjectRegisterRequest {
                 path: path.to_string_lossy().to_string(),
+                untrusted: false,
+            },
+        )
+        .await
+    }
+
+    /// Register `path` for a caller that is not the local user at the
+    /// machine. The web API is the only caller of this today: it refuses a
+    /// credential store or the user's config/state tree on top of the floor
+    /// every caller gets, because a registered root becomes a read scope for
+    /// every client afterward.
+    pub async fn project_register_untrusted(&self, path: &Path) -> Result<crucible_core::Project> {
+        self.call(
+            RpcMethod::ProjectRegister,
+            crucible_core::protocol::requests::ProjectRegisterRequest {
+                path: path.to_string_lossy().to_string(),
+                untrusted: true,
             },
         )
         .await

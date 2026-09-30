@@ -648,10 +648,23 @@ impl ReconnectingDaemon {
         -> std::collections::BTreeMap<String, crucible_core::session::PluginApproval> = session_list_plugin_approvals(&session_id);
     }
 
+    // Used only by this module's own startup auto-registration of the
+    // operator-configured kiln path, which is a local, trusted decision, not
+    // a browser request.
     forward_rpc! {
         Once ProjectRegister =>
         project_register(path: &Path)
         -> crucible_core::Project = project_register(&path);
+    }
+
+    // The HTTP route uses this one: the browser is never the local user at
+    // the machine, so every registration it asks for is untrusted —
+    // `project_manager::untrusted_root_refusal` refuses a credential store or
+    // the user's config/state tree on top of the floor every caller gets.
+    forward_rpc! {
+        Once ProjectRegister =>
+        project_register_untrusted(path: &Path)
+        -> crucible_core::Project = project_register_untrusted(&path);
     }
 
     forward_rpc! {

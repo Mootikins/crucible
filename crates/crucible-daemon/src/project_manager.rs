@@ -37,9 +37,9 @@ const HOME_PARENTS: &[&str] = &["/home", "/Users"];
 ///
 /// A registered root is also a read scope for clients (`/api/file/raw` serves
 /// anything inside one), so *untrusted* callers need more than this floor.
-/// That extra policy belongs where the untrusted caller is — see
-/// `untrusted_root_refusal` in `crucible-web`'s project route, which refuses
-/// credential stores and the user's config/state tree on top of this.
+/// [`untrusted_root_refusal`] holds that extra policy: it refuses credential
+/// stores and the user's config/state tree on top of this, for the caller
+/// that `register_untrusted` and `project.register`'s `untrusted` flag mark.
 ///
 /// `path` must already be canonical: the decision is made on resolved paths so
 /// a symlink cannot present an innocent name for a forbidden target. `home` is
@@ -82,6 +82,61 @@ pub fn forbidden_root_reason(path: &Path, home: Option<&Path>) -> Option<&'stati
     }
 
     None
+}
+
+/// Personal secret stores. A registered root may neither BE one, sit INSIDE
+/// one, nor directly CONTAIN one — each of those turns the root into a read
+/// scope over credentials for whoever calls the file API afterward.
+const SECRET_ENTRIES: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
+    ".password-store",
+    ".git-credentials",
+    ".netrc",
+];
+
+/// User config/state trees. `~/.config/crucible` holds the web API key
+/// (reading it is a full auth bypass) and `~/.local/share` holds keyrings.
+const USER_STATE_ENTRIES: &[&str] = &[".config", ".local"];
+
+/// Why an UNTRUSTED caller may not use `path` as a root, or `None`.
+///
+/// This is [`forbidden_root_reason`] (the floor, catastrophic for every
+/// caller) plus the rules that only make sense against a caller who is not
+/// the local user sitting at the machine. A local `cru` invocation inside a
+/// dotfiles repo or `~/.config/nvim` is a person registering their own work;
+/// an untrusted caller naming those paths is turning the file API into a
+/// credential reader.
+///
+/// `path` must already be canonical, so a symlink cannot present an innocent
+/// name for a forbidden target.
+pub fn untrusted_root_refusal(path: &Path, home: Option<&Path>) -> Option<String> {
+    if let Some(why) = forbidden_root_reason(path, home) {
+        return Some(why.to_string());
+    }
+
+    let named = |entries: &[&str]| {
+        path.components().any(|c| match c {
+            std::path::Component::Normal(name) => {
+                entries.iter().any(|e| name == std::ffi::OsStr::new(e))
+            }
+            _ => false,
+        })
+    };
+    if named(SECRET_ENTRIES) {
+        return Some("it is a credential store or sits inside one".to_string());
+    }
+    if named(USER_STATE_ENTRIES) {
+        return Some("it is inside the user's config/state tree".to_string());
+    }
+    // `symlink_metadata` rather than `exists`: a dangling or redirected
+    // `.ssh` still means clients would serve that name from this root.
+    SECRET_ENTRIES
+        .iter()
+        .find(|e| path.join(e).symlink_metadata().is_ok())
+        .map(|entry| format!("it holds the credential store {entry}"))
 }
 
 /// The schema version this daemon writes and understands.
@@ -239,7 +294,23 @@ impl ProjectManager {
             .map_err(|e| anyhow!("{e}"))
     }
 
+    /// Register `path` for a local caller: the CLI, the TUI, a Lua script.
+    /// Refused only by [`forbidden_root_reason`], the floor that holds for
+    /// every caller.
     pub fn register(&self, path: &Path) -> Result<Project> {
+        self.register_checked(path, false)
+    }
+
+    /// Register `path` for a caller that is not the local user at the
+    /// machine — today, the web API. On top of [`forbidden_root_reason`],
+    /// also refused by [`untrusted_root_refusal`]: a registered root is a
+    /// read scope for every client afterward, so a credential store or the
+    /// user's config/state tree is off limits.
+    pub fn register_untrusted(&self, path: &Path) -> Result<Project> {
+        self.register_checked(path, true)
+    }
+
+    fn register_checked(&self, path: &Path, untrusted: bool) -> Result<Project> {
         let canonical = path
             .canonicalize()
             .map_err(|_| anyhow!("Invalid path: {}", path.display()))?;
@@ -299,6 +370,14 @@ impl ProjectManager {
         // cannot present an innocent name for a forbidden target.
         if let Some(why) = forbidden_root_reason(&canonical, dirs::home_dir().as_deref()) {
             bail!("{} is not a valid project root: {why}", canonical.display());
+        }
+        // An untrusted caller (the web API) gets the extra refusal too, on
+        // the same final path: the repo-root resolution above must not carry
+        // an untrusted caller into a credential store it named honestly.
+        if untrusted {
+            if let Some(why) = untrusted_root_refusal(&canonical, dirs::home_dir().as_deref()) {
+                bail!("{} is not a valid project root: {why}", canonical.display());
+            }
         }
         // Also on the FINAL path, and for the same reason: a kiln inside a
         // repository resolves to the repository, which is a project.
@@ -1284,5 +1363,65 @@ path = "./notes"
         assert_eq!(manager.discover_repos_in(&root), 0);
         assert!(!root.exists());
         assert_eq!(manager.list().len(), 0);
+    }
+
+    // ── The untrusted-caller policy ──────────────────────────────────────
+    //
+    // The daemon floor (`forbidden_root_reason`) deliberately lets a LOCAL
+    // user register their own dotfiles repo or `~/.config/nvim`. An
+    // untrusted caller (today, the web API) is not that user, so
+    // `untrusted_root_refusal` adds the credential/config rules on top of
+    // the floor. See `crates/crucible-daemon/tests/project_register.rs` for
+    // the same policy proved through the live RPC method.
+
+    #[test]
+    fn untrusted_root_refusal_covers_credential_stores_and_the_config_tree() {
+        let home = Path::new("/home/u");
+
+        for path in [
+            "/home/u/dotfiles/.ssh",
+            "/home/u/.gnupg",
+            "/home/u/.aws/cli",
+            "/home/u/.config/nvim",
+            "/home/u/.config/crucible",
+            "/home/u/.local/share",
+            // The daemon floor is still part of this policy.
+            "/",
+            "/etc/ssl/private",
+        ] {
+            assert!(
+                untrusted_root_refusal(Path::new(path), Some(home)).is_some(),
+                "{path} must be refused for an untrusted caller"
+            );
+        }
+
+        assert_eq!(
+            untrusted_root_refusal(Path::new("/home/u/Projects/app"), Some(home)),
+            None
+        );
+    }
+
+    #[test]
+    fn register_untrusted_refuses_a_directory_that_holds_a_credential_store() {
+        let (tmp, manager) = test_manager();
+        let dotfiles = tmp.path().join("dotfiles");
+        fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
+
+        let err = manager.register_untrusted(&dotfiles).unwrap_err();
+        assert!(err.to_string().contains("credential store"), "{err}");
+    }
+
+    /// `register` (the trusted path the CLI, the TUI and Lua use) does not
+    /// apply the untrusted rule: this is the behavior that stayed unchanged
+    /// when the rule moved out of the web route and into the daemon.
+    #[test]
+    fn register_still_accepts_a_directory_that_holds_a_credential_store() {
+        let (tmp, manager) = test_manager();
+        let dotfiles = tmp.path().join("dotfiles");
+        fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
+
+        manager
+            .register(&dotfiles)
+            .expect("a local caller may register its own dotfiles repo");
     }
 }

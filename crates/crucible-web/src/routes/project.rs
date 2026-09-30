@@ -5,9 +5,9 @@ use crucible_core::config::expand_tilde;
 // `Project` is crucible-core's own wire type. Every one of these routes
 // answers it, so none of them keeps a copy of its shape.
 use crucible_core::Project;
-use crucible_daemon::project_manager::forbidden_root_reason;
+use crucible_daemon::project_manager::untrusted_root_refusal;
 use serde::{Deserialize, Serialize};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -34,59 +34,6 @@ struct ProjectPathRequest {
 struct ProjectUnregisterResponse {
     /// Always true. A refusal is an error status, not a `false`.
     ok: bool,
-}
-
-/// Personal secret stores. A web-registered root may neither BE one, sit
-/// INSIDE one, nor directly CONTAIN one — each of those turns the root into a
-/// read scope over credentials for whoever is holding the API key.
-const SECRET_ENTRIES: &[&str] = &[
-    ".ssh",
-    ".gnupg",
-    ".aws",
-    ".kube",
-    ".password-store",
-    ".git-credentials",
-    ".netrc",
-];
-
-/// User config/state trees. `~/.config/crucible` holds the web API key
-/// (reading it is a full auth bypass) and `~/.local/share` holds keyrings.
-const USER_STATE_ENTRIES: &[&str] = &[".config", ".local"];
-
-/// Why an UNTRUSTED (HTTP) caller may not use `path` as a root, or `None`.
-///
-/// This is the daemon floor (`forbidden_root_reason` — catastrophic for every
-/// caller) plus the rules that only make sense against a caller who is not the
-/// local user sitting at the machine. A local `cru` invocation inside a
-/// dotfiles repo or `~/.config/nvim` is a person registering their own work; an
-/// HTTP request naming those paths is someone turning the file API into a
-/// credential reader.
-///
-/// `path` must already be canonical, so a symlink cannot present an innocent
-/// name for a forbidden target.
-pub(crate) fn untrusted_root_refusal(path: &Path, home: Option<&Path>) -> Option<String> {
-    if let Some(why) = forbidden_root_reason(path, home) {
-        return Some(why.to_string());
-    }
-
-    let named = |entries: &[&str]| {
-        path.components().any(|c| match c {
-            Component::Normal(name) => entries.iter().any(|e| name == std::ffi::OsStr::new(e)),
-            _ => false,
-        })
-    };
-    if named(SECRET_ENTRIES) {
-        return Some("it is a credential store or sits inside one".to_string());
-    }
-    if named(USER_STATE_ENTRIES) {
-        return Some("it is inside the user's config/state tree".to_string());
-    }
-    // `symlink_metadata` rather than `exists`: a dangling or redirected
-    // `.ssh` still means clients would serve that name from this root.
-    SECRET_ENTRIES
-        .iter()
-        .find(|e| path.join(e).symlink_metadata().is_ok())
-        .map(|entry| format!("it holds the credential store {entry}"))
 }
 
 /// The optional tightening filter over registration.
@@ -136,66 +83,32 @@ pub(crate) fn contained(path: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|root| path.starts_with(root))
 }
 
-fn refuse(path: &Path, why: &str) -> WebError {
+fn refuse_outside_restriction(path: &Path) -> WebError {
     WebError::Forbidden(format!(
-        "Refusing to register {}: {why}. The filesystem root, your home \
-         directory, credential stores and config directories are never \
-         registerable over the web API; `[web] registration_roots`, when set, \
-         confines registration further.",
+        "Refusing to register {}: it is not inside a [web] registration_roots entry.",
         path.display()
     ))
 }
 
-/// Decide whether the web API may make the ALREADY-CANONICAL `path` a root.
-/// `restriction` is [`registration_roots`]: `None` gates on the floor alone,
-/// `Some` additionally requires containment.
-pub(crate) fn check_canonical_root(
-    path: &Path,
-    restriction: Option<&[PathBuf]>,
-) -> Result<(), WebError> {
-    if let Some(why) = untrusted_root_refusal(path, dirs::home_dir().as_deref()) {
-        return Err(refuse(path, &why));
-    }
-    if let Some(roots) = restriction {
-        if !contained(path, roots) {
-            return Err(refuse(
-                path,
-                "it is not inside a [web] registration_roots entry",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Canonicalize a caller-supplied `path`, then [`check_canonical_root`] it.
-/// Returns the canonical path so callers act on exactly what was checked.
-pub(crate) fn check_root(
-    path: &Path,
-    restriction: Option<&[PathBuf]>,
-) -> Result<PathBuf, WebError> {
-    // Canonicalize before deciding, so a symlink cannot present a name inside
-    // a root for a target outside it. A path that does not resolve is refused
-    // rather than guessed at.
-    let canonical = path
-        .canonicalize()
-        .map_err(|_| refuse(path, "it does not resolve to an existing directory"))?;
-    check_canonical_root(&canonical, restriction)?;
-    Ok(canonical)
-}
-
 /// `POST /api/project/register` — make a directory a registered project.
 ///
-/// Registering a root also grants the file API read access to everything
-/// beneath it, so the path is canonicalized and checked before AND after the
-/// daemon acts: the daemon resolves a registration inside a git repo up to the
-/// repo root, which can land above what was checked.
+/// The credential-store, config-tree and filesystem-floor refusals live in
+/// the daemon now (`project_manager::register_untrusted`, reached through
+/// `project.register`'s `untrusted` flag): this route asks for the untrusted
+/// path, so every caller of that RPC method gets the same refusal, not only
+/// requests that arrive through this route. `[web] registration_roots`
+/// stays here: it is an operator setting of the web process, not a daemon
+/// concept, so it is checked before AND after the daemon acts — the daemon
+/// resolves a registration inside a git repo up to the repo root, which can
+/// land above what was checked.
 #[utoipa::path(
     post,
     path = "/api/project/register",
     request_body = ProjectPathRequest,
     responses(
         (status = 200, body = Project),
-        (status = 403, description = "The web API may not make this path a root, and the body says why"),
+        (status = 403, description = "The path is outside a configured `[web] registration_roots` entry"),
+        (status = 422, description = "The daemon refuses this path as a root for an untrusted caller, and the body says why"),
         (status = 502, description = "The daemon could not register the project"),
     )
 )]
@@ -204,28 +117,43 @@ async fn register_project(
     Json(req): Json<ProjectPathRequest>,
 ) -> Result<Json<Project>, WebError> {
     let restriction = registration_roots(&state);
-    let canonical = check_root(&req.path, restriction.as_deref())?;
+    // Canonicalize before deciding, so a symlink cannot present a name inside
+    // a restriction root for a target outside it.
+    let canonical = req.path.canonicalize().map_err(|_| {
+        WebError::Forbidden(format!(
+            "Refusing to register {}: it does not resolve to an existing directory.",
+            req.path.display()
+        ))
+    })?;
+    if let Some(roots) = restriction.as_deref() {
+        if !contained(&canonical, roots) {
+            return Err(refuse_outside_restriction(&canonical));
+        }
+    }
 
     let project = state
         .daemon
-        .project_register(&canonical)
+        .project_register_untrusted(&canonical)
         .await
         .daemon_err()?;
 
     // The daemon resolves a registration inside a git repo up to the repo
-    // root, which can land ABOVE what was checked. Re-check where it actually
-    // landed and undo it if it escaped the floor (or an active restriction) —
-    // nothing outside stays registered. The daemon reports a canonical path,
-    // so this re-checks the policy only.
-    if let Err(refusal) = check_canonical_root(&project.path, restriction.as_deref()) {
-        if let Err(e) = state.daemon.project_unregister(&project.path).await {
-            tracing::error!(
-                path = %project.path.display(),
-                error = %e,
-                "Failed to roll back an out-of-base project registration"
-            );
+    // root, which can land ABOVE what was checked. Re-check the restriction
+    // where it actually landed and undo it if it escaped — nothing outside
+    // `registration_roots` stays registered. The daemon reports a canonical
+    // path, so this re-checks the restriction only; the daemon already
+    // refused a credential store or the floor.
+    if let Some(roots) = restriction.as_deref() {
+        if !contained(&project.path, roots) {
+            if let Err(e) = state.daemon.project_unregister(&project.path).await {
+                tracing::error!(
+                    path = %project.path.display(),
+                    error = %e,
+                    "Failed to roll back an out-of-base project registration"
+                );
+            }
+            return Err(refuse_outside_restriction(&project.path));
         }
-        return Err(refusal);
     }
 
     Ok(Json(project))
@@ -421,18 +349,10 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn register_on_a_default_install_still_refuses_a_credential_store() {
-        // "No allowlist" is not "no gate": the floor stands on a default
-        // install, so a dotfiles repo holding `.ssh` is refused with no config.
-        let tmp = tempfile::tempdir().unwrap();
-        let dotfiles = tmp.path().join("dotfiles");
-        std::fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
-        assert_eq!(
-            register(CliAppConfig::default(), &dotfiles).await,
-            StatusCode::FORBIDDEN
-        );
-    }
+    // "No allowlist" is not "no gate": the daemon's untrusted-caller floor
+    // stands on a default install with no `[web] registration_roots` at all.
+    // See `register_refuses_a_directory_that_holds_a_credential_store` below,
+    // which proves this same case through a real daemon.
 
     #[tokio::test]
     async fn register_refuses_a_traversal_out_of_the_registration_base() {
@@ -499,46 +419,45 @@ mod tests {
     // ── Untrusted-caller policy ─────────────────────────────────────────
     //
     // The daemon floor deliberately lets a LOCAL user register their own
-    // dotfiles repo or `~/.config/nvim`. An HTTP caller is not that user, so
-    // the credential/config rules live here, on top of the floor.
-
+    // dotfiles repo or `~/.config/nvim`. The web route asks the daemon to
+    // register `untrusted`, so `project_manager::register_untrusted` refuses
+    // a credential store or the user's config tree on top of the floor — see
+    // `crates/crucible-daemon/tests/project_register.rs` for that rule
+    // proved through the raw RPC path. This is a REAL daemon, not the mock:
+    // the mock answers a canned reply and never applies the rule, so it
+    // cannot show the route still refuses now that the check moved out of
+    // this file.
     #[tokio::test]
     async fn register_refuses_a_directory_that_holds_a_credential_store() {
+        let (_daemon, client) = crate::test_support::start_real_daemon_with_kilns(&[]).await;
+        let app = crate::test_support::build_test_app(
+            crate::test_support::build_state_with_config(client, CliAppConfig::default()),
+        );
+
         let tmp = tempfile::tempdir().unwrap();
         let dotfiles = tmp.path().join("dotfiles");
         std::fs::create_dir_all(dotfiles.join(".ssh")).unwrap();
 
-        assert_eq!(
-            register(base_covering_the_mock_reply(tmp.path()), &dotfiles).await,
-            StatusCode::FORBIDDEN
-        );
-    }
-
-    #[tokio::test]
-    async fn register_refuses_a_credential_store_or_the_user_config_tree() {
-        let home = Path::new("/home/u");
-
-        for path in [
-            "/home/u/dotfiles/.ssh",
-            "/home/u/.gnupg",
-            "/home/u/.aws/cli",
-            "/home/u/.config/nvim",
-            "/home/u/.config/crucible",
-            "/home/u/.local/share",
-            // The daemon floor is still part of this policy.
-            "/",
-            "/etc/ssl/private",
-        ] {
-            assert!(
-                untrusted_root_refusal(Path::new(path), Some(home)).is_some(),
-                "{path} must be refused for an untrusted caller"
-            );
-        }
-
-        assert_eq!(
-            untrusted_root_refusal(Path::new("/home/u/Projects/app"), Some(home)),
-            None
-        );
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/project/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({ "path": dotfiles.to_string_lossy() }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // The daemon reports every `project.register` failure as
+        // `INVALID_PARAMS`, so `daemon_err` maps it to 422 — the same status
+        // every other daemon-enforced containment refusal reaches the browser
+        // as (see `rpc_error_parts` in `error.rs`). `registration_roots`
+        // refusals stay 403, because the web checks those itself before
+        // asking the daemon at all.
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     // ── The declared shapes ─────────────────────────────────────────────

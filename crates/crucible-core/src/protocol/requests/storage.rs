@@ -873,6 +873,25 @@ pub struct ProcessBatchReply {
     pub errors: Vec<FileProcessError>,
 }
 
+/// What `project.register` takes.
+///
+/// `untrusted` tells the daemon the caller is not the local user at the
+/// machine — today, the web API sets it. A local caller (the CLI, the TUI, a
+/// Lua script) already has full filesystem access to whatever it can name, so
+/// it omits the field and gets the plain daemon floor (the filesystem root,
+/// the home directory and the system trees, refused for every caller). An
+/// untrusted caller also gets the extra refusal of a personal
+/// credential store or the user's config/state tree, because a registered
+/// root is a read scope for every client afterward.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ProjectRegisterRequest {
+    /// Absolute path of the project root.
+    pub path: String,
+    /// The caller is not the local user at the machine.
+    #[serde(default)]
+    pub untrusted: bool,
+}
+
 /// One kiln `project.open_kilns` opened.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

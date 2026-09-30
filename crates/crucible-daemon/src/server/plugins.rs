@@ -448,12 +448,18 @@ pub(crate) async fn handle_plugin_run_command(
 // --- Project handlers ---
 
 pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let params = match typed_params::<PathRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
+    let params =
+        match typed_params::<crucible_core::protocol::requests::ProjectRegisterRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
 
-    match pm.register(Path::new(&params.path)) {
+    let outcome = if params.untrusted {
+        pm.register_untrusted(Path::new(&params.path))
+    } else {
+        pm.register(Path::new(&params.path))
+    };
+    match outcome {
         Ok(project) => match serde_json::to_value(project) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
