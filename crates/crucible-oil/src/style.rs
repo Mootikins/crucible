@@ -1,11 +1,26 @@
 use crossterm::style::{Attribute, Color as CtColor, ContentStyle, Stylize};
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+/// A block of style. Every field is optional or false by default, so a
+/// caller — Rust or a Lua table read by `oil::parse::style_from_table` —
+/// gives only the fields it means to set.
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(default)
+)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    // `inline`: `Color` is a named `ToSchema`, so a plain field reference
+    // would emit a `$ref` to a component this crate never registers (no
+    // `#[derive(OpenApi)]` collects one). Inlining its schema — the same
+    // plain-string schema `LuaType::of_schema` reads for `Color` on its
+    // own — is what a reader with no component table needs.
+    #[cfg_attr(feature = "openapi", schema(inline))]
     pub fg: Option<Color>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    #[cfg_attr(feature = "openapi", schema(inline))]
     pub bg: Option<Color>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub bold: bool,
@@ -129,7 +144,7 @@ impl Style {
 
 #[cfg_attr(
     feature = "serde",
-    derive(serde::Serialize),
+    derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "snake_case")
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +174,36 @@ pub enum Color {
     Indexed(u8),
     Rgb(u8, u8, u8),
     Reset,
+}
+
+/// `Color` reads as a plain string, not as the enum's own tagged shape.
+///
+/// [`Color::parse`] is the one reader every caller uses — a theme, a
+/// `cru.oil` node, an HTML template — and it takes exactly the strings this
+/// schema describes: a name, a hex code, `rgb(r, g, b)`, a palette slot or
+/// `reset`. A derived schema would describe `Color::Rgb`'s own JSON shape
+/// (`{"Rgb": [r, g, b]}`), which is not a string a caller may write; this
+/// schema describes what a caller actually may write.
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for Color {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
+        utoipa::openapi::RefOr::T(utoipa::openapi::Schema::Object(
+            utoipa::openapi::ObjectBuilder::new()
+                .schema_type(utoipa::openapi::Type::String)
+                .description(Some(
+                    "A color name (\"red\", \"bright_blue\"), a hex code (\"#ff0000\"), \
+                     \"rgb(r, g, b)\", a palette slot (\"term4\") or \"reset\". See `Color::parse`.",
+                ))
+                .build(),
+        ))
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for Color {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Color")
+    }
 }
 
 impl Color {

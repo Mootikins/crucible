@@ -38,13 +38,6 @@ local function truncate(s: string?): string?
     return s:sub(1, MAX_CONTENT) .. "\n… (truncated; open the file to read the rest)"
 end
 
---- What a tool handler answers with.
----
---- Either `{ error = "..." }` or the handler's own result shape, and the
---- daemon reads `error` first. Both cross to JSON, so an open map is the
---- correct type.
-type ToolResult = { [string]: any }
-
 type Source = { kind: string, root: string?, base: string?, head: string?, session: string?, id: string? }
 
 --- The diffset that the arguments name, or an error.

@@ -63,6 +63,9 @@ pub use before_execute::{
 pub use cru_clear::register_cru_clear_api;
 pub use cru_on::register_cru_on_api;
 pub use hook_name::{hook_names, EventName, HookName, StageId};
+/// Crate-internal: `host_api` reads its schema to generate the
+/// `PermissionRequest` Luau declaration; nothing outside the crate builds one.
+pub(crate) use permission::PermissionRequestPayload;
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHookResult,
     PermissionRequest, PERMISSION_REQUEST_HOOK,

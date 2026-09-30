@@ -125,6 +125,14 @@ local truncate_lines = remap.truncate_lines
 
 --- What a tool interception answers with: `{ handled = true, result = json }`
 --- to take the call, or nil to let the host tool run.
+---
+--- Not generated from a core schema: no Rust type matches this shape. The
+--- closest, `ScriptHandlerResult::Handled { result: JsonValue, terminate:
+--- bool }` (`crucible-lua/src/handlers/script_handler.rs`), is a `cru.on`
+--- event handler's answer, a different hook with a decoded `result` and a
+--- `terminate` flag this interception has no counterpart for — folding the
+--- two would give `terminate` a fabricated value here, which the project's
+--- design rules forbid.
 type Interception = { handled: boolean, result: string }?
 
 local function handle_bash(ctx: any, event: { [string]: any }): Interception

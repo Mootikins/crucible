@@ -188,11 +188,6 @@ local function load(args: { [string]: any }?): (string, { string }?, { Task })
     return path, lines, parse_tasks(lines or {})
 end
 
---- What a tool handler answers with: either `{ error = "..." }` or the
---- handler's own result shape. Both cross to JSON, and the daemon reads
---- `error` first.
-type ToolResult = { [string]: any }
-
 --- List tasks. `show_completed` defaults to the configured value.
 function M.tasks_list(args: { [string]: any }): ToolResult
     local path, _, tasks = load(args)

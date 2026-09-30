@@ -68,6 +68,11 @@ pub enum LuaType {
     Intersection(Vec<LuaType>),
     /// A type declared elsewhere, by name.
     Named(String),
+    /// One exact string value: a Luau singleton type. A JSON Schema string
+    /// `enum` becomes a [`LuaType::Union`] of these, so a tagged field such
+    /// as a knob name reads as a closed set of literals, not a bare
+    /// `string`.
+    Literal(String),
 }
 
 /// One field of a record type.
@@ -178,6 +183,7 @@ impl LuaType {
                 .collect::<Vec<_>>()
                 .join(" & "),
             LuaType::Named(name) => name.clone(),
+            LuaType::Literal(value) => format!("{value:?}"),
         }
     }
 
@@ -222,7 +228,165 @@ impl LuaType {
             // A variadic cannot cross the tool boundary either.
             LuaType::Variadic(_) => json!({}),
             LuaType::Named(name) => json!({ "$comment": format!("plugin type {name}") }),
+            LuaType::Literal(value) => json!({ "type": "string", "enum": [value] }),
         }
+    }
+
+    /// Read a JSON Schema (or an OpenAPI `Schema` serialized the same way)
+    /// into the type it describes.
+    ///
+    /// Reads exactly the shapes `utoipa::ToSchema` writes into
+    /// `openapi.json`, since that is the one schema source this reads: a
+    /// `$ref` becomes a [`LuaType::Named`] to a type this module is asked to
+    /// render separately; `oneOf`/`anyOf` becomes a [`LuaType::Union`]; an
+    /// `object` with `properties` becomes a [`LuaType::Record`], with a
+    /// property absent from `required` wrapped in [`LuaType::Optional`]; an
+    /// `object` with `additionalProperties` and no `properties` becomes a
+    /// [`LuaType::Map`]; an `array` becomes a [`LuaType::Array`]; a `string`
+    /// `enum` becomes a [`LuaType::Literal`] union; a `type` that is a JSON
+    /// array (utoipa's spelling of `Option<T>` on a primitive, `["string",
+    /// "null"]`) becomes [`LuaType::Optional`]. A schema this cannot read —
+    /// an empty object, a bare `{}` for `serde_json::Value` — becomes
+    /// [`LuaType::Any`], which is the honest answer for "arbitrary JSON".
+    pub fn from_json_schema(schema: &JsonValue) -> LuaType {
+        if let Some(reference) = schema.get("$ref").and_then(JsonValue::as_str) {
+            let name = reference.rsplit('/').next().unwrap_or(reference);
+            return LuaType::Named(name.to_string());
+        }
+
+        let branches = schema
+            .get("oneOf")
+            .or_else(|| schema.get("anyOf"))
+            .and_then(JsonValue::as_array);
+        if let Some(branches) = branches {
+            // `Option<Ref>` is `oneOf: [{"type": "null"}, {"$ref": ...}]`.
+            // Two branches where one is exactly `null` is an optional value,
+            // not a two-way choice.
+            if branches.len() == 2 {
+                let null_at = branches.iter().position(|branch| {
+                    branch.get("type").and_then(JsonValue::as_str) == Some("null")
+                });
+                if let Some(null_at) = null_at {
+                    let other = &branches[1 - null_at];
+                    return LuaType::Optional(Box::new(LuaType::from_json_schema(other)));
+                }
+            }
+            let options: Vec<LuaType> = branches.iter().map(LuaType::from_json_schema).collect();
+            return if options.len() == 1 {
+                options.into_iter().next().expect("checked len == 1")
+            } else {
+                LuaType::Union(options)
+            };
+        }
+
+        // `allOf` composes schemas; this reads the one-item case (a `$ref`
+        // plus a sibling description, which utoipa also writes for a
+        // referenced enum with a doc comment) and otherwise gives up to `Any`
+        // rather than guess at a merge.
+        if let Some(parts) = schema.get("allOf").and_then(JsonValue::as_array) {
+            if let [only] = parts.as_slice() {
+                return LuaType::from_json_schema(only);
+            }
+            return LuaType::Any;
+        }
+
+        if let Some(values) = schema.get("enum").and_then(JsonValue::as_array) {
+            let literals: Vec<LuaType> = values
+                .iter()
+                .filter_map(JsonValue::as_str)
+                .map(|value| LuaType::Literal(value.to_string()))
+                .collect();
+            if !literals.is_empty() {
+                return if literals.len() == 1 {
+                    literals.into_iter().next().expect("checked len == 1")
+                } else {
+                    LuaType::Union(literals)
+                };
+            }
+        }
+
+        let ty = schema.get("type");
+        // utoipa spells `Option<Primitive>` as a two-entry `type` array
+        // rather than an `oneOf`: `["string", "null"]`.
+        if let Some(types) = ty.and_then(JsonValue::as_array) {
+            let names: Vec<&str> = types.iter().filter_map(JsonValue::as_str).collect();
+            let nullable = names.contains(&"null");
+            let rest: Vec<&&str> = names.iter().filter(|name| **name != "null").collect();
+            if nullable && rest.len() == 1 {
+                let mut without_null = schema.clone();
+                without_null["type"] = json!(rest[0]);
+                return LuaType::Optional(Box::new(LuaType::from_json_schema(&without_null)));
+            }
+        }
+
+        match ty.and_then(JsonValue::as_str) {
+            Some("null") => LuaType::Nil,
+            Some("boolean") => LuaType::Boolean,
+            Some("integer") | Some("number") => LuaType::Number,
+            Some("string") => LuaType::String,
+            Some("array") => {
+                let item = schema
+                    .get("items")
+                    .map(LuaType::from_json_schema)
+                    .unwrap_or(LuaType::Any);
+                LuaType::Array(Box::new(item))
+            }
+            Some("object") | None => {
+                if let Some(properties) = schema.get("properties").and_then(JsonValue::as_object) {
+                    let required: Vec<&str> = schema
+                        .get("required")
+                        .and_then(JsonValue::as_array)
+                        .map(|values| values.iter().filter_map(JsonValue::as_str).collect())
+                        .unwrap_or_default();
+                    let fields = properties
+                        .iter()
+                        .map(|(name, property)| {
+                            let mut ty = LuaType::from_json_schema(property);
+                            if !required.contains(&name.as_str())
+                                && !matches!(ty, LuaType::Optional(_))
+                            {
+                                ty = LuaType::Optional(Box::new(ty));
+                            }
+                            Field {
+                                name: name.clone(),
+                                ty,
+                                description: property
+                                    .get("description")
+                                    .and_then(JsonValue::as_str)
+                                    .map(str::to_string),
+                            }
+                        })
+                        .collect();
+                    LuaType::Record(fields)
+                } else if let Some(additional) = schema.get("additionalProperties") {
+                    let value = if additional.is_object() {
+                        LuaType::from_json_schema(additional)
+                    } else {
+                        LuaType::Any
+                    };
+                    LuaType::Map(Box::new(LuaType::String), Box::new(value))
+                } else if schema.get("type").is_some() {
+                    LuaType::Map(Box::new(LuaType::String), Box::new(LuaType::Any))
+                } else {
+                    // No `type`, no `properties`: `serde_json::Value`'s own
+                    // schema, which utoipa writes as a bare `{}` (or `{}`
+                    // plus a `description`). Arbitrary JSON is `any`.
+                    LuaType::Any
+                }
+            }
+            _ => LuaType::Any,
+        }
+    }
+
+    /// The type a Rust type's own `utoipa` schema describes.
+    ///
+    /// The one call [`crate::json_binding::Json`] makes to declare itself:
+    /// `T::schema()` gives the same JSON Schema `openapi.json` writes for
+    /// `T`, and [`Self::from_json_schema`] reads it. A binding that carries
+    /// `Json<T>` needs no hand Luau string; its declaration is this.
+    pub fn of_schema<T: utoipa::PartialSchema>() -> LuaType {
+        let schema = serde_json::to_value(T::schema()).unwrap_or_else(|_| json!({}));
+        LuaType::from_json_schema(&schema)
     }
 }
 
@@ -811,5 +975,142 @@ mod tests {
     fn a_void_signature_renders_as_unit() {
         let signature = Signature::default();
         assert_eq!(signature.to_luau(), "() -> ()");
+    }
+
+    mod from_json_schema {
+        use super::*;
+
+        #[test]
+        fn a_ref_becomes_a_named_type() {
+            let ty =
+                LuaType::from_json_schema(&json!({ "$ref": "#/components/schemas/ToolRender" }));
+            assert_eq!(ty, LuaType::Named("ToolRender".to_string()));
+        }
+
+        /// `utoipa`'s spelling of `Option<Ref>`: two branches, one of them
+        /// exactly `{"type": "null"}`, is optional — not a two-way choice.
+        #[test]
+        fn one_of_null_and_a_ref_is_optional_not_a_union() {
+            let ty = LuaType::from_json_schema(&json!({
+                "oneOf": [
+                    { "type": "null" },
+                    { "$ref": "#/components/schemas/ToolRender" }
+                ]
+            }));
+            assert_eq!(
+                ty,
+                LuaType::Optional(Box::new(LuaType::Named("ToolRender".to_string())))
+            );
+        }
+
+        /// A real two-way choice (no `null` branch) stays a union.
+        #[test]
+        fn one_of_two_refs_is_a_union() {
+            let ty = LuaType::from_json_schema(&json!({
+                "oneOf": [
+                    { "$ref": "#/components/schemas/A" },
+                    { "$ref": "#/components/schemas/B" }
+                ]
+            }));
+            assert_eq!(
+                ty,
+                LuaType::Union(vec![
+                    LuaType::Named("A".to_string()),
+                    LuaType::Named("B".to_string())
+                ])
+            );
+        }
+
+        /// `utoipa`'s spelling of `Option<Primitive>`: a two-entry `type`
+        /// array, not a `oneOf`.
+        #[test]
+        fn a_nullable_primitive_type_array_is_optional() {
+            let ty = LuaType::from_json_schema(&json!({ "type": ["string", "null"] }));
+            assert_eq!(ty, LuaType::Optional(Box::new(LuaType::String)));
+        }
+
+        #[test]
+        fn a_string_enum_becomes_a_literal_union() {
+            let ty = LuaType::from_json_schema(&json!({
+                "type": "string",
+                "enum": ["model", "mode", "context_strategy"]
+            }));
+            assert_eq!(
+                ty,
+                LuaType::Union(vec![
+                    LuaType::Literal("model".to_string()),
+                    LuaType::Literal("mode".to_string()),
+                    LuaType::Literal("context_strategy".to_string()),
+                ])
+            );
+            assert_eq!(ty.to_luau(), "\"model\" | \"mode\" | \"context_strategy\"");
+        }
+
+        #[test]
+        fn a_required_and_an_optional_field_are_told_apart() {
+            let ty = LuaType::from_json_schema(&json!({
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                    "kind": { "type": "string" },
+                    "tool": { "type": "string" }
+                }
+            }));
+            let LuaType::Record(fields) = ty else {
+                panic!("expected a record");
+            };
+            let kind = fields.iter().find(|f| f.name == "kind").unwrap();
+            let tool = fields.iter().find(|f| f.name == "tool").unwrap();
+            assert_eq!(kind.ty, LuaType::String);
+            assert_eq!(tool.ty, LuaType::Optional(Box::new(LuaType::String)));
+        }
+
+        #[test]
+        fn additional_properties_becomes_a_map() {
+            let ty = LuaType::from_json_schema(&json!({
+                "type": "object",
+                "additionalProperties": { "type": "number" }
+            }));
+            assert_eq!(
+                ty,
+                LuaType::Map(Box::new(LuaType::String), Box::new(LuaType::Number))
+            );
+        }
+
+        #[test]
+        fn an_array_carries_its_element_type() {
+            let ty = LuaType::from_json_schema(&json!({
+                "type": "array",
+                "items": { "type": "boolean" }
+            }));
+            assert_eq!(ty, LuaType::Array(Box::new(LuaType::Boolean)));
+        }
+
+        /// `serde_json::Value`'s own schema — no `type`, no `properties` —
+        /// is arbitrary JSON, honestly `any`.
+        #[test]
+        fn an_untyped_schema_is_any() {
+            assert_eq!(LuaType::from_json_schema(&json!({})), LuaType::Any);
+            assert_eq!(
+                LuaType::from_json_schema(&json!({ "description": "arbitrary" })),
+                LuaType::Any
+            );
+        }
+
+        /// `LuaType::of_schema` reads a real `utoipa` schema end to end, not
+        /// just the hand-built fixtures above.
+        #[test]
+        fn of_schema_reads_a_real_derived_type() {
+            let ty = LuaType::of_schema::<crucible_core::types::CanonicalToolCall>();
+            let LuaType::Record(fields) = ty else {
+                panic!("expected a record");
+            };
+            let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+            assert!(names.contains(&"kind"));
+            assert!(names.contains(&"tool"));
+            let kind = fields.iter().find(|f| f.name == "kind").unwrap();
+            // `kind` is in `CanonicalToolCall`'s `required`.
+            assert_eq!(kind.ty, LuaType::String);
+        }
     }
 }

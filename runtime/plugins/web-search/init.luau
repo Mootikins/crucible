@@ -386,11 +386,6 @@ end
 --- reaches the model with a stack traceback attached (`format_lua_error` keeps
 --- frames that mention a .lua file), and this message is long and load-bearing
 --- enough already. `tried` is the structured half the render reads.
---- What a tool handler answers with: either `{ error = "..." }` or the
---- handler's own result shape. Both cross to JSON, and the daemon reads
---- `error` first.
-type ToolResult = { [string]: any }
-
 function M.web_search(options: { [string]: any }?): ToolResult
     -- Annotate the LOCAL, not the expression: `options or {}` widens to
     -- `T | {}` and a field read fails against the empty half.

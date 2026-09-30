@@ -152,14 +152,44 @@ pub fn register_permission_hook_api(
     Ok(())
 }
 
-/// The table a permission hook receives.
+/// The shape of the table [`PermissionRequest::into_lua`] builds.
 ///
-/// One conversion so `PermissionRequest` in `host_api` has something to be
-/// checked against. The declaration was a hand-written constant beside a
-/// hand-written table and nothing held the two together: a field added here
-/// and missing there becomes a false type error at every correct read of it,
-/// and a field dropped here leaves the declaration lying the other way.
-/// `the_permission_payload_matches_its_declaration` compares them.
+/// This exists to give the Luau declaration a schema to read, not to be
+/// serialized itself: no code builds one. The declaration used to be a hand
+/// Luau string, `host_api::PERMISSION_REQUEST`, kept beside the hand table
+/// below with nothing holding the two together — a field added to the table
+/// and missing from the string became a false type error at every correct
+/// read of it, and a field dropped from the table left the string lying the
+/// other way. Now both come from this one struct: the declaration is
+/// `LuaType::of_schema::<PermissionRequestPayload>().to_luau()`, and
+/// `the_permission_payload_matches_its_declaration` below still compares the
+/// built table's keys against it, so a field added to one and not the other
+/// still fails a test — the difference is that the "other" is now a Rust
+/// field list, not a second string to remember to edit.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[allow(dead_code)] // read only through `ToSchema`; nothing builds one
+pub(crate) struct PermissionRequestPayload {
+    tool_name: String,
+    /// Arbitrary JSON: the tool's own arguments.
+    args: serde_json::Value,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+    is_safe: bool,
+}
+
+/// The table a permission hook receives.
 impl IntoLua for &PermissionRequest {
     fn into_lua(self, lua: &Lua) -> LuaResult<Value> {
         let call = &self.call;
@@ -384,16 +414,18 @@ mod payload_contract {
             .collect();
 
         let declared: std::collections::BTreeSet<String> =
-            match crate::signature::LuaType::parse(crate::host_api::PERMISSION_REQUEST) {
-                Ok(crate::signature::LuaType::Record(fields)) => {
+            match crate::signature::LuaType::of_schema::<PermissionRequestPayload>() {
+                crate::signature::LuaType::Record(fields) => {
                     fields.into_iter().map(|field| field.name).collect()
                 }
-                other => panic!("PermissionRequest must parse as a record, got {other:?}"),
+                other => {
+                    panic!("PermissionRequestPayload's schema must read as a record, got {other:?}")
+                }
             };
 
         assert_eq!(
             built, declared,
-            "the payload table and `PermissionRequest` name different fields. \
+            "the payload table and `PermissionRequestPayload`'s schema name different fields. \
              Add the field to both, or remove it from both."
         );
     }

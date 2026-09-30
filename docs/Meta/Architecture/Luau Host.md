@@ -765,3 +765,21 @@ example both `options/mod.rs` and `options/admit.rs` cite).
   `daemon_plugins` module: production calls in
   `crates/crucible-daemon/src/daemon_plugins/mod.rs`, and two direct calls
   from `crates/crucible-daemon/src/daemon_plugins/tests/activate.rs`.
+- **`LuaType::from_json_schema` (`crates/crucible-lua/src/signature.rs`) reads
+  a `utoipa` JSON Schema into the one type model `host_api.rs` renders.**
+  `LuaType::of_schema::<T>()` calls it over `T::schema()`, so a Luau
+  declaration for a core (or `crucible-oil`) type comes from that type's own
+  field list, not a hand string kept beside it. `Json<T>`
+  (`crates/crucible-lua/src/json_binding.rs`) is the binding wrapper: it
+  carries `T` across the Lua boundary through `Lua::to_value`/`from_value`
+  and declares itself as `T::ty()` via `LuauValue`, so a binding that takes
+  or returns a core type needs no declaration text at all.
+  `handlers::permission::PermissionRequestPayload` and
+  `crucible_oil::Style` are the two schema sources `host_api.rs` reads this
+  way as of this change (`PermissionRequest`'s and `OilStyle`'s
+  declarations); the hand `PERMISSION_REQUEST` constant and the hand
+  `OilStyle`/`OilProps` style fields are gone. `OilStyle`'s missing
+  `reverse` field — present on `crucible_oil::Style` since the type existed,
+  named in neither the old hand declaration nor `oil::parse::style_from_table`
+  — is the drift this closes: both now come from the one struct, and
+  `style_from_table` reads `reverse` like every other field.

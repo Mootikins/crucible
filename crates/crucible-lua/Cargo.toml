@@ -30,11 +30,18 @@ anyhow = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["fs", "rt", "process", "time"] }
 
-# Shared types with core
-crucible-core = { path = "../crucible-core" }
+# Shared types with core. `openapi` gives `ToSchema` on the core types a
+# binding carries (`Json<T>`, see `json_binding.rs`), so a Luau declaration
+# comes from the type's own schema rather than a hand string kept beside it.
+crucible-core = { path = "../crucible-core", features = ["openapi"] }
 
-# Oil TUI framework for Lua UI building
-crucible-oil = { path = "../crucible-oil", default-features = false, features = ["serde"] }
+# Oil TUI framework for Lua UI building. `openapi` gives `ToSchema` on
+# `Style`, for the same reason.
+crucible-oil = { path = "../crucible-oil", default-features = false, features = ["serde", "openapi"] }
+
+# `T::schema()` behind `Json<T>` (`json_binding.rs`) and
+# `LuaType::of_schema`/`from_json_schema` (`signature.rs`).
+utoipa = { workspace = true }
 
 # XDG config directories
 dirs = "6"

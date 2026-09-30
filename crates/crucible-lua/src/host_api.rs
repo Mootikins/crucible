@@ -409,29 +409,22 @@ pub(crate) fn host_global_names() -> Vec<&'static str> {
 /// and a union of every event would type nothing usefully.
 /// The table `execute_permission_hooks` builds and hands to a hook.
 ///
-/// A constant rather than a literal inside [`PAYLOAD_TYPES`] so a test can
-/// parse it and compare its fields against the Rust that builds the table —
-/// see `handlers::permission::payload_contract`. B1 asked for a payload
-/// record checked at registration; this is the narrower thing that exists.
-pub(crate) const PERMISSION_REQUEST: &str = "{ \
-    tool_name: string, \
-    args: any, \
-    kind: string, \
-    command: string?, \
-    paths: { string }, \
-    url: string?, \
-    query: string?, \
-    agent: string?, \
-    file_path: string?, \
-    mode: string?, \
-    is_safe: boolean \
-}";
-
+/// `PermissionRequest`'s declaration used to be this constant, a hand Luau
+/// string kept beside the hand table `execute_permission_hooks` builds, with
+/// nothing holding the two together. It now comes from
+/// `handlers::permission::PermissionRequestPayload`'s own schema — see
+/// [`generated_payload_types`] — so a field added to the struct and not the
+/// table (or the reverse) still fails
+/// `handlers::permission::payload_contract::the_permission_payload_matches_its_declaration`,
+/// but there is one field list to edit, not two.
 const PAYLOAD_TYPES_TEMPLATE: &str = r#"
-export type PermissionRequest = {PERMISSION_REQUEST}
-
 -- nil means "no opinion, show the normal prompt". A table with neither
 -- `allow` nor `deny` true means the same thing.
+--
+-- Not generated from a core schema: no Rust type answers a permission hook,
+-- this table is the whole contract, and `Allow`/`Deny`/`Prompt`
+-- (`PermissionHookResult`) is a different shape (an enum, not a table with
+-- two optional bools) built FROM this table, not carried across as it.
 export type PermissionDecision = {
     allow: boolean?,
     deny: boolean?,
@@ -478,10 +471,17 @@ export type WebSocket = {
 }
 "#;
 
-/// [`PAYLOAD_TYPES_TEMPLATE`] with the field lists filled in from the
-/// constants a test can parse.
+/// [`PAYLOAD_TYPES_TEMPLATE`] with `PermissionRequest`'s declaration
+/// generated from its payload struct's schema, rather than kept as a second
+/// hand string.
 fn payload_types() -> String {
-    PAYLOAD_TYPES_TEMPLATE.replace("{PERMISSION_REQUEST}", PERMISSION_REQUEST)
+    let permission_request =
+        crate::signature::LuaType::of_schema::<crate::handlers::PermissionRequestPayload>()
+            .to_luau();
+    format!(
+        "\nexport type PermissionRequest = {permission_request}\n{}",
+        PAYLOAD_TYPES_TEMPLATE
+    )
 }
 
 const FILE_TYPE: &str = r#"
@@ -503,34 +503,29 @@ export type LuaFile = {
 /// default written out longhand. The methods are `LuaNode`'s `UserData`
 /// methods, read off that impl.
 ///
-/// `OilStyle` is the table `parse::style_from_table` reads, and it is the
-/// second argument of `cru.oil.text` and `cru.oil.badge`. `OilProps` is that
-/// table plus the layout keys `create_box_node` reads, and it is the optional
-/// first argument of `cru.oil.col` and `cru.oil.row`.
-pub(crate) const OIL_TYPES: &str = r#"
-export type OilStyle = {
-    fg: string?,
-    bg: string?,
-    bold: boolean?,
-    dim: boolean?,
-    italic: boolean?,
-    underline: boolean?,
-}
-
-export type OilProps = {
-    gap: number?,
-    padding: number?,
-    margin: number?,
-    border: (string | boolean)?,
-    justify: string?,
-    align: string?,
-    fg: string?,
-    bg: string?,
-    bold: boolean?,
-    dim: boolean?,
-    italic: boolean?,
-    underline: boolean?,
-}
+/// `OilStyle` is `crucible_oil::Style`'s own schema, read by
+/// [`generated_oil_types`]: it is the table `parse::style_from_table` reads,
+/// and the second argument of `cru.oil.text` and `cru.oil.badge`. It used to
+/// be a hand string that named six of `Style`'s seven fields — `reverse` was
+/// missing from both the declaration and `style_from_table`, so a plugin
+/// that wrote `{ reverse = true }` got no type error and no effect. Both are
+/// fixed by reading the one Rust struct instead of copying its field names
+/// by hand a second time.
+///
+/// `OilProps` is `OilStyle` plus the layout keys `create_box_node` reads —
+/// an intersection (`OilStyle & { ... }`), not a second copy of the style
+/// fields — and it is the optional first argument of `cru.oil.col` and
+/// `cru.oil.row`.
+///
+/// `ToolResult` is not generated: no Rust type describes it. It is what a
+/// Lua tool handler answers with — `{ error = "..." }` to fail, or its own
+/// result shape to succeed — and the daemon reads only the `error` key
+/// before treating the rest as opaque JSON (`tool_call.rs::tool_result_body`).
+/// The four plugins under `runtime/` each declared this alias locally; one
+/// declaration here, referenced from each, removes the copy without
+/// inventing a schema for a shape nothing types more precisely than "JSON".
+pub(crate) const OIL_TYPES_STATIC: &str = r#"
+export type ToolResult = { [string]: any }
 
 export type OilNode = {
     with_style: (self: OilNode, style: OilStyle) -> OilNode,
@@ -542,6 +537,23 @@ export type OilNode = {
     align: (self: OilNode, align: string) -> OilNode,
 }
 "#;
+
+/// `OilStyle`, generated from `crucible_oil::Style`'s schema, and `OilProps`,
+/// which extends it with the layout keys `create_box_node` reads.
+pub(crate) fn generated_oil_types() -> String {
+    let style = crate::signature::LuaType::of_schema::<crucible_oil::Style>().to_luau();
+    format!(
+        "export type OilStyle = {style}\n\n\
+         export type OilProps = OilStyle & {{\n\
+         \x20   gap: number?,\n\
+         \x20   padding: number?,\n\
+         \x20   margin: number?,\n\
+         \x20   border: (string | boolean)?,\n\
+         \x20   justify: string?,\n\
+         \x20   align: string?,\n\
+         }}\n\n"
+    )
+}
 
 /// Render a Luau declaration file for the function paths given.
 ///
@@ -643,7 +655,8 @@ pub fn render_declarations_with(
     out.push('\n');
     out.push_str(FILE_TYPE.trim_start());
     out.push_str(&payload_types());
-    out.push_str(OIL_TYPES);
+    out.push_str(&generated_oil_types());
+    out.push_str(OIL_TYPES_STATIC);
     out.push_str(HOST_ENVIRONMENT);
     out.push('\n');
     out.push_str("declare cru: ");

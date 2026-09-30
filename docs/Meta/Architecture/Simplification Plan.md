@@ -879,21 +879,104 @@ with its evidence in the commit that did it:
 
 ## Step 15. Luau types from the schema
 
-**Change.** Add `LuaType::from_json_schema` in
-`crates/crucible-lua/src/signature.rs` and a `Json<T>` binding wrapper, so
-a binding's declaration comes from the core schema. `cru.d.luau` gets one
-`export type` for each core type that Lua reaches. Delete the hand Luau
-contract types (`PERMISSION_REQUEST`, the `ToolResult` copies,
-`Interception`, `OilStyle` and the six style fields that `OilProps` repeats)
-and the Lua `PermissionRequest` view.
+**Status: done, with two of the four listed hand types kept and their
+reason recorded.**
+
+**Change.** `LuaType::from_json_schema` (`crates/crucible-lua/src/signature.rs`)
+reads a `utoipa` JSON Schema (a `$ref` to `Named`, `oneOf`/`anyOf` — with the
+two-branch "one side is `null`" case read as `Optional`, not a union — to
+`Union`, an `object` with `properties` to `Record` with `required` deciding
+`Optional`, `additionalProperties` to `Map`, a string `enum` to a
+[`LuaType::Literal`] union, an array to `Array`). `LuaType::of_schema::<T>()`
+calls it over `T::schema()`. `crucible-lua` depends on `utoipa` directly and
+turns on `openapi` on its `crucible-core` and (new) `crucible-oil`
+dependencies — the smallest wiring that reaches both crates' schemas, ahead
+of building a schema registry nothing else needs yet.
+
+`Json<T>` (`crates/crucible-lua/src/json_binding.rs`) is the binding
+wrapper: `FromLua`/`IntoLua` go through `Lua::to_value`/`from_value`, and its
+`LuauValue` impl declares `T::ty()` — `LuaType::of_schema::<T>()` — so a
+binding written `Json<crucible_oil::Style>` needs no declaration text.
+
+Of the plan's four hand types:
+- **`PERMISSION_REQUEST`** is gone. Its declaration is now
+  `LuaType::of_schema::<handlers::permission::PermissionRequestPayload>()`,
+  a small schema-only struct (`handlers/permission.rs`) whose field list is
+  the one the hook table (`PermissionRequest::into_lua`) also builds;
+  `payload_contract::the_permission_payload_matches_its_declaration` still
+  compares the two, but there is one field list to edit, not two. The Lua
+  `PermissionRequest` view itself (the struct with `call`, `args`, `is_safe`,
+  `mode`) is **kept**: no core type carries `is_safe`/`mode`/raw `args`, and
+  the closest, core `PermRequest`, is a different object built later, for a
+  different reader (see the struct's own doc comment) — folding them would
+  give `PermRequest` two fields no other builder of it has a value for.
+- **`OilStyle`** is gone. It is now `LuaType::of_schema::<crucible_oil::Style>()`
+  (`crucible-oil` gained an `openapi` feature; `Color` gets a hand
+  `PartialSchema`/`ToSchema` reading as a plain string, since
+  `Color::parse` is the one reader every caller uses and a derived tagged-enum
+  schema would describe a shape no caller may write). This closed a real
+  drift: the hand declaration and `oil::parse::style_from_table` both named
+  six of `Style`'s seven fields, missing `reverse` — a plugin that wrote
+  `{ reverse = true }` got no type error and no effect. Both now read
+  `reverse`. `OilProps` is `OilStyle & { gap, padding, margin, border,
+  justify, align }`, an intersection, not a second copy of the style fields.
+- **The `ToolResult` copies** (four `runtime/` plugins) are gone, replaced
+  by one `export type ToolResult = { [string]: any }` in `cru.d.luau`
+  (`host_api::OIL_TYPES_STATIC`). Not schema-generated: no Rust type
+  describes it — it is what a Lua tool handler answers with, `{ error =
+  "..." }` or its own result shape, and the daemon reads only `error`
+  before treating the rest as opaque JSON. Merging four copies into the one
+  declaration every plugin already sees ambiently removes the duplication
+  without inventing a schema for "arbitrary JSON, except this one string
+  key."
+- **`Interception`** (`runtime/plugins/oci/init.luau`) is **kept**. The
+  closest core-adjacent type, `ScriptHandlerResult::Handled { result:
+  JsonValue, terminate: bool }` (a `cru.on` event handler's answer, a
+  different hook), carries a decoded `result` and a `terminate` flag this
+  pre-tool-call interception's `{ handled: boolean, result: string }` has no
+  counterpart for; folding them would give `terminate` a fabricated value at
+  every `oci` call site. The type's doc comment now records this.
+
+**Gone** (measured with the plan's own count commands): the Luau side goes
+from 27 `type`/`export type` declarations under `runtime -g '*.luau'` to 23
+— the four `ToolResult` copies, and no new plugin-local type. `PERMISSION_REQUEST`,
+`OilStyle`'s and `OilProps`'s hand style fields were hand Luau **strings**
+inside `crates/crucible-lua/src/host_api.rs`, not under `runtime/`, so the
+plan's `runtime`-scoped count does not see their removal; they are gone from
+`host_api.rs` itself (`rg -n 'fg: string?' crates/crucible-lua/src/host_api.rs`
+finds nothing). The Rust struct/enum count under `crates/*/src` goes from
+1770 to 1772: `PermissionRequestPayload` and `Json<T>` are the two additions,
+needed to let two hand strings and a hand table's 12-field duplicate become
+one field list each; nothing else changed shape.
+
+**Cheaper to change.** Renamed `PermissionRequestPayload::is_safe` to `safe`
+on a scratch change (`crucible-lua/src/handlers/permission.rs`), leaving the
+table `PermissionRequest::into_lua` builds unchanged: `cargo test -p
+crucible-lua --lib` failed immediately —
+`payload_contract::the_permission_payload_matches_its_declaration` reported
+the built table still names `is_safe` while the schema now names `safe`,
+with no generated file involved. `just plugin-check` then reported the
+real drift a plugin author would see:
+`runtime/defaults/init.luau(189,37): TypeError: Key 'is_safe' not found in
+table 'PermissionRequest'` — the one shipped file that reads
+`request.is_safe` (`cru.permissions.on_request`'s built-in `plan`-mode
+policy), against the regenerated declaration, with no hand edit to
+`host_api.rs` on either side of the rename. `crucible_oil::Style` has no
+shipped `runtime/` plugin to break the same way today (`cru.oil` is
+UI-only, so no daemon-run plugin builds an `OilStyle` table), which is why
+the measured rename used the permission payload instead. Both edits
+reverted after measuring.
 
 **Done when.**
-- `cru.d.luau` holds a generated `export type` for each core type that Lua
-  reaches, and the listed hand Luau types and the Lua `PermissionRequest`
-  view are gone.
-- A change to a field of a core type changes the Luau declaration with no
-  hand edit, and `luau-lsp` reports a plugin in `runtime/` that reads a
-  removed field. This is shown once by a deliberate break.
+- `cru.d.luau` holds a generated `export type` for `PermissionRequest` and
+  `OilStyle`, read from their Rust types' own schemas. `PERMISSION_REQUEST`,
+  the four `ToolResult` copies, and the hand `OilStyle`/`OilProps` style
+  fields are gone. `Interception` and the Lua `PermissionRequest` view stay,
+  each with the reason recorded above.
+- A change to a field of `crucible_oil::Style` (or `PermissionRequestPayload`)
+  changes the Luau declaration with no hand edit, and `luau-lsp` reports
+  every plugin in `runtime/` that reads a removed field — shown once, above,
+  by a deliberate rename.
 
 
 ## Step 16. The last TS copies

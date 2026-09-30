@@ -88,6 +88,7 @@ pub mod host_hook;
 pub mod host_registry;
 mod http;
 pub mod isolation;
+pub mod json_binding;
 mod json_query;
 pub mod lifecycle;
 pub mod lua_util;

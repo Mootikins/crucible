@@ -79,6 +79,7 @@ mod parse {
         style.dim = bool_prop(table, "dim")?;
         style.italic = bool_prop(table, "italic")?;
         style.underline = bool_prop(table, "underline")?;
+        style.reverse = bool_prop(table, "reverse")?;
 
         Ok(style)
     }
@@ -218,9 +219,10 @@ const NODE_RESULT: &str = "(OilNode | string | nil)";
 ///
 /// Every function declares its Luau type beside its closure, and `Ns` holds
 /// the declaration to the Rust types at registration. See
-/// [`crate::host_registry`]. `OilNode`, `OilStyle` and `OilProps` are declared
-/// in `host_api::OIL_TYPES`, because Luau cannot name an mlua userdata and a
-/// shape named once beats the same record written out twenty times.
+/// [`crate::host_registry`]. `OilNode` is declared in
+/// `host_api::OIL_TYPES_STATIC`, because Luau cannot name an mlua userdata.
+/// `OilStyle` and `OilProps` are declared in `host_api::generated_oil_types`,
+/// read from `crucible_oil::Style`'s own schema.
 pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     let mut oil = Ns::new(lua, "cru.oil")?;
 
@@ -728,7 +730,12 @@ mod tests {
 
         // `export` is for a definitions file; a plain chunk takes the aliases
         // bare, and the parser is the same either way.
-        let aliases = crate::host_api::OIL_TYPES.replace("export type", "type");
+        let oil_types = format!(
+            "{}{}",
+            crate::host_api::generated_oil_types(),
+            crate::host_api::OIL_TYPES_STATIC
+        );
+        let aliases = oil_types.replace("export type", "type");
         for path in paths {
             let declared = signatures.get(&path).expect("just listed").to_luau();
             let source = format!("{aliases}\ntype Probe = {declared}\nreturn 1");

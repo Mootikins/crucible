@@ -201,11 +201,6 @@ local function exists(path: string): boolean
     return ok and present
 end
 
---- What a tool handler answers with: either `{ error = "..." }` or the
---- handler's own result shape. Both cross to JSON, and the daemon reads
---- `error` first.
-type ToolResult = { [string]: any }
-
 --- Create the note for a date, or report that it already exists.
 function M.daily_create(args: { [string]: any }): ToolResult
     local timestamp, err = parse_date(args.date)

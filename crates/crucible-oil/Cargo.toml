@@ -11,11 +11,16 @@ description = "Minimal Elm/Dioxus-inspired TUI framework for terminal applicatio
 default = []
 serde = ["dep:serde"]
 test-utils = ["dep:proptest"]
+# `ToSchema` on `Style`, so a Lua binding's declaration comes from the
+# type's own schema. Off by default: only crucible-lua needs it. Pulls in
+# `serde` too, so `#[serde(default)]` marks every field not required.
+openapi = ["dep:utoipa", "serde"]
 
 [dependencies]
 crossterm = { workspace = true }
 # `rc` serializes the shared rows of a `RowsNode`.
 serde = { workspace = true, optional = true, features = ["rc"] }
+utoipa = { workspace = true, optional = true }
 unicode-width = "0.2"
 unicode-segmentation = "1.13"
 taffy = "0.12"
