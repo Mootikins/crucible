@@ -914,7 +914,15 @@ mod tests {
             Some(config_root.join("config.toml")),
             None,
             None,
-            Arc::new(|rtp: &[PathBuf]| daemon_plugin_paths(rtp)),
+            Arc::new(|rtp: &[PathBuf]| {
+                use crucible_core::runtime_path::{build_path, PathInputs};
+                let mut path = build_path(&PathInputs {
+                    runtimepath: rtp,
+                    ..PathInputs::default()
+                });
+                path.extend(crate::test_support::repo_runtime_roots());
+                crate::daemon_plugins::daemon_plugin_paths_from(&path)
+            }),
             crate::test_support::repo_runtime_roots(),
         )
         .await
@@ -929,11 +937,13 @@ mod tests {
             let dir = std::fs::canonicalize(dir).unwrap();
             roots.iter().position(|root| *root == dir).unwrap()
         };
-        let shipped = crucible_core::runtime_roots::shipped()
-            .into_iter()
-            .map(|root| root.join("plugins"))
-            .find(|dir| dir.is_dir())
-            .expect("a shipped plugins directory");
+        let shipped = crate::daemon_plugins::daemon_plugin_paths_from(
+            &crate::test_support::repo_runtime_roots(),
+        )
+        .into_iter()
+        .map(|(dir, _)| dir)
+        .next()
+        .expect("the repository plugins directory");
         assert!(
             position(extra.join("plugins")) < position(shipped),
             "{roots:?}"
