@@ -67,7 +67,15 @@ export function pinnedRootKey(sessionId: string | null | undefined): string | nu
   return sessionId ? (pins()[sessionId] ?? null) : null;
 }
 
+// A reveal survives mounting Files and loading its root. It is transient UI intent.
+const [treeRevealRequest, setTreeRevealRequest] = createSignal<{ path: string } | null>(null);
+export { treeRevealRequest };
+
 export const treeRootActions = {
+  reveal(path: string): void { setTreeRevealRequest({ path }); },
+  finishReveal(request: { path: string }): void {
+    if (treeRevealRequest() === request) setTreeRevealRequest(null);
+  },
   /** Pin this session to a root — the tree stops following until it is cleared. */
   pin(sessionId: string, root: TreeRoot): void {
     persist({ ...pins(), [sessionId]: rootKey(root) });

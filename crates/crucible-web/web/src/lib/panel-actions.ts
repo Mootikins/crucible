@@ -1,7 +1,7 @@
 import { statusBarStore } from '@/stores/statusBarStore';
-import { windowStore } from '@/stores/windowStore';
-import { collectLeafGroupIds, edgeLeaf } from '@/windowing';
-import type { EdgePanelPosition } from '@/types/windowTypes';
+import { windowActions, windowStore } from '@/stores/windowStore';
+import { collectLeafGroupIds, collectPanes, edgeLeaf } from '@/windowing';
+import type { LayoutNode, EdgePanelPosition } from '@/types/windowTypes';
 import { getGlobalRegistry, type PanelDefinition } from './panel-registry';
 import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
@@ -111,7 +111,7 @@ export function editorGroupId(): string | null {
 const NOT_REOPENABLE = new Set<string>(['file', 'chat', 'chat-draft', 'diff']);
 
 /**
- * Registered panels with no tab open anywhere — what "Re-add pane" offers.
+ * Closed or individually folded panels — what "Re-add pane" offers.
  *
  * Reads the live tab groups, so it is reactive: closing a panel puts it back
  * in the list. The terminal drops out where the client cannot run one (a
@@ -123,7 +123,12 @@ export function closedPanels(): PanelDefinition[] {
     .list()
     .filter((def) => !NOT_REOPENABLE.has(def.id))
     .filter((def) => def.id !== 'terminal' || terminalAllowed())
-    .filter((def) => findTabByContentType(def.id as TabContentType) === null);
+    .filter((def) => {
+      const existing = findTabByContentType(def.id as TabContentType);
+      if (!existing) return true;
+      return [windowStore.layout, windowStore.edgePanels.left.layout, windowStore.edgePanels.right.layout]
+        .flatMap(collectPanes).some(pane => pane.tabGroupId === existing.groupId && pane.collapsed);
+    });
 }
 
 export function findTabByContentType(
@@ -234,4 +239,28 @@ export function openDiff(source: DiffsetSource, focus?: DiffFocus, session?: str
     }
   }
   openPanelTab('diff', { key, title: diffsetTitle(source), metadata });
+}
+
+/** Swap the document areas while leaving the terminal's rail subtree in place. */
+export function swapConversationAndEditor(): void {
+  const candidates = (node: LayoutNode): LayoutNode[] => {
+    const hasTerminal = collectLeafGroupIds(node).some(id =>
+      windowStore.tabGroups[id]?.tabs.some(tab => tab.contentType === 'terminal'));
+    if (!hasTerminal) return [node];
+    return node.type === 'split' ? [...candidates(node.first), ...candidates(node.second)] : [];
+  };
+  const priority = (node: LayoutNode): number => {
+    const groups = collectLeafGroupIds(node).map(id => windowStore.tabGroups[id]);
+    if (groups.some(group => group?.tabs.some(tab =>
+      SESSION_CONTENT.has(tab.contentType) || ['file', 'canvas', 'base'].includes(tab.contentType)))) return 2;
+    return groups.some(group => group?.tabs.length === 0) ? 1 : 0;
+  };
+  const target = candidates(windowStore.edgePanels.right.layout)
+    .sort((a, b) => priority(b) - priority(a))[0];
+  if (!target) return;
+  windowActions.swapCentreWithEdge('right', target.id);
+  const needsRail = collectPanes(windowStore.edgePanels.right.layout).some(pane =>
+    windowStore.tabGroups[pane.tabGroupId ?? '']?.tabs.some(tab =>
+      tab.contentType !== 'terminal' || !pane.collapsed));
+  if (!needsRail) windowActions.setEdgePanelCollapsed('right', true);
 }

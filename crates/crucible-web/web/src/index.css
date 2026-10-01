@@ -638,15 +638,15 @@
 .status-dot-name { overflow: hidden; max-width: 0; opacity: 0; transform: translateX(-5px); transition: max-width 280ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease, transform 280ms ease; color: var(--cru-color-body); }
 .session-status-area:hover .status-dot-button, .session-status-area:focus-within .status-dot-button, .session-status-area.is-preview .status-dot-button { margin-left: 7px; padding-right: 5px; }
 .session-status-area:hover .status-dot-name, .session-status-area:focus-within .status-dot-name, .session-status-area.is-preview .status-dot-name { max-width: 120px; margin-left: 5px; opacity: 1; transform: translateX(0); }
-.status-menu { position: fixed; z-index: 60; min-width: 240px; max-width: min(360px, calc(100vw - 16px)); max-height: min(340px, 70vh); overflow-y: auto; padding: 5px; border: 1px solid var(--cru-color-hairline-strong); border-radius: 9px; background: var(--cru-color-surface-overlay); box-shadow: 0 9px 28px #0008; }
+.status-menu { position: fixed; z-index: 60; min-width: 240px; max-width: min(360px, calc(100vw - 16px)); max-height: min(340px, 70vh); overflow-y: auto; padding: 5px; border: 1px solid var(--cru-color-hairline-strong); border-radius: var(--cru-radius-card); background: var(--cru-color-surface-overlay); box-shadow: 0 9px 28px #0008; }
 .status-menu-title { padding: 5px 8px; color: var(--cru-color-muted-dark); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.status-menu-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.status-menu-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px; border: 0; border-radius: var(--cru-radius-control); background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .status-menu-item:hover, .status-menu-item:focus-visible { background: #ffffff0d; }
 .status-menu-item small { margin-left: auto; opacity: .65; }
 .status-dialog { padding: 12px; }
 .status-approval-row { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
 .status-approval-plugin { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-approval-value { padding: 3px 8px; border: 1px solid var(--cru-color-hairline-strong); border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.status-approval-value { padding: 3px 8px; border: 1px solid var(--cru-color-hairline-strong); border-radius: var(--cru-radius-control); background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
 .status-approval-value[aria-checked='true'] { border-color: var(--cru-color-attention); background: #ffffff14; }
 .status-approval-value:focus-visible { outline: 2px solid var(--cru-color-attention); outline-offset: 2px; }
 @media (max-width: 650px) {
@@ -837,7 +837,7 @@
        read as dead space with a sentence in one corner. */
     width: fit-content;
     max-width: 100%;
-    border-radius: 8px;
+    border-radius: var(--cru-radius-card);
     border: 1px solid var(--color-hairline-strong);
     background: var(--color-surface-elevated);
     /* Whole pixels (6px, 11px, a 20px line), so the rows under the bubble
@@ -1032,7 +1032,7 @@
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>');
   border-left: 3px solid rgb(var(--callout-rgb));
   background: rgba(var(--callout-rgb), 0.08);
-  border-radius: 4px;
+  border-radius: var(--cru-radius-md);
   padding: 8px 12px;
   margin: 8px 0;
 }
@@ -1206,7 +1206,7 @@ details.callout[open] > summary.callout-title::after {
   margin: 0 0.5em 0 -1.6em;
   vertical-align: -0.16em;
   border: 1.5px solid var(--color-muted, #98939e);
-  border-radius: 4px;
+  border-radius: var(--cru-radius-md);
   background: transparent;
   position: relative;
   cursor: default;
@@ -1241,7 +1241,7 @@ details.callout[open] > summary.callout-title::after {
   margin-right: 0.4em;
   vertical-align: -0.16em;
   border: 1.5px solid var(--color-muted, #98939e);
-  border-radius: 4px;
+  border-radius: var(--cru-radius-md);
   cursor: pointer;
   position: relative;
   transition: background 100ms ease, border-color 100ms ease;
@@ -1519,7 +1519,7 @@ details.callout[open] > summary.callout-title::after {
   color: var(--color-shell-ink, #e7e4df);
   background: color-mix(in srgb, var(--color-surface-elevated, #26232c) 90%, transparent);
   border: 1px solid var(--color-hairline, #322f38);
-  border-radius: 5px;
+  border-radius: var(--cru-radius-control);
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease;

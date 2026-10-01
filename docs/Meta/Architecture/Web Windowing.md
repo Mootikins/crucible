@@ -658,13 +658,15 @@ cancellation and lets the normal idle drain claim it once across mounted panes.
 Session menu actions use the session context; note/tool links use canonical
 resolution/file actions; permission scopes use the interaction response owner.
 
-Navigation controls use the shared control radius (pane radius capped at 12px),
+Navigation controls use the shared configurable control radius,
 and menus use the pane radius. `menu-style.ts` and `ChipSelect` share the
 `shell-popup` tonal surface without borders or shadows; menu groups use spacing.
 Files and Sessions rows use these same corners in desktop rails and phone drawers.
 
-The app exposes one swap button: centre with right rail. The left navigation
-rail stays in place. The generic core side-swap button remains the fallback
+The app exposes one swap button: conversation and editor exchange through
+`swapConversationAndEditor`, which selects the right-rail subtree without Terminal.
+The core `swapCentreWithEdge` accepts that optional subtree id without knowing content types.
+Terminal and the left navigation rail stay in place. The generic core side-swap button remains the fallback
 when no application `railTail` slot is provided.
 
 Ribbon tab sorting uses the same insertion-index and pending-drop owner as
@@ -677,3 +679,50 @@ Session selection reuses a conversation tab group even when the user groups
 Backlinks, Activity or other supporting tabs with it. It activates the selected
 conversation without adding a split, preferring an existing conversation over
 an empty group. Navigation groups containing Sessions or Files remain excluded.
+
+
+### Supporting panels and transcript controls
+
+`PanelShell` and `PanelHeader` share the flat surface and header rules in
+`styles/shell/content.css`; supporting panels reuse these rules instead of
+maintaining separate boxed chrome. `ToolCallRow` presents the daemon's canonical
+tool kind as a compact action/target row. `ToolCard` retains expansion, results,
+permissions and diff navigation. `ThinkingBlock` uses the same row geometry and
+right-hand caret, with a brain icon. Assistant parts share one spacing token.
+
+`RibbonTabButton` folds its pane when a sibling remains expanded; the final
+expanded pane toggles the rail. `closedPanels` includes individually folded panes,
+so the Layout menu restores their existing tab through `tabHost.activate`.
+
+`markdown-click.ts` routes absolute file links through `file-actions.ts`, splitting
+an optional `:line` suffix into the file-open intent. `openFileAtLine` delegates to
+that same owner. Relative note links retain kiln lookup. `lib/clipboard.ts` owns
+the Clipboard API and HTTP-compatible selection fallback, restoring focus and
+selection after copying; transcript actions report failures rather than silently
+claiming success.
+
+The model query refreshes session records after the ACP handshake has populated
+the selected model. Manual refresh invalidates the requested session's key,
+rather than refetching an observer that may still hold the previous selection.
+The session event route invalidates model and session queries on `model_switched`.
+
+File-tab context actions come from the optional `tabMenuActions` app slot.
+`treeRootStore` holds the reveal intent until FilesPanel can select its root,
+load ancestors and focus the file. Tree selection uses the default file-open intent
+(new/existing editor tab), while note links explicitly request in-place navigation.
+Tree guides use a navigation ink/surface blend independently of decorative hairlines.
+
+Rail geometry publishes actual active-tab/pane edge alignment. The theme applies
+top/bottom join exceptions only at those measured edges; middle tabs retain both
+curves, independently of order and which split subtree owns them.
+
+After swapping, a right rail containing only an empty editor and folded Terminal
+collapses automatically. An expanded Terminal keeps it open; opening a file
+reveals the editor rail again.
+
+Backlinks and Activity are absent from the default layout. Open them through
+**Layout → Re-add pane** when needed; saved user layouts retain their chosen tabs.
+
+The model chip renders the authoritative session model. Native catalogue selection
+uses the configured provider key from the shared session detail query; ACP model
+identifiers remain opaque. This preserves the dropdown checkmark after refresh.

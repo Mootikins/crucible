@@ -100,7 +100,7 @@ export const ChangesPanel: Component = () => {
               const value = source();
               if (value) void invalidateDiffset(value);
             }}
-            class="ml-auto rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+            class="ml-auto rounded p-1 text-muted-dark hover:text-shell-ink panel-hover hover:bg-hover-wash disabled:opacity-50"
           >
             <RefreshCw class={`w-3.5 h-3.5 ${loading() ? 'animate-spin' : ''}`} />
           </button>
@@ -115,14 +115,14 @@ export const ChangesPanel: Component = () => {
             stays about the session. */}
         <Show when={conflicts().length > 0}>
           <div data-testid="changes-conflicts">
-            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 border-b border-hairline">
+            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 ">
               <AlertTriangle class="w-3 h-3 shrink-0" />
               Conflicts
             </div>
             <For each={conflicts()}>
               {(row) => (
                 <div
-                  class="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
+                  class="flex items-center gap-2  px-3 py-1.5"
                   data-testid={`changes-conflict-${row.path}`}
                 >
                   <span
@@ -137,7 +137,7 @@ export const ChangesPanel: Component = () => {
                     title={`Settle ${row.path}`}
                     data-testid={`changes-conflict-open-${row.path}`}
                     onClick={() => openConflict(row.path)}
-                    class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
+                    class={`shrink-0 rounded  px-2 py-0.5 text-floor text-shell-ink panel-hover hover:bg-hover-wash ${hit()}`}
                   >
                     Open
                   </button>
@@ -151,14 +151,14 @@ export const ChangesPanel: Component = () => {
             reason: a proposal belongs to no session. */}
         <Show when={mergeProposals().length > 0}>
           <div data-testid="changes-proposals">
-            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 border-b border-hairline">
+            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 ">
               <AlertTriangle class="w-3 h-3 shrink-0" />
               Proposals
             </div>
             <For each={mergeProposals()}>
               {(proposal) => (
                 <div
-                  class="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
+                  class="flex items-center gap-2  px-3 py-1.5"
                   data-testid={`changes-proposal-${proposal.id}`}
                 >
                   <span
@@ -184,7 +184,7 @@ export const ChangesPanel: Component = () => {
                         sessionId() ?? undefined,
                       )
                     }
-                    class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
+                    class={`shrink-0 rounded  px-2 py-0.5 text-floor text-shell-ink panel-hover hover:bg-hover-wash ${hit()}`}
                   >
                     Open
                   </button>
@@ -218,7 +218,7 @@ export const ChangesPanel: Component = () => {
             {(root) => (
               <div>
                 <div
-                  class="px-3 py-1 text-floor uppercase tracking-wider text-muted-dark bg-surface-base border-b border-hairline truncate"
+                  class="px-3 py-1 text-floor uppercase tracking-wider text-muted-dark bg-surface-base  truncate"
                   title={root.root}
                 >
                   {root.root.split('/').filter(Boolean).pop() ?? root.root}
@@ -237,7 +237,7 @@ export const ChangesPanel: Component = () => {
                             { root: file.root, path: file.path },
                           );
                       }}
-                      class="w-full min-w-0 flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-left hover:bg-hover-wash"
+                      class="w-full min-w-0 flex items-center gap-2  px-3 py-1.5 text-left panel-hover hover:bg-hover-wash"
                     >
                       <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
                         {file.path}
@@ -287,7 +287,7 @@ export const ChangesPanel: Component = () => {
                           },
                         );
                       }}
-                      class="shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash"
+                      class="shrink-0 rounded p-1 text-muted-dark hover:text-ok panel-hover hover:bg-hover-wash"
                     >
                       <Check class="w-3.5 h-3.5" />
                     </button>

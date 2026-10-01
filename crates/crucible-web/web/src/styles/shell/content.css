@@ -15,7 +15,7 @@
 .wm-edge-host .wm-pane > .wm-pane-content { background: transparent; }
 .note-editor { --text-reading: var(--mk-font-note); }
 .note-editor [data-testid='markdown-preview'] { font-size: var(--mk-font-note); }
-.user-quote { max-width: 88%; line-height: 1.6; border: 0; border-radius: 12px 12px 4px 12px; padding: 8px 12px; }
+.user-quote { max-width: 88%; line-height: 1.6; border: 0; border-radius: var(--mk-radius) var(--mk-radius) calc(var(--mk-radius) / 3) var(--mk-radius); padding: 8px 12px; }
 .permission-card {
   border: 0;
   border-radius: var(--cru-radius-card);
@@ -60,3 +60,31 @@
 .note-breadcrumb b { color: var(--cru-color-body); font-weight: 500; }
 .note-breadcrumb-separator { opacity: 0.5; margin: 0 4px; }
 .note-history { display: flex; margin-inline-start: calc(-1 * var(--mk-icon-inset)); }
+
+.assistant-parts { gap: var(--cru-turn-gap); }
+[data-role='assistant'] > .thinking-block:has(+ *) { margin-bottom: var(--cru-turn-gap); }
+
+.tool-call-row { display: flex; align-items: center; gap: 7px; min-height: 26px; padding: 2px 6px; border-radius: var(--cru-radius-control); color: var(--cru-color-muted); font-size: 12.5px; line-height: 22px; min-width: 0; }
+.tool-call-row:hover { background: var(--cru-color-hover-wash); }
+.tool-call-toggle { display: flex; align-items: center; gap: 7px; min-width: 0; text-align: left; }
+.tool-call-toggle > span:first-of-type { white-space: nowrap; }
+.tool-call-target { color: var(--cru-color-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tool-call-file:hover { color: var(--cru-color-primary); text-decoration: underline; }
+.tool-call-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tool-call-status { flex: none; font-size: 12px; color: var(--cru-color-muted-dark); }
+.tool-call-chevron { margin-left: auto; flex: none; opacity: .35; }
+.tool-call-row:hover .tool-call-chevron, .tool-call-row:focus-within .tool-call-chevron, .tool-call-row[data-expanded] .tool-call-chevron { opacity: 1; }
+.tool-call-detail { margin: 2px 0 6px 7px; padding: 2px 0 2px 14px; border-left: 1px solid var(--cru-color-hairline-strong); }
+
+/* Every registered panel shares the shell surface and header vocabulary. */
+.panel-shell { min-height: 0; min-width: 0; background: transparent; font-size: 13px; }
+.panel-header { flex-shrink: 0; padding: 12px 16px 8px; }
+.panel-title { font-size: 12px; font-weight: 600; color: var(--cru-color-muted); }
+.panel-item { border-radius: var(--cru-radius-card); }
+.panel-hover { border-radius: var(--cru-radius-control); }
+.panel-detail { margin: 2px 10px 8px; overflow: hidden; border-radius: var(--cru-radius-control); }
+
+.tool-call-status.text-error { color: var(--cru-color-error); }
+
+.panel-shell button { border: 0; border-radius: var(--cru-radius-control); }
+.panel-shell :is(input, select, textarea) { border-color: transparent; border-radius: var(--cru-radius-control); }

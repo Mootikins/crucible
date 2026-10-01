@@ -1,3 +1,4 @@
+import { useWindowingSlots } from './context';
 import { Component, For, JSX, Show, createMemo, createSignal, createEffect, onMount, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import {
@@ -478,6 +479,8 @@ export const TabContextMenu: Component<{
   tab: TabType;
   children: JSX.Element;
 }> = (props) => {
+  const slots = useWindowingSlots();
+  const extraActions = () => slots.tabMenuActions?.(props.tab) ?? [];
   const floating = () =>
     windowStore.floatingWindows.find((w) => w.tabGroupId === props.groupId());
   const paneId = () => (floating() ? undefined : props.paneId?.() || undefined);
@@ -518,7 +521,11 @@ export const TabContextMenu: Component<{
     }
   };
   return (
-    <Menu.Root onSelect={(d) => onSelect(d.value as TabMenuAction)}>
+    <Menu.Root onSelect={(d) => {
+      const action = extraActions().find(action => `app:${action.id}` === d.value);
+      if (action) action.run();
+      else onSelect(d.value as TabMenuAction);
+    }}>
       {/* asChild div: the default trigger is a BUTTON and TabItem carries its
           own close button — button-in-button is invalid HTML. */}
       <Menu.ContextTrigger
@@ -531,6 +538,9 @@ export const TabContextMenu: Component<{
       <Portal>
         <Menu.Positioner>
           <Menu.Content class={`${menuContent} z-50`}>
+          <For each={extraActions()}>{action => (
+            <Menu.Item value={`app:${action.id}`} class={menuItem}>{action.label}</Menu.Item>
+          )}</For>
           {/* No Close on a tab that the policy keeps. The store refuses to
               close it, so the row would do nothing. The two bulk closes stay:
               they skip the kept tab and close the rest. */}

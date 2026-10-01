@@ -1,8 +1,6 @@
 import {
-  Activity,
   ClipboardList,
   FolderTree,
-  Link2,
   Terminal,
 } from '@/lib/icons';
 import type { Tab, WindowState } from '@/types/windowTypes';
@@ -27,18 +25,6 @@ const createFileTabs = (): Tab[] => [
     title: 'Files',
     contentType: 'files',
     icon: FolderTree,
-  },
-  {
-    id: 'backlinks-tab',
-    title: 'Backlinks',
-    contentType: 'backlinks',
-    icon: Link2,
-  },
-  {
-    id: 'activity-tab',
-    title: 'Activity',
-    contentType: 'activity',
-    icon: Activity,
   },
 ];
 

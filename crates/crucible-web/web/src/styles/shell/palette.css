@@ -44,8 +44,15 @@
   --cru-color-ok: #7cc68a;
   --cru-color-precog: #b194ec;
   --cru-radius-card: var(--mk-radius);
-  --cru-radius-control: min(12px, var(--mk-radius));
-  --cru-radius-composer: 14px;
+  --cru-radius-control: var(--mk-radius);
+  --cru-radius-composer: var(--mk-radius);
+  --cru-color-tree-guide: color-mix(in oklab, var(--mk-nav-ink) 35%, var(--mk-nav-solid));
+  --cru-radius-sm: calc(var(--mk-radius) / 4);
+  --cru-radius-md: calc(var(--mk-radius) / 3);
+  --cru-radius-lg: calc(var(--mk-radius) / 2);
+  --cru-radius-xl: calc(var(--mk-radius) * 2 / 3);
+  --cru-radius-2xl: calc(var(--mk-radius) * 5 / 6);
+  --cru-radius-3xl: calc(var(--mk-radius) * 7 / 6);
   /* Shell-specific palette and reading metrics. */
   --mk-nav-ink: #e4e5e9;
   --mk-nav-body: #c3c5cc;

@@ -20,7 +20,7 @@ for (const width of [390, 1440]) {
     await page.evaluate(() => document.documentElement.style.setProperty('--mk-radius', '18px'));
     const trigger = page.getByTestId('root-dropdown');
     await expect(trigger).toHaveCSS('border-top-width', '0px');
-    await expect(trigger).toHaveCSS('border-radius', '12px');
+    await expect(trigger).toHaveCSS('border-radius', '18px');
     await trigger.click();
     const popup = page.getByTestId('root-dropdown-popout');
     await expect(popup).toHaveCSS('border-top-width', '0px');
@@ -28,7 +28,7 @@ for (const width of [390, 1440]) {
     await expect(popup).toHaveCSS('box-shadow', 'none');
     const option = popup.getByRole('option').filter({ hasText: 'Example project' });
     await option.hover();
-    await expect(option).toHaveCSS('border-radius', '12px');
+    await expect(option).toHaveCSS('border-radius', '18px');
     for (const theme of ['dark', 'light']) {
       await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
       await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`dropdown-${width}-${theme}.png`) });
@@ -37,7 +37,7 @@ for (const width of [390, 1440]) {
     const row = page.locator('.tree-row').filter({ hasText: 'Notes' }).first();
     await expect(row).toBeVisible();
     await row.hover();
-    await expect(row).toHaveCSS('border-radius', '12px');
+    await expect(row).toHaveCSS('border-radius', '18px');
     await expect(page.locator('.files-toolbar')).toHaveCSS('border-bottom-width', '0px');
     await row.click({ button: 'right' });
     const menu = page.getByRole('menu').last();
@@ -58,7 +58,7 @@ for (const width of [390, 1440]) {
     }
     const session = page.locator('[data-session-id]').first();
     await session.hover();
-    await expect(session).toHaveCSS('border-radius', '12px');
+    await expect(session).toHaveCSS('border-radius', '18px');
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`sessions-${width}.png`) });
   });
 }

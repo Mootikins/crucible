@@ -123,14 +123,21 @@ test('the last Sessions tab may move out of its rail', async ({ page }) => {
 });
 
 test('the layout menu re-adds a closed panel', async ({ page }) => {
+  // Supporting panels start closed; open one before testing close/re-add.
+  await expect(page.locator('[data-content-type="backlinks"]')).toHaveCount(0);
+  await expect(page.locator('[data-content-type="activity"]')).toHaveCount(0);
+  await page.evaluate(async () => {
+    const { openPanelTab } = await import('/src/lib/panel-actions.ts');
+    openPanelTab('backlinks');
+  });
   // Close Backlinks the way a user does: the close button on its tab.
   await windowAction(page, 'setEdgePanelCollapsed', 'right', false);
-  const backlinksTab = page.getByTestId('rail-tab-backlinks-tab');
+  const backlinksTab = page.getByTestId('rail-tab-tab-backlinks');
   await expect(backlinksTab).toBeVisible();
   await backlinksTab.hover();
   await backlinksTab.getByRole('button', { name: /^Close / }).click();
   await expect(backlinksTab).toHaveCount(0);
-  expect(await groupOf(page, 'backlinks-tab')).toBeNull();
+  expect(await groupOf(page, 'tab-backlinks')).toBeNull();
 
   await page.getByTestId('layout-menu').click();
   await page.getByTestId('layout-readd').click();

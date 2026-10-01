@@ -38,7 +38,7 @@ describe('MarkdownPreview (reading view)', () => {
     // The copied text is the code, not the button label.
     expect(writeText.mock.calls[0][0]).toContain('npm install');
     // Brief "Copied" affordance.
-    expect(btn.textContent).toBe('Copied');
+    await waitFor(() => expect(btn.textContent).toBe('Copied'));
   });
 });
 

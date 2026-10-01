@@ -111,7 +111,7 @@ describe('ToolCard — collapsed header', () => {
         })}
       />
     ));
-    expect(screen.getByText('Bash')).toBeInTheDocument();
+    expect(screen.getByTitle('Bash')).toBeInTheDocument();
     expect(screen.queryByText('Run cargo test')).not.toBeInTheDocument();
   });
 
@@ -168,16 +168,16 @@ describe('ToolCard — status indicators', () => {
     expect(screen.getByTitle('Running')).toBeInTheDocument();
   });
 
-  it('renders a check on complete', () => {
+  it('announces completion without a repeated checkmark', () => {
     render(() => <ToolCard toolCall={makeTool({ status: 'complete' })} />);
     expect(screen.getByTitle('Complete')).toBeInTheDocument();
-    expect(screen.getByText('✓')).toBeInTheDocument();
+    expect(screen.queryByText('✓')).not.toBeInTheDocument();
   });
 
   it('renders an X on error', () => {
     render(() => <ToolCard toolCall={makeTool({ status: 'error', result: 'boom' })} />);
     expect(screen.getByTitle('Error')).toBeInTheDocument();
-    expect(screen.getByText('✗')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
   });
 });
 
@@ -243,7 +243,7 @@ describe('ToolCard — bash command rendering', () => {
 
   it('renders a bash command as a shell line, not JSON', () => {
     render(() => <ToolCard toolCall={bash('ls -la /tmp')} />);
-    fireEvent.click(screen.getByText('bash'));
+    fireEvent.click(screen.getByTitle('bash'));
 
     const cmd = screen.getByTestId('bash-command');
     expect(cmd.textContent).toContain('ls -la /tmp');
@@ -255,7 +255,7 @@ describe('ToolCard — bash command rendering', () => {
   it('keeps real newlines in a multi-line command', () => {
     // As JSON this rendered as one line containing a literal \n escape.
     render(() => <ToolCard toolCall={bash('cd /tmp\ngrep -r foo .')} />);
-    fireEvent.click(screen.getByText('bash'));
+    fireEvent.click(screen.getByTitle('bash'));
 
     const cmd = screen.getByTestId('bash-command');
     expect(cmd.textContent).toContain('cd /tmp\ngrep -r foo .');
@@ -264,7 +264,7 @@ describe('ToolCard — bash command rendering', () => {
 
   it('still shows any non-command bash arguments', () => {
     render(() => <ToolCard toolCall={bash('ls', { timeout: 30 })} />);
-    fireEvent.click(screen.getByText('bash'));
+    fireEvent.click(screen.getByTitle('bash'));
 
     expect(screen.getByTestId('bash-command').textContent).toContain('ls');
     const args = screen.getByTestId('tool-args');
@@ -276,7 +276,7 @@ describe('ToolCard — bash command rendering', () => {
 
   it('falls back to the JSON args block when bash has no command string', () => {
     render(() => <ToolCard toolCall={makeTool({ name: 'bash', args: '{"script":"x"}' })} />);
-    fireEvent.click(screen.getByText('bash'));
+    fireEvent.click(screen.getByTitle('bash'));
 
     expect(screen.queryByTestId('bash-command')).not.toBeInTheDocument();
     expect(screen.getByTestId('tool-args').textContent).toContain('script');
@@ -286,7 +286,7 @@ describe('ToolCard — bash command rendering', () => {
     render(() => (
       <ToolCard toolCall={makeTool({ name: 'run_task', args: '{"command":"build"}' })} />
     ));
-    fireEvent.click(screen.getByText('run_task'));
+    fireEvent.click(screen.getByTitle('run_task'));
 
     expect(screen.queryByTestId('bash-command')).not.toBeInTheDocument();
   });
@@ -541,7 +541,7 @@ describe('ToolCard — Open diff', () => {
 
   it('the tool card opens the session record in the diff pane', () => {
     render(() => <ToolCard toolCall={editTool()} />);
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByTitle('Edit'));
 
     fireEvent.click(screen.getByTestId('tool-open-diff'));
 
@@ -565,7 +565,7 @@ describe('ToolCard — Open diff', () => {
 
   it('offers Open diff while the tool is still running (the diff is already known)', () => {
     render(() => <ToolCard toolCall={{ ...editTool(), status: 'running' }} />);
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByTitle('Edit'));
     expect(screen.getByTestId('tool-open-diff')).toBeInTheDocument();
   });
 
@@ -573,7 +573,7 @@ describe('ToolCard — Open diff', () => {
   it('has no Open diff button outside a session', () => {
     chat.sessionId = undefined;
     render(() => <ToolCard toolCall={editTool()} />);
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByTitle('Edit'));
     expect(screen.queryByTestId('tool-open-diff')).not.toBeInTheDocument();
     expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
   });
@@ -592,7 +592,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         })}
       />
     ));
-    fireEvent.click(screen.getByText('run_task'));
+    fireEvent.click(screen.getByTitle('run_task'));
     expect(screen.getByTestId('bash-command').textContent).toContain('make build');
   });
 

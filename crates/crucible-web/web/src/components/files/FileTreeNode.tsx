@@ -39,7 +39,7 @@ const IndentGuides: Component<{ depth: number }> = (props) => (
           style={{
             width: '1px',
             'margin-left': 'calc(var(--tree-icon-slot, 1rem) / 2)',
-            background: 'var(--color-hairline)',
+            background: 'var(--cru-color-tree-guide)',
           }}
         />
       </span>

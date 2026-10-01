@@ -121,13 +121,13 @@ export const SkillsPanel: Component = () => {
   return (
     <PanelShell class="relative">
       <PanelHeader title="Skills" />
-      <div class="px-3 py-2 border-b border-hairline">
+      <div class="px-3 py-2 ">
         <input
           type="search"
           value={query()}
           onInput={(e) => onQueryInput(e.currentTarget.value)}
           placeholder="Search skills…"
-          class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 placeholder-muted border border-hairline focus-ring focus:border-muted-dark"
+          class="w-full bg-control text-shell-ink text-sm rounded-lg px-2 py-1.5 placeholder-muted  focus-ring focus:border-muted-dark"
           data-testid="skills-search-input"
         />
       </div>
@@ -159,7 +159,7 @@ export const SkillsPanel: Component = () => {
                       {(skill) => (
                         <button
                           type="button"
-                          class="focus-ring w-full text-left px-3 py-2 hover:bg-hover-wash border-b border-hairline focus:bg-hover-wash"
+                          class="focus-ring w-full text-left px-3 py-2 panel-hover hover:bg-hover-wash  focus:bg-hover-wash"
                           onClick={() => openDetail(skill)}
                           data-testid={`skill-row-${skill.name}`}
                         >
@@ -196,7 +196,7 @@ export const SkillsPanel: Component = () => {
             class="absolute inset-0 bg-surface-overlay z-10 flex flex-col"
             data-testid="skills-drawer"
           >
-            <div class="flex items-center gap-2 px-3 py-2 border-b border-hairline">
+            <div class="flex items-center gap-2 px-3 py-2 ">
               <button
                 type="button"
                 onClick={closeDetail}
@@ -214,7 +214,7 @@ export const SkillsPanel: Component = () => {
               <button
                 type="button"
                 onClick={() => copyInvocation(s().name)}
-                class="mb-3 text-xs px-2 py-1 bg-control hover:bg-hover-wash rounded border border-hairline text-shell-ink"
+                class="mb-3 text-xs px-2 py-1 bg-control panel-hover hover:bg-hover-wash rounded  text-shell-ink"
                 data-testid="skills-copy-invocation"
               >
                 Copy /{s().name}
@@ -226,7 +226,7 @@ export const SkillsPanel: Component = () => {
                       <Show when={d().description}>
                         <p class="text-sm text-shell-body mb-3">{d().description}</p>
                       </Show>
-                      <pre class="text-xs font-mono text-shell-body whitespace-pre-wrap break-words bg-shell-bg p-3 rounded border border-hairline">
+                      <pre class="text-xs font-mono text-shell-body whitespace-pre-wrap break-words bg-shell-bg p-3 rounded ">
                         {d().body}
                       </pre>
                     </>

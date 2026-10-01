@@ -97,7 +97,7 @@ export const SurfacesPanel: Component = () => {
 
       {/* More than one surface: a chooser. One: its title is already the header. */}
       <Show when={all().length > 1}>
-        <div class="flex gap-1 px-2 py-1 border-b border-hairline overflow-x-auto">
+        <div class="flex gap-1 px-2 py-1  overflow-x-auto">
           <For each={all()}>
             {(s) => (
               <button

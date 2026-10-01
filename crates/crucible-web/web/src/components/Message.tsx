@@ -1,3 +1,5 @@
+import { copyText } from '@/lib/clipboard';
+import { notificationActions } from '@/stores/notificationStore';
 /**
  * A USER or SYSTEM transcript row. Assistant output never renders here —
  * MessageList groups an entire assistant response (text segments + tool
@@ -48,11 +50,11 @@ export const Message: Component<MessageProps> = (props) => {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(props.message.content);
+      await copyText(props.message.content);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
-      // Clipboard API not available
+      notificationActions.addNotification('error', 'Copy was blocked. Select the text and copy it manually.');
     }
   };
 

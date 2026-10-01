@@ -139,6 +139,7 @@ describe('FileTreeView — rendering & a11y', () => {
     fireEvent.click(readme);
     await waitFor(() => expect(onOpenLeaf).toHaveBeenCalledTimes(1));
     expect(onOpenLeaf.mock.calls[0][0]).toMatchObject({ relPath: 'README.md', isDir: false });
+    expect(onOpenLeaf.mock.calls[0][1]).toBeUndefined();
   });
 
   it('clicking a branch does not open a file', async () => {

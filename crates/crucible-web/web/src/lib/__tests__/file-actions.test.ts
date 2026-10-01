@@ -289,3 +289,25 @@ it('only valid retained file paths keep buffers alive', () => {
   const tab = makeTab('file', 'A', 'file', { filePath: '/a.md', fileHistoryRetained: [null, '/b.md', 3, '/a.md'] });
   expect(fileHistoryPaths(tab)).toEqual(['/a.md', '/b.md']);
 });
+
+
+it('splits beside the originating file tab when a different pane is focused', () => {
+  setupDefaultState([makeTab('source-tab', 'source.md', 'file', { filePath: '/source.md' })]);
+  setStore(produce(s => {
+    s.layout = {
+      id: 'two-editors', type: 'split', direction: 'horizontal', splitRatio: .5,
+      first: { id: 'source-pane', type: 'pane', tabGroupId: 'center-group' },
+      second: { id: 'focused-pane', type: 'pane', tabGroupId: 'other-group' },
+    };
+    s.tabGroups['other-group'] = makeTabGroup('other-group', [makeTab('other-tab', 'other.md', 'file', { filePath: '/other.md' })]);
+    s.activePaneId = 'focused-pane';
+  }));
+  openFileInEditor('/target.rs', undefined, { where: 'split', tabId: 'source-tab', line: 14 });
+  expect(windowStore.layout).toMatchObject({
+    first: { type: 'split', first: { id: 'source-pane' } },
+    second: { id: 'focused-pane', type: 'pane' },
+  });
+  expect(findTabByFilePath('/target.rs')?.tab.metadata?.scrollToLine).toBe(14);
+  expect(findTabByFilePath('/source.md')).not.toBeNull();
+  expect(findTabByFilePath('/other.md')).not.toBeNull();
+});

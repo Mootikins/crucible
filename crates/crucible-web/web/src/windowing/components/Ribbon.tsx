@@ -10,7 +10,7 @@ import { chordLabel } from '@/windowing/shortcuts';
 import { RibbonPaneStrip } from './RibbonPaneStrip';
 import { RibbonCommand, ribbonBtn } from './RibbonButton';
 import { TabContextMenu, useTabBarDnD } from './TabBar';
-import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
+import { measureRailTabEdges, paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
 import { railShown } from './rail-shown';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import {
@@ -63,7 +63,8 @@ const RibbonTabButton: Component<{
       windowActions.setActiveTab(props.groupId, props.tab.id);
       windowActions.setPaneCollapsed(props.paneId, false);
     } else if (props.isActive) {
-      windowActions.setEdgePanelCollapsed(props.position, true);
+      if (windowActions.canCollapsePane(props.paneId)) windowActions.setPaneCollapsed(props.paneId, true);
+      else windowActions.setEdgePanelCollapsed(props.position, true);
     } else {
       windowActions.setActiveTab(props.groupId, props.tab.id);
     }
@@ -89,6 +90,7 @@ const RibbonTabButton: Component<{
       data-testid={`collapsed-tab-button-${props.position}`}
       data-ribbon-tab-id={props.tab.id}
       data-group-id={props.groupId}
+      data-ribbon-pane-id={props.paneId}
       data-content-type={props.tab.contentType}
       data-orientation={props.isVertical ? 'vertical' : 'horizontal'}
       data-highlighted={highlighted() ? '' : undefined}
@@ -226,6 +228,8 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
     return root.type === 'split' ? (collectPanes(root.second)[0]?.id ?? null) : null;
   };
 
+  let alignmentFrame = 0;
+  onCleanup(() => cancelAnimationFrame(alignmentFrame));
   const measureGeometry = () => {
     const ribbon = ribbonRef;
     if (!ribbon) return;
@@ -252,12 +256,15 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
     const trailing = trailingRef();
     if (trailing) next['--wm-ribbon-trailing-height'] = px(trailing.getBoundingClientRect().height);
     setGeometry(next);
+    cancelAnimationFrame(alignmentFrame);
+    alignmentFrame = requestAnimationFrame(() => { if (body) measureRailTabEdges(ribbon, body); });
   };
 
   watchRailGeometry(props.position, measureGeometry, {
     extra: () => [leadingRef, trailingRef(), tailRef],
     // A tab that comes or goes changes the size of a cluster.
-    key: () => `${leadingEntries().length}:${trailingEntries().length}`,
+    key: () => [...leadingEntries(), ...trailingEntries()]
+      .map(entry => `${entry.tab.id}:${windowStore.tabGroups[entry.groupId]?.activeTabId}`).join('|'),
   });
 
   // Per-PANE markers only earn their space once a rail holds more than one

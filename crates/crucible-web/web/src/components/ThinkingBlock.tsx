@@ -1,5 +1,5 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
-import { ChevronRight } from '@/lib/icons';
+import { Brain, ChevronRight } from '@/lib/icons';
 
 interface ThinkingBlockProps {
   content: string;
@@ -88,22 +88,15 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
   });
 
   return (
-    <div class="mb-2">
+    <div class="thinking-block">
       {/* Clickable header */}
       <button
         type="button"
         onClick={toggle}
-        class="flex items-center gap-1.5 text-xs text-muted hover:text-shell-body transition-colors cursor-pointer select-none group"
+        aria-expanded={isExpanded()}
+        class="thinking-header tool-call-row w-full cursor-pointer select-none group"
       >
-        <span
-          class="transition-transform duration-300 ease-in-out"
-          style={{
-            transform: isExpanded() ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}
-        >
-          <ChevronRight size={14} />
-        </span>
-
+        <Brain class="w-3.5 h-3.5 shrink-0" />
         <span>{headerLabel()}</span>
 
         <Show when={props.isStreaming}>
@@ -121,6 +114,7 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
             />
           </span>
         </Show>
+        <ChevronRight class={`tool-call-chevron w-3 h-3 transition-transform ${isExpanded() ? 'rotate-90' : ''}`} />
       </button>
 
       {/* Collapsible content with gridTemplateRows animation. Open while the

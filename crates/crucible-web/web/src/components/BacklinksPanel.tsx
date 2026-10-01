@@ -197,7 +197,7 @@ export const BacklinksPanel: Component = () => {
             <button
               type="button"
               data-testid="backlinks-refresh"
-              class="rounded p-1 text-muted-dark hover:bg-hover-wash hover:text-shell-body"
+              class="rounded p-1 text-muted-dark panel-hover hover:bg-hover-wash hover:text-shell-body"
               title="Refresh backlinks"
               onClick={retry}
             >
@@ -261,7 +261,7 @@ export const BacklinksPanel: Component = () => {
                     // link index resolved one; note-match fallback).
                     data-scroll-note={focusedKeys()[0] ?? ''}
                     data-scroll-line={block()?.line ?? ''}
-                    class="block w-full rounded px-2 py-1.5 text-left hover:bg-hover-wash"
+                    class="block w-full rounded-lg px-2 py-1.5 text-left panel-hover hover:bg-hover-wash"
                     onClick={() =>
                       // Global open event: the app routes it to the window-tab
                       // editor; harnesses route it to their own EditorContext.
@@ -307,7 +307,7 @@ export const BacklinksPanel: Component = () => {
               {(s) => (
                 <div
                   data-testid="backlinks-unlinked-item"
-                  class="flex items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-hover-wash"
+                  class="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 panel-hover hover:bg-hover-wash"
                 >
                   <div class="min-w-0">
                     <span class="block truncate text-sm text-shell-body">“{s.mention}”</span>
@@ -318,7 +318,7 @@ export const BacklinksPanel: Component = () => {
                   <button
                     type="button"
                     data-testid="backlinks-link-button"
-                    class="shrink-0 rounded border border-hairline px-2 py-0.5 text-xs text-primary hover:bg-hover-wash"
+                    class="shrink-0 rounded  px-2 py-0.5 text-xs text-primary panel-hover hover:bg-hover-wash"
                     title={`Convert to [[${s.target}]]`}
                     onClick={() => applySuggestion(s)}
                   >

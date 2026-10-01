@@ -14,10 +14,7 @@ describe('the default rail roster', () => {
     expect(tabs.map((t) => t.title)).toEqual([
       'Sessions',
       'Files',
-      'Backlinks',
-      'Activity',
-      // The terminal is a pane UNDER the tree now, in the same rail — not a
-      // full-width dock. `Chat` went with that dock.
+      // Terminal starts folded below the conversation area.
       'Terminal',
     ]);
     for (const tab of tabs) {

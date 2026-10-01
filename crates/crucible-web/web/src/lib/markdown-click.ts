@@ -1,4 +1,6 @@
-import { fileOpenOptionsForEvent, type FileOpenOptions } from './file-actions';
+import { copyText } from './clipboard';
+import { notificationActions } from '@/stores/notificationStore';
+import { openFileInEditor, fileOpenOptionsForEvent, type FileOpenOptions } from './file-actions';
 import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
 
 /**
@@ -25,14 +27,17 @@ export function makeMarkdownClickHandler(onFollow?: (target: string, options: Fi
       const pre = copyBtn.closest('.md-codeblock')?.querySelector('pre');
       const code = pre?.textContent ?? '';
       if (code) {
-        void navigator.clipboard?.writeText(code);
         const prev = copyBtn.textContent;
-        copyBtn.textContent = 'Copied';
-        copyBtn.classList.add('is-copied');
-        setTimeout(() => {
-          copyBtn.textContent = prev;
-          copyBtn.classList.remove('is-copied');
-        }, 1200);
+        void copyText(code).then(() => {
+          copyBtn.textContent = 'Copied';
+          copyBtn.classList.add('is-copied');
+          setTimeout(() => {
+            copyBtn.textContent = prev;
+            copyBtn.classList.remove('is-copied');
+          }, 1200);
+        }).catch(() => {
+          notificationActions.addNotification('error', 'Copy was blocked. Select the text and copy it manually.');
+        });
       }
       return;
     }
@@ -53,11 +58,28 @@ export function makeMarkdownClickHandler(onFollow?: (target: string, options: Fi
     const href = anchor.getAttribute('href') ?? '';
     if (!href || href.startsWith('#')) return;
     event.preventDefault();
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
       window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
-    const note = decodeURIComponent(href)
+    let path = href;
+    try { path = decodeURIComponent(href); } catch { /* A literal percent is a valid filename. */ }
+    if (path.startsWith('/')) {
+      const location = /^(.*):([1-9]\d*)$/.exec(path);
+      const options = fileOpenOptionsForEvent(event);
+      // The click reaches its pane's focus handler only after this handler.
+      // A note owns in-place navigation; transcript links have no editor to replace.
+      const tabId = anchor.closest<HTMLElement>('[data-file-tab-id]')?.dataset.fileTabId;
+      if (tabId) options.tabId = tabId;
+      else if (options.where === 'here') delete options.where;
+      if (location) {
+        path = location[1];
+        options.line = Number(location[2]);
+      }
+      void openFileInEditor(path, undefined, options);
+      return;
+    }
+    const note = path
       .replace(/^\.?\//, '')
       .replace(/\.md$/i, '');
     if (canFollow()) onFollow?.(note, fileOpenOptionsForEvent(event));

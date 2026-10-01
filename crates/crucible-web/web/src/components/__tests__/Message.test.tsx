@@ -149,6 +149,18 @@ describe('Message — action buttons', () => {
 // ── Copy flow ──────────────────────────────────────────────────────────
 
 describe('Message — copy', () => {
+  it('copies on an HTTP LAN origin without the Clipboard API', async () => {
+    Object.assign(navigator, { clipboard: undefined });
+    const copy = vi.fn(() => true);
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: copy });
+    render(() => <Message message={makeMessage({ content: 'LAN copy' })} />);
+    fireEvent.click(screen.getByTitle('Copy message'));
+    await waitFor(() => expect(copy).toHaveBeenCalledWith('copy'));
+    await waitFor(() => expect(screen.getByTitle('Copied!')).toBeInTheDocument());
+    expect(document.querySelector('[data-clipboard-fallback]')).toBeNull();
+    Reflect.deleteProperty(document, 'execCommand');
+  });
+
   it('writes content to clipboard and swaps to a check icon, then reverts', async () => {
     render(() => (
       <Message message={makeMessage({ role: 'user', content: 'copy me' })} />

@@ -159,8 +159,8 @@ describe('the two rails are fixed', () => {
 
   it('still closes a tab that is not a rail panel', () => {
     const groupId = collectLeafGroupIds(windowStore.edgePanels.left.layout)[1];
-    const backlinks = windowStore.tabGroups[groupId].tabs.find((t) => t.contentType === 'backlinks')!;
-    windowActions.removeTab(groupId, backlinks.id);
+    windowActions.addTab(groupId, { id: 'optional-backlinks', title: 'Backlinks', contentType: 'backlinks' });
+    windowActions.removeTab(groupId, 'optional-backlinks');
     expect(railContent('left')).not.toContain('backlinks');
   });
 });

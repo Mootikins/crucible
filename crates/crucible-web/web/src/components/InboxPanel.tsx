@@ -116,7 +116,7 @@ const ProposalRow: Component<{ proposal: Proposal }> = (props) => {
   return (
     <div
       data-testid={`inbox-proposal-${id()}`}
-      class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-hairline mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors"
+      class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl  mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors"
     >
       <button
         type="button"
@@ -264,7 +264,7 @@ const InboxPanel: Component = () => {
     const session = rowProps.session;
     const status = () => statusLabel(session);
     return (
-      <div class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-hairline mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors group">
+      <div class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl  mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors group">
         <SessionStatusDot status={sessionStatus(session)} labelled />
         <button
           type="button"
@@ -324,7 +324,7 @@ const InboxPanel: Component = () => {
 
         <For each={waiting()}>
           {(entry) => (
-            <div class="bg-attention/5 border border-attention/40 rounded-lg px-3.5 py-3 mb-2.5">
+            <div class="bg-attention/5 border border-attention/40 rounded-xl px-3.5 py-3 mb-2.5">
               <div class="flex items-center gap-2 mb-2">
                 <SessionStatusDot status="waiting" labelled />
                 <span class="text-reading font-semibold">{titleFor(entry)}</span>
@@ -351,13 +351,13 @@ const InboxPanel: Component = () => {
         </Show>
 
         <Show when={pendingCount() === 0}>
-          <div class="flex items-center gap-2.5 bg-ok/5 border border-ok/30 rounded-lg px-3.5 py-2.5 mb-2.5 text-ok text-reading">
+          <div class="flex items-center gap-2.5 bg-ok/5 border border-ok/30 rounded-xl px-3.5 py-2.5 mb-2.5 text-ok text-reading">
             ✓ all clear — nothing waiting on you
           </div>
         </Show>
 
         <Show when={resolved()}>
-          <div class="border border-ok/30 bg-ok/5 rounded-lg px-3 py-2 mb-2.5 text-floor text-ok">
+          <div class="border border-ok/30 bg-ok/5 rounded-xl px-3 py-2 mb-2.5 text-floor text-ok">
             {resolved()}
           </div>
         </Show>

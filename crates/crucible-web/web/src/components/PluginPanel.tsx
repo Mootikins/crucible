@@ -222,7 +222,7 @@ export const PluginPanel: Component = () => {
             <For each={plugins.data}>
               {(plugin) => (
                 <div
-                  class="px-3 py-2 border-b border-hairline hover:bg-hover-wash"
+                  class="px-3 py-2  panel-hover hover:bg-hover-wash"
                   data-testid={`plugin-row-${plugin.name}`}
                 >
                   <div class="flex items-center gap-2">
@@ -237,7 +237,7 @@ export const PluginPanel: Component = () => {
                     </span>
                     <button
                       type="button"
-                      class="text-xs px-2 py-0.5 bg-control hover:bg-hover-wash rounded border border-hairline text-shell-ink disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="text-xs px-2 py-0.5 bg-control panel-hover hover:bg-hover-wash rounded  text-shell-ink disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleReload(plugin.name)}
                       disabled={reloading() === plugin.name}
                       data-testid={`plugin-reload-${plugin.name}`}
@@ -256,12 +256,12 @@ export const PluginPanel: Component = () => {
                   </div>
                   <div class="mt-1 flex items-center gap-1.5">
                     <span
-                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceColor(plugin.source)}`}
+                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded-control ${sourceColor(plugin.source)}`}
                     >
                       {plugin.source}
                     </span>
                     <span
-                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded border ${stateColor(plugin.state)}`}
+                      class={`text-floor uppercase tracking-wider px-1.5 py-0.5 rounded-control ${stateColor(plugin.state)}`}
                     >
                       {plugin.state}
                     </span>
@@ -346,7 +346,7 @@ export const PluginPanel: Component = () => {
             onInput={(e) => setInstallUrl(e.currentTarget.value)}
             placeholder="user/repo or https://…"
             disabled={installing()}
-            class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 border border-hairline focus-ring focus:border-muted-dark disabled:opacity-50"
+            class="w-full bg-control text-shell-ink text-sm rounded-lg px-2 py-1.5  focus-ring focus:border-muted-dark disabled:opacity-50"
             data-testid="plugins-install-url"
           />
           <div class="mt-3 flex items-center justify-end gap-2">

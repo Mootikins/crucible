@@ -95,7 +95,7 @@ const HitRow: Component<{ hit: GrepHit; onOpen: () => void }> = (props) => {
       type="button"
       onClick={props.onOpen}
       title={`${props.hit.rel_path}:${props.hit.line}`}
-      class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors"
+      class="w-full text-left px-3 py-1.5 rounded panel-hover hover:bg-hover-wash transition-colors"
       data-testid="search-hit"
     >
       <div class="flex items-center gap-1.5 min-w-0">
@@ -119,7 +119,7 @@ const SemanticRow: Component<{ hit: SemanticHit; onOpen: () => void }> = (props)
     type="button"
     onClick={props.onOpen}
     title={props.hit.rel_path}
-    class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
+    class="w-full text-left px-3 py-1.5 rounded panel-hover hover:bg-hover-wash transition-colors flex items-center gap-1.5"
     data-testid="search-semantic-hit"
   >
     <FileText class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
@@ -279,8 +279,8 @@ export const SearchPanel: Component = () => {
 
   return (
     <PanelShell class="overflow-hidden">
-      <div class="p-3 border-b border-hairline shrink-0 flex flex-col gap-2">
-        <div class="flex items-center gap-2 bg-surface-base border border-hairline-strong rounded-lg px-2.5 py-1.5 focus-within:border-primary transition-colors">
+      <div class="p-3  shrink-0 flex flex-col gap-2">
+        <div class="flex items-center gap-2 bg-surface-base  rounded-xl px-2.5 py-1.5 focus-within:border-primary transition-colors">
           <Search class="w-4 h-4 shrink-0 text-muted-dark" />
           <input
             ref={inputRef}
@@ -294,7 +294,7 @@ export const SearchPanel: Component = () => {
           />
           <Show when={query()}>
             <button type="button" onClick={() => { setQuery(''); inputRef?.focus(); }} aria-label="Clear search"
-              class="p-0.5 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash">
+              class="p-0.5 rounded text-muted-dark hover:text-shell-ink panel-hover hover:bg-hover-wash">
               <X class="w-3.5 h-3.5" />
             </button>
           </Show>
@@ -309,7 +309,7 @@ export const SearchPanel: Component = () => {
             type="button"
             onClick={() => setPickerOpen((o) => !o)}
             data-testid="search-scope"
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-hairline hover:bg-hover-wash text-shell-body"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full  panel-hover hover:bg-hover-wash text-shell-body"
           >
             {(() => { const I = scopeIcon(scope().kind); return <I class="w-3 h-3 text-muted-dark" />; })()}
             <span class="max-w-[140px] truncate">{scope().name}</span>
@@ -327,7 +327,7 @@ export const SearchPanel: Component = () => {
 
           {/* Text vs Semantic note search. Semantic ranks notes by meaning
               (vector similarity over embeddings); Text is literal ripgrep. */}
-          <div class="ml-auto inline-flex rounded-full border border-hairline overflow-hidden" role="group" aria-label="Search mode">
+          <div class="ml-auto inline-flex rounded-full  overflow-hidden" role="group" aria-label="Search mode">
             <For each={['text', 'semantic'] as SearchMode[]}>
               {(m) => (
                 <button
@@ -335,7 +335,7 @@ export const SearchPanel: Component = () => {
                   onClick={() => setMode(m)}
                   aria-pressed={mode() === m}
                   data-testid={`search-mode-${m}`}
-                  class={`px-2 py-0.5 capitalize transition-colors ${mode() === m ? 'bg-primary/15 text-shell-ink' : 'text-muted-dark hover:bg-hover-wash'}`}
+                  class={`px-2 py-0.5 capitalize transition-colors ${mode() === m ? 'bg-primary/15 text-shell-ink' : 'text-muted-dark panel-hover hover:bg-hover-wash'}`}
                 >
                   {m}
                 </button>
@@ -400,7 +400,7 @@ export const SearchPanel: Component = () => {
           <For each={sessionHits()}>
             {(match) => (
               <button type="button" onClick={() => selectSession(match.session_id)} title={match.session_id}
-                class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
+                class="w-full text-left px-3 py-1.5 rounded panel-hover hover:bg-hover-wash transition-colors flex items-center gap-1.5"
                 data-testid="search-session-hit">
                 <ClipboardList class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
                 <span class="text-xs text-shell-body truncate">{match.context}</span>
@@ -472,7 +472,7 @@ const ScopeMenu: Component<{
     const I = scopeIcon(r.s.kind);
     return (
       <button type="button" onClick={() => props.onPick(r.s)}
-        class="w-full flex items-center gap-2 px-3 py-1.5 text-reading text-shell-body hover:bg-hover-wash"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-reading text-shell-body panel-hover hover:bg-hover-wash"
         data-testid={`search-scope-${r.s.kind}${'path' in r.s && r.s.path ? '-' + pathBasename(r.s.path) : ''}`}>
         <I class="w-3.5 h-3.5 shrink-0 text-muted-dark" /><span class="truncate">{r.s.name}</span>
         <Show when={isSel(r.s)}><Check class="w-3.5 h-3.5 text-primary ml-auto" /></Show>
@@ -484,7 +484,7 @@ const ScopeMenu: Component<{
       <div
         ref={menuRef}
         data-testid="search-scope-menu"
-        class="z-50 overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1"
+        class="z-50 overflow-y-auto bg-surface-overlay  rounded-xl shadow-xl py-1"
         style={{
           position: 'fixed',
           left: `${pos()?.left ?? 0}px`,

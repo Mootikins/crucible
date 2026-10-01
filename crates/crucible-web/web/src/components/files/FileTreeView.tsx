@@ -93,7 +93,7 @@ export interface FileTreeViewProps {
 export const FileTreeView: Component<FileTreeViewProps> = (props) => {
   const handleSelection = (d: TreeViewSelectionChangeDetails<Node>) => {
     const node = d.selectedNodes[0];
-    if (node && !node.isDir) props.onOpenLeaf(node, { where: 'here' });
+    if (node && !node.isDir) props.onOpenLeaf(node);
   };
 
   const api = useTreeView<Node>(() => ({

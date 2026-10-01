@@ -10,7 +10,7 @@
      starts at the pane edge, so the first tab label and the content share
      one inset. An icon button is `--mk-icon-inset` wider than its icon on
      each side. */
-  --mk-foot: 8px; --mk-tab-pad: 16px; --mk-tab-top: 6px; --mk-icon-inset: 6px;
+  --mk-foot: calc(var(--mk-radius) * 2 / 3); --mk-tab-pad: 16px; --mk-tab-top: 6px; --mk-icon-inset: 6px;
   --mk-pad: var(--mk-tab-pad);
   /* A pane owns one opaque tone. Its tab strip is one step off that tone. */
   --mk-pane-bg: var(--mk-main-solid); --mk-strip: var(--mk-nav-solid); --mk-line: var(--mk-nav-solid);
@@ -21,7 +21,7 @@
    ground, and their content starts one gap down. */
 .wm-edge-host {
   --mk-dir: ltr; --mk-start: left; --mk-end: right;
-  --mk-pane-bg: var(--mk-nav-solid); --mk-pane-r: 0px; --mk-pane-top: var(--mk-gap);
+  --mk-pane-bg: var(--mk-nav-solid); --mk-pane-r: var(--mk-radius); --mk-pane-top: var(--mk-gap);
   --mk-card-top: 0px; --mk-card-bottom: 0px;
   /* The open tab's cutout fades with the slide, so the pane grows out of it. */
   --mk-cutout-opacity: var(--wm-edge-progress, 1);
@@ -117,13 +117,9 @@ body { background: var(--mk-nav); }
    side. Opaque, because a translucent tone over two layers gives two
    colours. The pane views paint no tone of their own. */
 .wm-edge-host .wm-pane { background: var(--mk-pane-bg); border-radius: var(--mk-pane-r); }
-/* In the centre, the content under the strip is the MAIN region. The
-   corners that meet a split line stay square. */
+/* Every centre pane keeps its card shape, including vertically tiled panes. */
 [data-testid='centre-column'] .wm-pane { background: transparent; }
 [data-testid='centre-column'] .wm-pane > .wm-tabbar + * { background: var(--mk-pane-bg); border-radius: var(--mk-radius); overflow: hidden; }
-[data-testid='centre-column'] div:has(+ .wm-splitter.w-px) .wm-pane > .wm-tabbar + * { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-[data-testid='centre-column'] .wm-splitter.w-px + div .wm-pane > .wm-tabbar + * { border-top-left-radius: 0; border-bottom-left-radius: 0; }
-[data-testid='centre-column'] div:has(+ .wm-splitter.h-px) .wm-pane > .wm-tabbar + * { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 
 /* Vertical tabs. The cutout runs from the strip over the ribbon's 1px
    border into the pane. The feet sit above and below it, on the pane side. */
@@ -134,7 +130,7 @@ body { background: var(--mk-nav); }
   content: ''; position: absolute; z-index: -1; pointer-events: none;
   opacity: var(--mk-cutout-opacity);
 }
-.wm-ribbon-tab[data-highlighted]::before { inset-block: 3px; inset-inline: 5px -2px; border-start-start-radius: 8px; border-end-start-radius: 8px; background: var(--mk-pane-bg); }
+.wm-ribbon-tab[data-highlighted]::before { inset-block: 3px; inset-inline: 5px -2px; border-start-start-radius: var(--mk-radius); border-end-start-radius: var(--mk-radius); background: var(--mk-pane-bg); }
 .wm-ribbon-tab[data-highlighted]::after {
   inset-block: calc(3px - var(--mk-foot));
   inset-inline-end: -2px;
@@ -151,12 +147,6 @@ body { background: var(--mk-nav); }
   .wm-ribbon-trailing { position: absolute; inset-inline: 0; top: clamp(var(--wm-ribbon-ceiling), var(--wm-trailing-pane-top), calc(var(--wm-ribbon-floor) - var(--wm-ribbon-trailing-height))); }
   .wm-ribbon-tail { margin-top: auto; }
 }
-/* Its tab joins the pane at the pane top: the cutout starts flush, with no
-   top foot, and the pane corner under it is square. */
-.wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::before { top: 0; }
-.wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::after { background-size: 0 0, var(--mk-foot) var(--mk-foot); }
-.wm-edge-host .wm-splitter + div .wm-pane { border-start-start-radius: 0; }
-
 /* The split between two rail panes is a gap in the strip colour. A foot on
    the strip side lets the gap flow out of the strip. On the document side,
    the gap ends in a round cap. */
@@ -165,6 +155,13 @@ body { background: var(--mk-nav); }
 .wm-edge-host .wm-splitter::before {
   content: ''; position: absolute; inset-inline-start: 0; bottom: 100%; width: var(--mk-radius); height: var(--mk-radius); pointer-events: none;
   background: radial-gradient(circle at var(--mk-end) top, transparent calc(var(--mk-radius) - 0.5px), var(--mk-strip) var(--mk-radius));
+}
+
+/* Each split has two neighbouring card edges, independent of the active tab. */
+.wm-edge-host .wm-splitter::after {
+  content: ''; position: absolute; inset-inline-start: 0; top: 100%;
+  width: var(--mk-radius); height: var(--mk-radius); pointer-events: none;
+  background: radial-gradient(circle at var(--mk-end) bottom, transparent calc(var(--mk-radius) - 0.5px), var(--mk-strip) var(--mk-radius));
 }
 
 /* Rail tabs are vertical: a rail pane shows no tab bar and no pane marker,
@@ -189,7 +186,7 @@ body { background: var(--mk-nav); }
 :root {
   .wm-tabbar { background: var(--mk-strip); border-bottom-width: 0; }
   .wm-tabstrip { gap: 0; padding-inline: calc(var(--mk-pad) - var(--mk-tab-pad)); align-self: stretch; }
-  .wm-tab { margin: var(--mk-tab-top) 0 0; padding-block: 0; padding-left: 8px; height: 30px; align-self: flex-end; border-radius: 8px 8px 0 0; outline: none; background: transparent; color: var(--cru-color-muted); }
+  .wm-tab { margin: var(--mk-tab-top) 0 0; padding-block: 0; padding-left: 8px; height: 30px; align-self: flex-end; border-radius: var(--mk-radius) var(--mk-radius) 0 0; outline: none; background: transparent; color: var(--cru-color-muted); }
   .wm-tab:not([data-active]):hover { color: var(--cru-color-ink); }
   .wm-tab[data-active] { background: var(--mk-pane-bg); color: var(--cru-color-ink); }
   .wm-tab[data-active]:not([data-focused]) { color: var(--cru-color-body); }
@@ -217,7 +214,7 @@ body { background: var(--mk-nav); }
 .wm-floating {
   --color-shell-bg: transparent;
   --mk-float-frame: 4px;
-  --mk-float-radius: 10px;
+  --mk-float-radius: var(--mk-radius);
   padding: 0 var(--mk-float-frame) var(--mk-float-frame);
   border-radius: var(--mk-float-radius);
   background: var(--mk-nav-solid);
@@ -225,4 +222,17 @@ body { background: var(--mk-nav); }
 }
 .wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-float-frame); }
 .wm-floating .wm-tabbar { background: transparent; }
-.wm-floating-body { padding: 0; border-radius: calc(var(--mk-float-radius) - var(--mk-float-frame)); background: var(--mk-main-solid); }
+.wm-floating-body { padding: 0; border-radius: max(0px, calc(var(--mk-float-radius) - var(--mk-float-frame))); background: var(--mk-main-solid); }
+
+/* Keep the close target outside the glyph; it remains available on focus. */
+.wm-ribbon-tab-close { top: 0; right: 0; width: 12px; height: 12px; background: var(--mk-strip); }
+
+/* Only tabs touching a real pane edge suppress that edge's outside curve. */
+.wm-ribbon-tab[data-pane-edge='top']::before { top: 0; }
+.wm-ribbon-tab[data-pane-edge='top']::after { background-size: 0 0, var(--mk-foot) var(--mk-foot); }
+.wm-ribbon-tab[data-pane-edge='bottom']::before { bottom: 0; }
+.wm-ribbon-tab[data-pane-edge='bottom']::after { background-size: var(--mk-foot) var(--mk-foot), 0 0; }
+.wm-edge-host .wm-pane[data-active-tab-edge='top'] { border-start-start-radius: 0; }
+.wm-edge-host .wm-pane[data-active-tab-edge='bottom'] { border-end-start-radius: 0; }
+.wm-edge-host .wm-splitter:has(+ div .wm-pane[data-active-tab-edge='top'])::after { display: none; }
+.wm-edge-host div:has(> .wm-pane[data-active-tab-edge='bottom']) + .wm-splitter::before { display: none; }

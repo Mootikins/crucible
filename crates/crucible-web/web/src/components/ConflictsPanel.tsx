@@ -136,7 +136,7 @@ export const ConflictsPanel: Component = () => {
                 <For each={rows()}>
                   {(row) => (
                     <div
-                      class="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
+                      class="flex items-center gap-2  px-3 py-1.5"
                       data-testid={`conflict-row-${row.path}`}
                     >
                       <div class="min-w-0 flex-1">
@@ -153,7 +153,7 @@ export const ConflictsPanel: Component = () => {
                         title={`Settle ${row.path}`}
                         data-testid={`conflict-open-${row.path}`}
                         onClick={() => conflictActions.select(row.path)}
-                        class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
+                        class={`shrink-0 rounded  px-2 py-0.5 text-floor text-shell-ink panel-hover hover:bg-hover-wash ${hit()}`}
                       >
                         Open
                       </button>

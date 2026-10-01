@@ -1,3 +1,5 @@
+import { copyText } from '@/lib/clipboard';
+import { notificationActions } from '@/stores/notificationStore';
 /**
  * One assistant TURN — everything the agent did for a single user prompt:
  * interleaved text segments and tool-call groups, rendered as one block with
@@ -190,11 +192,11 @@ export const AssistantTurn: Component<{
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(fullText());
+      await copyText(fullText());
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
-      // Clipboard API not available
+      notificationActions.addNotification('error', 'Copy was blocked. Select the text and copy it manually.');
     }
   };
 
@@ -224,7 +226,7 @@ export const AssistantTurn: Component<{
       data-kiln={sessionKiln() || undefined}
     >
       <AuthorHeading>Assistant</AuthorHeading>
-      <div class="flex flex-col gap-0.5">
+      <div class="assistant-parts flex flex-col">
         <For each={props.parts}>
           {(part) => {
             if (part.kind === 'tools') {

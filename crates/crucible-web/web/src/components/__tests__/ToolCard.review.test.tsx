@@ -15,7 +15,7 @@ vi.mock('@/stores/notificationStore', () => ({
 }));
 
 const openFile = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/file-actions', () => ({ openFileInEditor: openFile }));
+vi.mock('@/lib/file-actions', async (original) => ({ ...await original<typeof import('@/lib/file-actions')>(), openFileInEditor: openFile }));
 
 const { ToolCard } = await import('../ToolCard');
 
@@ -39,14 +39,14 @@ afterEach(() => {
 });
 
 /** Cards start collapsed; the diff toolbar is inside. */
-const expand = () => fireEvent.click(screen.getByRole('button', { expanded: false }));
+const expand = () => fireEvent.click(screen.getByRole('button', { name: /^Expand /, expanded: false }));
 
 describe('ToolCard — the attribution record', () => {
   it('opens canonical file targets from the collapsed tool row', () => {
     render(() => <ToolCard toolCall={editCall({ display: { kind: 'file_read', tool: 'Read', paths: ['/repo/notes/Start.md'] } })} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open /repo/notes/Start.md' }));
-    expect(openFile).toHaveBeenCalledWith('/repo/notes/Start.md');
-    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
+    expect(openFile).toHaveBeenCalledWith('/repo/notes/Start.md', undefined, { where: 'here' });
+    expect(screen.getByRole('button', { name: /^Expand /, expanded: false })).toBeInTheDocument();
   });
 
   it('stamps the daemon call id', () => {

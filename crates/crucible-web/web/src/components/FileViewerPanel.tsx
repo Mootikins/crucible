@@ -337,7 +337,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           browser-stolen keybind parity); Shift+right-click and images/links
           inside the rendered preview keep the NATIVE menu so Copy Image /
           Save As stay available (capture guard). */}
-      <div class="flex-1 overflow-hidden" ref={attachNativeMenuGuard}>
+      <div class="flex-1 overflow-hidden" data-file-tab-id={props.background ? undefined : props.panelTabId} ref={attachNativeMenuGuard}>
         <Menu.Root onSelect={(d) => onMenuAction(d.value as EditorMenuAction)}>
           {/* asChild div: never wrap an editor in the default BUTTON trigger. */}
           <Menu.ContextTrigger

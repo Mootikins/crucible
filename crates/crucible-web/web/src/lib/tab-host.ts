@@ -82,7 +82,7 @@ const windowTabHost: TabHost = {
       return windowActions.openTabInNewPane(edge.paneId, filesSide(), tab) !== null;
     }
     windowActions.addTab(groupId, tab);
-    windowActions.setActiveTab(groupId, tab.id);
+    windowTabHost.activate(tab.id);
     return true;
   },
 
@@ -127,14 +127,13 @@ function openInDefaultZone(tab: Tab): boolean {
     const groupId = firstLeafGroupId(windowStore.layout);
     if (!groupId) return false;
     windowActions.addTab(groupId, tab);
-    windowActions.setActiveTab(groupId, tab.id);
+    windowTabHost.activate(tab.id);
     return true;
   }
   const groupId = primaryEdgeGroupId(windowStore, zone);
   if (!groupId) return false;
   windowActions.addTab(groupId, tab);
-  windowActions.setEdgePanelCollapsed(zone, false);
-  windowActions.setEdgePanelActiveTab(zone, tab.id);
+  windowTabHost.activate(tab.id);
   return true;
 }
 

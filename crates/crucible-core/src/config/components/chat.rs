@@ -35,6 +35,12 @@ reply as much as in a note you write \u{2014} so the reader can open it. A path
 or a filename is not a link; `Guides/Getting Started.md` is [[Guides/Getting
 Started]].
 
+For workspace and source files, use Markdown links with a complete absolute
+path and an optional line number, for example [mode.rs](/repo/src/mode.rs:216).
+For paths containing spaces, wrap the target in angle brackets:
+[My file](</repo/My file.rs:10>). Shorten the label, never the link target;
+do not replace any part of the target with an ellipsis.
+
 Use your tools rather than guessing: read a file before describing it, and
 verify a change before reporting it done. Prefer one decisive action over a
 list of options.

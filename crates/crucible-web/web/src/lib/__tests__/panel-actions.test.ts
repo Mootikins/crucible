@@ -4,7 +4,7 @@ import { windowStore, setStore, windowActions } from '@/stores/windowStore';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 import type { EdgeMode, EdgePanelPosition, LayoutNode, Tab, TabGroup } from '@/types/windowTypes';
 import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
-import { openPanelTab, openDiff, findTabByContentType } from '../panel-actions';
+import { closedPanels, openPanelTab, openDiff, findTabByContentType } from '../panel-actions';
 import type { DiffsetSource } from '../diffset';
 
 const StubComponent = () => null;
@@ -287,4 +287,22 @@ describe('active-session focus tracking', () => {
     windowActions.setActivePane('pane-1');
     expect(statusBarStore.activeSessionId()).toBe('x');
   });
+});
+
+
+it('offers a folded Terminal in Re-add pane and restores the existing tab', () => {
+  getGlobalRegistry().register('terminal', 'Terminal', StubComponent, 'right');
+  windowActions.addTab('right-group', { id: 'terminal-existing', title: 'Terminal', contentType: 'terminal' });
+  const other = windowActions.createTabGroup();
+  const first = windowStore.edgePanels.right.layout;
+  setStore('edgePanels', 'right', 'layout', {
+    id: 'stack', type: 'split', direction: 'vertical', splitRatio: .5,
+    first: { ...first }, second: { id: 'other-pane', type: 'pane', tabGroupId: other },
+  });
+  windowActions.setEdgePanelCollapsed('right', false);
+  windowActions.setPaneCollapsed('right-pane', true);
+  expect(closedPanels().map(panel => panel.id)).toContain('terminal');
+  openPanelTab('terminal');
+  expect(windowStore.edgePanels.right.layout).toMatchObject({ first: { collapsed: false } });
+  expect(windowStore.tabGroups['right-group'].tabs.filter(tab => tab.contentType === 'terminal')).toHaveLength(1);
 });

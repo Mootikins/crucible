@@ -30,7 +30,7 @@ import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { FsEntry, FsListing } from '@/lib/types';
 import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
 import { resolveSessionRoot, sessionRoots, type SessionRoot } from '@/lib/session-roots';
-import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
+import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions, treeRevealRequest } from '@/stores/treeRootStore';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { SortSpec } from '@/lib/file-tree/types';
 import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
@@ -165,6 +165,7 @@ export const FilesPanel: Component<{
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
   let treeApi: UseTreeViewReturn<Node> | null = null;
+  const [treeReady, setTreeReady] = createSignal(false);
 
   // Every registered project, worktree and kiln, plus the branches and clone
   // action the dropdown adds. The session's own roots lead the same list.
@@ -609,6 +610,29 @@ export const FilesPanel: Component<{
     ).then((revealed) => { if (revealed) scrollRelIntoView(rel!); });
   }
 
+  createEffect(() => {
+    const request = treeRevealRequest();
+    if (!request) return;
+    const available = [...roots().own, ...roots().others];
+    const contains = (root: SessionRoot) => request.path.startsWith(root.path.replace(/\/+$/, '') + '/');
+    const target = (activeRoot() && contains(activeRoot()!) ? activeRoot() : null)
+      ?? available.filter(contains).sort((a, b) => b.path.length - a.path.length)[0];
+    if (!target) return; // Rosters may still be loading.
+    if (activeRoot()?.path !== target.path || activeRoot()?.kind !== target.kind) {
+      selectRoot(target);
+      return;
+    }
+    const relative = request.path.slice(target.path.replace(/\/+$/, '').length + 1);
+    if (!showHidden() && relative.split('/').some(part => part.startsWith('.'))) {
+      setShowHidden(true);
+      return;
+    }
+    if (loading() || !treeReady() || !collection() || rawRoot()?.absPath !== target.path) return;
+    treeRootActions.finishReveal(request);
+    // Let the context menu finish restoring focus before the tree takes it.
+    queueMicrotask(() => revealActive(relative));
+  });
+
   /** Scroll a revealed row into view. Deferred so lazy-expanded ancestors have
    * mounted their children before we look the node up. `block: 'nearest'`
    * avoids yanking the viewport when the row is already visible. */
@@ -773,7 +797,7 @@ export const FilesPanel: Component<{
                 onOpenLeaf={onOpenLeaf}
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}
-                apiRef={(api) => (treeApi = api)}
+                apiRef={(api) => { treeApi = api; setTreeReady(true); }}
                 showHidden={showHidden()}
                 formatName={formatName}
                 dnd={dndFor(root)}

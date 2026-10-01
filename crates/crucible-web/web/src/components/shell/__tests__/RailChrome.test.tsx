@@ -7,7 +7,7 @@ import { EdgeHost } from '@/windowing/components/EdgeHost';
 import { WindowingProvider } from '@/windowing/components/context';
 import { renderPanel } from '@/lib/render-panel';
 import { appWindowSlots } from '@/components/shell/windowSlots';
-import { setStore, windowStore } from '@/stores/windowStore';
+import { setStore, windowStore, windowActions } from '@/stores/windowStore';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openSessionInChat } from '@/lib/session-actions';
 import { getBus } from '@/lib/bus';
@@ -91,10 +91,16 @@ it('wires search, new-session, and centre/right swap rail commands', () => {
   fireEvent.click(left.getByTestId('ribbon-cmd-search'));
   expect(search).toBe(true);
   const before = windowStore.layout.id;
-  const rightBefore = windowStore.edgePanels.right.layout.id;
+  const rail = windowStore.edgePanels.right.layout;
+  if (rail.type !== 'split') throw new Error('expected terminal below the conversation');
+  const rightBefore = rail.first.id;
+  const terminalBefore = JSON.parse(JSON.stringify(rail.second));
   fireEvent.click(left.getByTestId('ribbon-cmd-swap-centre'));
   expect(windowStore.layout.id).toBe(rightBefore);
-  expect(windowStore.edgePanels.right.layout.id).toBe(before);
+  expect(windowStore.edgePanels.right.layout).toMatchObject({ first: { id: before }, second: terminalBefore });
+  fireEvent.click(left.getByTestId('ribbon-cmd-swap-centre'));
+  expect(windowStore.layout.id).toBe(before);
+  expect(windowStore.edgePanels.right.layout).toMatchObject({ first: { id: rightBefore }, second: terminalBefore });
   stopSearch(); left.unmount();
   const right = renderRail('right');
   let requested = false;
@@ -115,4 +121,52 @@ it('new documents and conversations follow their panes after centre/right swap',
   const groups = Object.values(windowStore.tabGroups);
   expect(groups.find(g => g.tabs.some(t => t.metadata?.filePath === '/kiln/one.md'))?.tabs.some(t => t.metadata?.filePath === '/kiln/two.md')).toBe(true);
   expect(groups.find(g => g.tabs.some(t => t.metadata?.sessionId === 'one'))?.tabs.some(t => t.metadata?.sessionId === 'two')).toBe(true);
+});
+
+it('stows the swapped rail when only a folded terminal and empty editor remain', () => {
+  openSessionInChat('only-session', 'Only session');
+  const rail = windowStore.edgePanels.right.layout;
+  if (rail.type !== 'split') throw new Error('expected tiled rail');
+  const terminal = JSON.parse(JSON.stringify(rail.second));
+  const view = renderRail('left');
+  fireEvent.click(view.getByTestId('ribbon-cmd-swap-centre'));
+  expect(windowStore.edgePanels.right.mode).toBe('strip');
+  expect(windowStore.edgePanels.right.layout).toMatchObject({ second: terminal });
+  if (windowStore.layout.type !== 'pane') throw new Error('expected conversation pane');
+  expect(windowStore.tabGroups[windowStore.layout.tabGroupId!].tabs.some(t => t.metadata?.sessionId === 'only-session')).toBe(true);
+  openFileInEditor('/kiln/after-swap.md');
+  expect(windowStore.edgePanels.right.mode).toBe('docked');
+});
+
+it('keeps the swapped rail open when its terminal is expanded', () => {
+  openSessionInChat('only-session', 'Only session');
+  const rail = windowStore.edgePanels.right.layout;
+  if (rail.type !== 'split') throw new Error('expected tiled rail');
+  windowActions.setPaneCollapsed(rail.second.id, false);
+  const view = renderRail('left');
+  fireEvent.click(view.getByTestId('ribbon-cmd-swap-centre'));
+  expect(windowStore.edgePanels.right.mode).toBe('docked');
+});
+
+it('swaps the conversation rather than an earlier supporting pane', () => {
+  openSessionInChat('nested-session', 'Nested session');
+  const original = windowStore.edgePanels.right.layout;
+  if (original.type !== 'split') throw new Error('expected tiled rail');
+  const conversationId = original.first.id;
+  setStore(produce(s => {
+    s.tabGroups.support = { id: 'support', tabs: [{ id: 'support-tab', contentType: 'backlinks', title: 'Backlinks' }], activeTabId: 'support-tab' };
+    s.edgePanels.right.layout = {
+      id: 'extra-split', type: 'split', direction: 'horizontal', splitRatio: 0.2,
+      first: { id: 'support-pane', type: 'pane', tabGroupId: 'support' },
+      second: s.edgePanels.right.layout,
+    };
+  }));
+  const view = renderRail('left');
+  fireEvent.click(view.getByTestId('ribbon-cmd-swap-centre'));
+  expect(windowStore.layout.id).toBe(conversationId);
+});
+
+it('starts without Activity or Backlinks tabs', () => {
+  expect(Object.values(windowStore.tabGroups).flatMap(group => group.tabs)
+    .filter(tab => ['activity', 'backlinks'].includes(tab.contentType))).toEqual([]);
 });

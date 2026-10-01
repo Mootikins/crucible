@@ -22,7 +22,7 @@ const ADD = 'add:';
  * looking at the broken layout. The two repairs now sit ON the thing they
  * repair.
  *
- * Re-add lists only what is CLOSED: a menu that offers to open what is
+ * Re-add lists closed or folded panes: a menu that offers to open what is
  * already open reads as a list of panels, not as a repair, and `openPanelTab`
  * would just focus the existing tab. Reset asks first, because it is the one
  * action here that throws away work the user did arranging panes.
@@ -105,7 +105,7 @@ export const LayoutMenu: Component = () => {
                     </For>
                     <Show when={closed().length === 0}>
                       <p class="px-3 py-4 text-center text-floor text-muted-dark">
-                        Every panel is open
+                        Every panel is open and expanded
                       </p>
                     </Show>
                   </Menu.Content>

@@ -40,7 +40,7 @@ export interface LayoutActions<C extends string = string> {
    * included. The rail docks, so both halves of the swap show. A second
    * call gives each layout back.
    */
-  swapCentreWithEdge(position: EdgePanelPosition): void;
+  swapCentreWithEdge(position: EdgePanelPosition, subtreeId?: string): void;
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   /**
    * Set how a rail presents. `cue` changes only when given: the cue is a
@@ -222,7 +222,7 @@ export function createLayoutActions<C extends string>(
   };
 
   /**
-   * Trade the centre and a rail, as a whole: every pane, split and ratio
+   * Trade the centre and a rail (or a selected subtree): every pane, split and ratio
    * goes across, and each pane keeps its id. The rail keeps its width, its
    * mode cue and its id, because those describe the column, not the panes.
    *
@@ -231,13 +231,31 @@ export function createLayoutActions<C extends string>(
    * expand ends. Focus stays on the pane that had it; its region is found
    * again, because that pane can be on the other side now.
    */
-  const swapCentreWithEdge = (position: EdgePanelPosition) => {
+  const swapCentreWithEdge = (position: EdgePanelPosition, subtreeId?: string) => {
     setStore(
       produce((s) => {
         const panel = s.edgePanels[position];
         const centre = s.layout;
-        s.layout = panel.layout;
-        panel.layout = centre;
+        if (subtreeId) {
+          let exchanged: LayoutNode | undefined;
+          const exchange = (node: LayoutNode): LayoutNode => {
+            if (node.id === subtreeId) {
+              exchanged = node;
+              return centre;
+            }
+            if (node.type === 'split') {
+              node.first = exchange(node.first);
+              node.second = exchange(node.second);
+            }
+            return node;
+          };
+          panel.layout = exchange(panel.layout);
+          if (!exchanged) return;
+          s.layout = exchanged;
+        } else {
+          s.layout = panel.layout;
+          panel.layout = centre;
+        }
         panel.mode = 'docked';
         s.expandedEdge = null;
         s.focusedRegion = s.activePaneId ? regionOfPane(s, s.activePaneId) : 'center';
@@ -310,10 +328,8 @@ export function createLayoutActions<C extends string>(
   };
 
   const setEdgePanelSize = (position: EdgePanelPosition, size: number) => {
-    const isVertical = position === 'left' || position === 'right';
-    const clamped = isVertical
-      ? Math.max(120, Math.min(600, size))
-      : Math.max(100, Math.min(500, size));
+    if (!Number.isFinite(size)) return;
+    const clamped = Math.max(120, size);
     setStore(
       produce((s) => {
         // Both docks are side rails now, so width is the only axis. The

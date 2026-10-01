@@ -236,3 +236,14 @@ test.describe('swap side panels', () => {
     expect(await tabIds(page, 'right')).toEqual(['tab-right']);
   });
 });
+
+test('right rail accepts and restores widths beyond the former 600px cap', async ({ page }) => {
+  await act(page, 'setEdgePanelCollapsed', 'right', false);
+  await act(page, 'setEdgePanelSize', 'right', 900);
+  expect((await readStore(page)).edgePanels.right.width).toBe(900);
+  await expect(page.getByTestId('edge-host-right')).toBeVisible();
+  const saved = await page.evaluate(() => (window as any).__windowActions.exportLayout());
+  await act(page, 'setEdgePanelSize', 'right', 300);
+  await act(page, 'importLayout', saved);
+  expect((await readStore(page)).edgePanels.right.width).toBe(900);
+});

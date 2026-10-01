@@ -32,11 +32,11 @@ test('long root label stays clear of toolbar actions and only one swap is offere
   await expect(swap).toBeVisible();
   const layouts = () => page.evaluate(() => {
     const s = (window as any).__windowStore;
-    return [s.edgePanels.left.layout.id, s.layout.id, s.edgePanels.right.layout.id];
+    return [s.edgePanels.left.layout.id, s.layout.id, s.edgePanels.right.layout.id, s.edgePanels.right.layout.first.id, s.edgePanels.right.layout.second.id];
   });
   const before = await layouts();
   await swap.click();
-  expect(await layouts()).toEqual([before[0], before[2], before[1]]);
+  expect(await layouts()).toEqual([before[0], before[3], before[2], before[1], before[4]]);
   await swap.click();
   expect(await layouts()).toEqual(before);
 });

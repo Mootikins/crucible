@@ -35,6 +35,9 @@ test('appearance persists while the real editor and transcript keep their state'
   await page.getByLabel('Accent', { exact: true }).fill('#bb77dd');
   await page.getByLabel('File labels', { exact: true }).uncheck();
   await page.getByTestId('settings-modal-close').click();
+  await expect(page.locator('.wm-tab[data-active]').first()).toHaveCSS('border-top-right-radius', '18px');
+  await expect(page.locator('.user-quote').first()).toHaveCSS('border-top-left-radius', '18px');
+  await expect(page.locator('.wm-pane:has(.note-editor) > .wm-tabbar + *')).toHaveCSS('border-bottom-right-radius', '18px');
   expect(await original!.evaluate((element) => element.isConnected)).toBe(true);
   await expect(editor.locator('.cm-content')).toContainText('Unsaved text');
   await expect(editor.locator('.cm-content')).toHaveCSS('font-size', '19px');

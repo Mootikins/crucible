@@ -637,7 +637,7 @@ Copy session ID. Permission cards offer Allow once, Allow for session, Deny,
 and the available broader scopes in More options.
 
 The rail exposes Search and New session. Its centre-swap action exchanges the
-main and right-hand areas, keeping the left navigation rail in place. It is the
+conversation and editor areas, keeping Terminal on the right and the left navigation rail in place. It is the
 only swap button; subsequent files and sessions follow their swapped areas.
 The Layout menu controls whether focusing a document ends an expanded session.
 
@@ -652,7 +652,7 @@ to pull in Sessions/Files, or left to pull in Backlinks. Editable controls and
 horizontally scrolling code/tables keep their own gestures.
 
 The Appearance corner radius also applies to navigation rows, root pickers and
-menus. Controls cap the radius at 12px; menus follow the full setting. Dropdowns
+menus, tabs and tiled cards. Controls and menus follow the setting. Dropdowns
 use a flat tonal background, without decorative borders or shadows.
 
 Selecting another session activates it in the existing conversation pane,
@@ -660,3 +660,34 @@ including when that pane also holds supporting tabs such as Backlinks or
 Activity. It does not add a tile for each selected session.
 
 Selecting a session reveals its conversation pane even when that pane was folded.
+
+Click the active icon of a tiled rail pane to fold just that pane. Its siblings
+keep their space, and clicking the icon again restores the pane. The last expanded
+pane toggles the whole rail. **Layout → Re-add pane** also offers folded panes,
+including Terminal, and restores the existing tab rather than duplicating it.
+
+Thoughts and tool calls share a right-hand disclosure caret. Thoughts have a brain
+icon; tool rows show the action and target, with full arguments and results behind
+the disclosure. Supporting panels use the same flat surfaces and rounded rows.
+
+Workspace file links use `[label](/absolute/path:123)` to open a file at a line.
+For spaces use `[label](</absolute/My file.rs:123>)`. Ctrl/Cmd-click opens another
+tab; Shift-click opens a split. Notes still use [[Wikilinks]]. Message copying
+works on HTTP LAN addresses as well as HTTPS; a blocked copy reports an error.
+
+For ACP sessions the model picker refreshes the agent's reported selection after
+its handshake, and after model-change events. The selected model receives the
+same checkmark as other model choices.
+
+Tree guides blend navigation text and surface colours, retaining contrast as tint changes.
+Opening a file from the tree creates an editor tab or focuses its existing tab; note links
+keep in-place navigation. Right-click a file tab and choose **Show in file tree**
+to open its root and expand its parent folders. Rail widths have no fixed 600px cap;
+dragging preserves room for the centre.
+
+After swapping, a right rail containing only an empty editor and folded Terminal
+collapses automatically. An expanded Terminal keeps it open; opening a file
+reveals the editor rail again.
+
+Backlinks and Activity are absent from the default layout. Open them through
+**Layout → Re-add pane** when needed; saved user layouts retain their chosen tabs.

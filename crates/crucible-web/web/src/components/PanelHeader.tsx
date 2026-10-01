@@ -8,12 +8,12 @@ interface PanelHeaderProps {
 
 /**
  * Shared panel header component for consistent header styling.
- * Provides: padding, bottom border, title styling (small, semibold, uppercase, tracking).
+ * Uses the same quiet header and spacing as the navigation panes.
  * Supports optional additional classes (e.g., shrink-0) and additional children.
  */
 export const PanelHeader: Component<PanelHeaderProps> = (props) => (
-  <div class={`p-3 border-b border-hairline ${props.class || ''}`}>
-    <h2 class="text-sm font-semibold text-muted uppercase tracking-wide">
+  <div class={`panel-header ${props.class || ''}`}>
+    <h2 class="panel-title">
       {props.title}
     </h2>
     {props.children}

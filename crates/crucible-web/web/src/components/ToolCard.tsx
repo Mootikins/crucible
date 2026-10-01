@@ -1,5 +1,4 @@
 import { Component, For, Show, createSignal, createMemo, createEffect } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
@@ -9,27 +8,8 @@ import { openDiff } from '@/lib/panel-actions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
-import {
-  ChevronRight,
-  FileOutput,
-  FileText,
-  Globe,
-  Pencil,
-  Search,
-  Wrench,
-  Zap,
-} from '@/lib/icons';
-
-// The icon of the canonical kind. The card does not guess the kind from
-// the tool name: a kind with no icon here, and a recording from before
-// the kind, gets the wrench.
-const KIND_ICONS: Record<string, Component<{ class?: string }>> = {
-  command: Zap,
-  file_edit: Pencil,
-  file_read: FileText,
-  search: Search,
-  fetch: Globe,
-};
+import { FileOutput } from '@/lib/icons';
+import { ToolCallRow } from './ToolCallRow';
 
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
@@ -46,67 +26,12 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
     }
   });
 
-  const statusIcon = () => {
-    switch (props.toolCall.status) {
-      case 'running':
-        return (
-          <span class="inline-flex items-center text-primary" title="Running">
-            <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="3"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
-          </span>
-        );
-      case 'complete':
-        return (
-          <span class="text-ok text-floor font-semibold" title="Complete">
-            ✓
-          </span>
-        );
-      case 'error':
-        return (
-          <span class="text-error text-floor font-semibold" title="Error">
-            ✗
-          </span>
-        );
-    }
-  };
-
-  // Completed rows stay flat (transparent) so a run of them reads as one tight
-  // stack on the group's surface, not a column of raised cards. Only the
-  // meaningful in-progress/failed states carry a wash.
-  const statusBgColor = () => {
-    switch (props.toolCall.status) {
-      case 'running':
-        return 'bg-primary/10';
-      case 'complete':
-        return 'bg-transparent';
-      case 'error':
-        return 'bg-error/10';
-    }
-  };
-
   // What this call is about comes from the daemon (`toolCall.display`) — one
   // projection shared with the TUI and with the daemon's own deny messages.
   // No local fallback: this page used to keep its own key-priority list, and
   // the two answers could disagree. A recording that predates the field shows
   // no summary line; the expanded card still renders the full args.
   const display = createMemo(() => props.toolCall.display);
-
-  // The title is the canonical tool name. A recording without `display`
-  // shows the name on the event.
-  const toolName = createMemo(() => display()?.tool || props.toolCall.name);
 
   const bashCommand = createMemo(() =>
     display()?.kind === 'command' ? (display()!.command ?? null) : null,
@@ -135,14 +60,6 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       return args;
     }
   });
-
-  // One-line header summary so a collapsed row still says what the tool did.
-  // Same source as the Command block below, so the two can no longer disagree
-  // about which argument matters.
-  const argSummary = createMemo(() => display()?.render?.line?.split('\n')[0] ?? null);
-
-  // What the result is, from the render of the finished call.
-  const resultSummary = createMemo(() => display()?.render?.summary ?? null);
 
   // The call's proposed edits ride in the canonical call. The card renders
   // them; it does not derive a diff from the tool name and arguments.
@@ -184,66 +101,15 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   return (
     <div
-      class={`${statusBgColor()} overflow-hidden`}
+      class="tool-call"
       // The daemon's call id, which the ledger keys intervals on. A card
       // without one carries no id.
       data-tool-call-id={props.toolCall.callId ?? undefined}
     >
-      <div class="flex items-center min-w-0">
-      <button
-        onClick={() => setExpanded(!expanded())}
-        aria-expanded={expanded()}
-        class="min-w-0 flex-1 flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
-      >
-        <Dynamic
-          component={KIND_ICONS[display()?.kind ?? ''] ?? Wrench}
-          class="w-3.5 h-3.5 flex-shrink-0 text-muted"
-        />
-        <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
-          {toolName()}
-        </span>
-        <span class="flex-1 min-w-0 text-floor text-muted-dark truncate font-mono">
-          {argSummary() ?? ''}
-        </span>
-        <Show when={resultSummary()}>
-          <span
-            class="flex-shrink-0 max-w-[40%] text-floor text-muted truncate font-mono"
-            data-testid="tool-result-summary"
-          >
-            → {resultSummary()}
-          </span>
-        </Show>
-        <Show when={props.toolCall.autoApproved}>
-          <span
-            class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-precog/15 text-precog border border-precog/50 font-semibold"
-            data-testid="tool-auto-approved"
-            title={`Permission granted without asking (${props.toolCall.autoApproved}).`}
-          >
-            Auto
-          </span>
-        </Show>
-        <Show when={props.toolCall.terminate}>
-          <span
-            class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
-            title="This tool ended the agent turn early."
-          >
-            Terminated
-          </span>
-        </Show>
-        <span class="flex-shrink-0">{statusIcon()}</span>
-        <ChevronRight
-          class={`w-3 h-3 flex-shrink-0 text-muted-dark transition-transform ${expanded() ? 'rotate-90' : ''}`}
-        />
-      </button>
-      <For each={display()?.paths ?? []}>{(path) => (
-        <button type="button" title={`Open ${path}`} aria-label={`Open ${path}`}
-          class="max-w-[40%] truncate px-2 text-floor text-shell-ink hover:underline"
-          onClick={() => openFileInEditor(path)}>{path.split('/').pop()}</button>
-      )}</For>
-      </div>
+      <ToolCallRow toolCall={props.toolCall} expanded={expanded()} onToggle={() => setExpanded(!expanded())} />
 
       <Show when={expanded()}>
-        <div class="border-t border-hairline">
+        <div class="tool-call-detail">
           {/* A shell call reads as a command, so render it as one: prompt
               marker, real newlines, no JSON envelope. */}
           <Show when={bashCommand()}>

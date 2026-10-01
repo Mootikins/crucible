@@ -1,6 +1,7 @@
 import { isCompact } from '@/stores/deviceStore';
 import { isBasePath } from './markdown-path';
 import { windowActions, windowStore } from '@/stores/windowStore';
+import { collectPanes } from '@/windowing';
 import type { Tab } from '@/types/windowTypes';
 
 import { iconForContentType } from './tab-icons';
@@ -34,6 +35,7 @@ function fileTab(filePath: string, fileName?: string): Tab {
 export interface FileOpenOptions {
   where?: 'here' | 'tab' | 'split';
   tabId?: string;
+  line?: number;
 }
 
 export function fileOpenOptionsForEvent(event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): FileOpenOptions {
@@ -73,22 +75,29 @@ export function openFileInEditor(filePath: string, fileName?: string, options: F
   const host = tabHost();
   const active = options.tabId ? host.find((t) => t.id === options.tabId) : host.activeTab();
   if (options.where === 'here' && active?.contentType === 'file' && contentTypeForPath(filePath) === 'file') {
-    if (active.metadata?.filePath === filePath) return;
+    if (active.metadata?.filePath === filePath) {
+      if (options.line !== undefined) host.update(active.id, { metadata: { ...active.metadata, scrollToLine: options.line } });
+      return;
+    }
     const history = fileHistory(active);
     const entries = [...history.entries.slice(0, history.at + 1), { path: filePath, title: fileName || filePath.split('/').pop() || filePath }];
-    host.update(active.id, { title: entries.at(-1)!.title, metadata: { ...active.metadata, filePath, fileHistoryRetained: [...new Set([...fileHistoryPaths(active), filePath])], fileHistory: { entries, at: entries.length - 1 }, scrollToLine: undefined, scrollToNote: undefined } });
+    host.update(active.id, { title: entries.at(-1)!.title, metadata: { ...active.metadata, filePath, fileHistoryRetained: [...new Set([...fileHistoryPaths(active), filePath])], fileHistory: { entries, at: entries.length - 1 }, scrollToLine: options.line, scrollToNote: undefined } });
     host.activate(active.id);
     recordRecentFile(filePath, entries.at(-1)!.title);
     return;
   }
   const existing = host.find((t) => t.metadata?.filePath === filePath);
   if (existing && options.where !== 'tab' && options.where !== 'split') {
+    if (options.line !== undefined) host.update(existing.id, { metadata: { ...existing.metadata, scrollToLine: options.line } });
     host.activate(existing.id);
     return;
   }
   const tab = fileTab(filePath, fileName);
+  if (options.line !== undefined) tab.metadata = { ...tab.metadata, scrollToLine: options.line };
   if (options.where === 'split' && !isCompact()) {
-    const pane = windowStore.activePaneId;
+    const originPane = options.tabId ? [windowStore.layout, windowStore.edgePanels.left.layout, windowStore.edgePanels.right.layout]
+      .flatMap(collectPanes).find(pane => windowStore.tabGroups[pane.tabGroupId ?? '']?.tabs.some(tab => tab.id === options.tabId)) : undefined;
+    const pane = originPane?.id ?? windowStore.activePaneId;
     if (pane && windowActions.openTabInNewPane(pane, 'right', tab)) {
       recordRecentFile(filePath, tab.title);
       return;
@@ -109,18 +118,7 @@ export function openFileInEditor(filePath: string, fileName?: string, options: F
  * `scrollToLine` off the tab, so the metadata is updated on the existing tab.
  */
 export function openFileAtLine(filePath: string, line: number, fileName?: string): void {
-  const host = tabHost();
-  const existing = host.find((t) => t.metadata?.filePath === filePath);
-  if (existing) {
-    host.update(existing.id, {
-      metadata: { ...existing.metadata, filePath, scrollToLine: line },
-    });
-    host.activate(existing.id);
-    return;
-  }
-  const tab = fileTab(filePath, fileName);
-  tab.metadata = { filePath, scrollToLine: line };
-  if (host.open(tab, { placement: 'editor' })) recordRecentFile(filePath, tab.title);
+  openFileInEditor(filePath, fileName, { line });
 }
 
 /**

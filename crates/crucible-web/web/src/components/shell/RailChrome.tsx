@@ -6,7 +6,7 @@ import { OfflineBadge } from '@/components/OfflineBadge';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { applyTheme, theme } from '@/lib/theme';
 import { notificationStore } from '@/stores/notificationStore';
-import { windowActions } from '@/stores/windowStore';
+import { swapConversationAndEditor } from '@/lib/panel-actions';
 import { getBus } from '@/lib/bus';
 
 /**
@@ -95,8 +95,8 @@ export function railTail(position: EdgePanelPosition): JSX.Element {
   return (
     <>
       <OfflineBadge />
-      <RibbonCommand title="Swap the centre and the right rail" testId="ribbon-cmd-swap-centre"
-        onClick={() => windowActions.swapCentreWithEdge('right')}>
+      <RibbonCommand title="Swap conversation and editor" testId="ribbon-cmd-swap-centre"
+        onClick={swapConversationAndEditor}>
         <ArrowLeftRight class="w-4 h-4" />
       </RibbonCommand>
       <RibbonCommand

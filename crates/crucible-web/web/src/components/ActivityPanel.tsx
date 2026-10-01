@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal } from 'solid-js';
-import { Bot, ArrowRightLeft, Check, X, Activity } from '@/lib/icons';
+import { Bot, ArrowRightLeft, Check, X } from '@/lib/icons';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
@@ -39,22 +39,6 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
     }
   };
 
-  const borderColor = () => {
-    switch (props.event.status) {
-      case 'spawned': return 'border-precog/30';
-      case 'completed': return 'border-ok/20';
-      case 'failed': return 'border-error/30';
-    }
-  };
-
-  const bgColor = () => {
-    switch (props.event.status) {
-      case 'spawned': return 'bg-precog/10';
-      case 'completed': return 'bg-hover-wash';
-      case 'failed': return 'bg-error/10';
-    }
-  };
-
   const label = () => {
     if (isDelegation()) return `Delegation to ${agentName()}`;
     return 'Subagent';
@@ -75,8 +59,9 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
   };
 
   return (
-    <div class={`border ${borderColor()} rounded-lg ${bgColor()} overflow-hidden`}>
+    <div class="panel-item overflow-hidden">
       <button
+        aria-expanded={expanded()}
         onClick={() => setExpanded(!expanded())}
         class="w-full flex items-center gap-2 px-3 py-2 hover:bg-hover-wash transition-colors text-left group"
       >
@@ -105,7 +90,7 @@ const TaskItem: Component<{ event: SubagentEvent }> = (props) => {
 
       {/* Expanded detail */}
       <Show when={expanded()}>
-        <div class="border-t border-hairline">
+        <div class="panel-detail">
           {/* Prompt */}
           <Show when={props.event.prompt}>
             <div class="px-3 py-2 bg-surface-base">
@@ -163,7 +148,7 @@ const TaskSummary: Component<{ events: SubagentEvent[] }> = (props) => {
   const failed = () => props.events.filter((e) => e.status === 'failed').length;
 
   return (
-    <div class="flex items-center gap-3 px-3 py-2 border-b border-hairline text-floor">
+    <div class="flex items-center gap-3 px-3 py-2 text-floor">
       <Show when={active() > 0}>
         <span class="flex items-center gap-1 text-precog">
           <span class="w-1.5 h-1.5 bg-precog rounded-full animate-pulse" />
@@ -203,13 +188,8 @@ export const ActivityPanel: Component = () => {
   return (
     <PanelShell>
       {/* Header */}
-      <PanelHeader title="Activity">
-        <div class="flex items-center gap-2">
-          <Activity class="w-4 h-4 text-muted" />
-        </div>
-      </PanelHeader>
+      <PanelHeader title="Activity" />
 
-      {/* Summary bar */}
       {/* Summary bar */}
       <Show when={events().length > 0}>
         <TaskSummary events={events()} />

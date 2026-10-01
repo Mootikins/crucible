@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render } from '@solidjs/testing-library';
+import { render, fireEvent } from '@solidjs/testing-library';
 import { WindowManager } from '../WindowManager';
-import { windowActions } from '@/windowing/store';
+import { windowActions, windowStore } from '@/windowing/store';
 import { configureRails, neutralRenderer } from './fixtures';
 
 /**
@@ -61,4 +61,20 @@ describe('the shown state of a rail', () => {
     finishSlide();
     expect(progress()).toBe(0);
   });
+});
+
+
+it('a tiled rail icon collapses only its own pane, and reopens it', () => {
+  mount();
+  windowActions.setEdgePanelCollapsed('right', false);
+  windowActions.setPaneCollapsed('right-term-pane', false);
+  finishSlide();
+  const omega = document.querySelector<HTMLButtonElement>('.wm-ribbon-tab[title="Omega"]')!;
+  fireEvent.click(omega);
+  expect(windowStore.edgePanels.right.mode).toBe('docked');
+  const layout = windowStore.edgePanels.right.layout;
+  if (layout.type !== 'split' || layout.second.type !== 'pane') throw new Error('expected stacked panes');
+  expect(layout.second.collapsed).toBe(true);
+  fireEvent.click(omega);
+  expect(layout.second.collapsed).toBe(false);
 });

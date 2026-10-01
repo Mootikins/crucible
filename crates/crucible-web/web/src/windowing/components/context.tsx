@@ -10,6 +10,8 @@ export const DROP_OVER_ATTR = 'data-drop-over';
 
 /** What the app hangs on the window manager's chrome. Every slot is optional. */
 export interface WindowingSlots {
+  /** Content-specific actions appended to the shared tab menu. */
+  tabMenuActions?: (tab: Tab) => { id: string; label: string; run: () => void }[];
   /** Above the tab icons on a rail. */
   railHead?: (position: EdgePanelPosition) => JSX.Element;
   /** Pinned to the far end of a rail; replaces the default side-swap control. */
@@ -62,4 +64,9 @@ export function useWindowing(): WindowingContextValue {
   const v = useContext(Ctx);
   if (!v) throw new Error('windowing: useWindowing needs a WindowingProvider');
   return v;
+}
+
+/** Chrome slots are optional when a standalone tab bar has no content host. */
+export function useWindowingSlots(): WindowingSlots {
+  return useContext(Ctx)?.slots ?? {};
 }

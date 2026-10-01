@@ -88,3 +88,24 @@ export function watchRailGeometry(
     window.removeEventListener('resize', measure);
   });
 }
+
+/** Publish actual tab/pane alignment; tab order alone cannot establish an edge. */
+export function measureRailTabEdges(ribbon: HTMLElement, body: HTMLElement): void {
+  const panes = Array.from(body.querySelectorAll<HTMLElement>('[data-pane-id]'));
+  for (const pane of panes) delete pane.dataset.activeTabEdge;
+  for (const tab of ribbon.querySelectorAll<HTMLElement>('[data-ribbon-tab-id]')) {
+    delete tab.dataset.paneEdge;
+    if (!tab.hasAttribute('data-highlighted')) continue;
+    const pane = panes.find(el => el.dataset.paneId === tab.dataset.ribbonPaneId);
+    if (!pane) continue;
+    const tabBox = tab.getBoundingClientRect();
+    const paneBox = pane.getBoundingClientRect();
+    if (!tabBox.height || !paneBox.height) continue;
+    const edge = Math.abs(tabBox.top - paneBox.top) <= 1 ? 'top'
+      : Math.abs(tabBox.bottom - paneBox.bottom) <= 1 ? 'bottom' : undefined;
+    if (edge) {
+      tab.dataset.paneEdge = edge;
+      pane.dataset.activeTabEdge = edge;
+    }
+  }
+}
