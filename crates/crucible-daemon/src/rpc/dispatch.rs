@@ -876,7 +876,8 @@ impl RpcDispatcher {
                 crate::server::fs::handle_fs_list_dir(
                     req.clone(),
                     &self.ctx.project_manager,
-                    &self.ctx.sessions
+                    &self.ctx.sessions,
+                    &self.ctx.kiln
                 )
             ),
             RpcMethod::DiffGet => forward!(

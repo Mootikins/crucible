@@ -246,7 +246,7 @@ async fn a_sessions_own_workspace_folder_is_admitted_as_a_root() {
         method: "fs.list_dir".to_string(),
         params: serde_json::json!({ "root": folder.to_string_lossy(), "rel_path": "" }),
     };
-    let resp = handle_fs_list_dir(req, &pm, &sessions).await;
+    let resp = handle_fs_list_dir(req, &pm, &sessions, &Arc::new(KilnManager::new())).await;
     assert!(resp.error.is_none(), "list failed: {:?}", resp.error);
 }
 
@@ -288,10 +288,13 @@ async fn only_a_real_sessions_folder_is_admitted_under_the_scratch_base() {
         method: "fs.list_dir".to_string(),
         params: serde_json::json!({ "root": stranger.to_string_lossy(), "rel_path": "" }),
     };
-    let resp = handle_fs_list_dir(req, &pm, &sessions).await;
+    let resp = handle_fs_list_dir(req, &pm, &sessions, &Arc::new(KilnManager::new())).await;
     let error = resp.error.expect("a stranger under the base is refused");
     assert_eq!(error.code, INVALID_PARAMS);
-    assert_eq!(error.message, ROOT_NOT_ADMITTED);
+    assert_eq!(
+        error.message,
+        "root is not a registered project, a session's own workspace folder or a registered kiln"
+    );
 }
 
 /// The mutating routes share the admission: a session can make a folder in
@@ -679,4 +682,48 @@ async fn fs_mkdir_without_a_rel_path_is_invalid_params() {
         "the message must name the field: {}",
         error.message
     );
+}
+
+#[tokio::test]
+async fn listing_registered_kiln_includes_empty_folders_and_assets_but_rejects_other_roots() {
+    let kiln = tempfile::TempDir::new().unwrap();
+    let state = tempfile::TempDir::new().unwrap();
+    let unknown = tempfile::TempDir::new().unwrap();
+    fs::create_dir(kiln.path().join("empty")).unwrap();
+    fs::write(kiln.path().join("picture.png"), b"fixture").unwrap();
+    let pm = Arc::new(ProjectManager::new(state.path().join("projects.json")));
+    let km = Arc::new(
+        KilnManager::new().with_kiln_registry(crate::test_support::kiln_registry(
+            state.path(),
+            &[("notes", kiln.path())],
+        )),
+    );
+    let sessions = crate::test_support::temp_session_manager();
+    for (root, rel, accepted) in [
+        (kiln.path(), "", true),
+        (kiln.path(), "empty", true),
+        (kiln.path(), "../", false),
+        (unknown.path(), "", false),
+    ] {
+        let req = Request {
+            jsonrpc: "2.0".into(),
+            id: Some(crate::protocol::RequestId::Number(1)),
+            method: "fs.list_dir".into(),
+            params: serde_json::json!({ "root": root, "rel_path": rel }),
+        };
+        let response = handle_fs_list_dir(req, &pm, &sessions, &km).await;
+        assert_eq!(response.error.is_none(), accepted, "{response:?}");
+        if accepted && rel.is_empty() {
+            let listing: FsListing = serde_json::from_value(response.result.unwrap()).unwrap();
+            assert!(listing
+                .entries
+                .iter()
+                .any(|e| e.name == "empty" && e.is_dir));
+            assert!(listing
+                .entries
+                .iter()
+                .any(|e| e.name == "picture.png" && !e.is_dir));
+        }
+    }
+    assert!(!unknown.path().join(".crucible").exists());
 }

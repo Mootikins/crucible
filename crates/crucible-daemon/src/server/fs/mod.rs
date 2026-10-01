@@ -1,7 +1,7 @@
 //! Read-only, one-level filesystem listing for the web file-tree explorer.
 //!
 //! Backs the `fs.list_dir` RPC. Lazily enumerates a single directory level
-//! inside a **registered project**, returning metadata only (never file bytes)
+//! inside a registered project, session workspace or kiln, returning metadata only (never file bytes)
 //! and never mutating the filesystem.
 //!
 //! # Threat model (see plan §3e)
@@ -15,7 +15,8 @@
 //!    workspace folder the daemon made for a project-less session
 //!    (`SessionManager::session_workspace_containing`, matched by shape and by
 //!    the session's own record). An unknown root is rejected before any disk
-//!    access.
+//!    access. Registered kilns use the same admission owner as filesystem
+//!    mutations; listing never registers a new kiln.
 //! 2. **`rel_path` component whitelist** — `..`, absolute paths, Windows
 //!    prefixes, and NUL are rejected *before* touching the disk (`resolve_within`).
 //! 3. **Canonicalize-and-contain** on the resolved target dir — blocks
@@ -122,6 +123,7 @@ pub(crate) async fn handle_fs_list_dir(
     req: Request,
     pm: &Arc<ProjectManager>,
     sessions: &Arc<SessionManager>,
+    km: &Arc<KilnManager>,
 ) -> Response {
     let params = match crate::rpc_helpers::typed_params::<FsListDirRequest>(&req) {
         Ok(p) => p,
@@ -129,8 +131,16 @@ pub(crate) async fn handle_fs_list_dir(
     };
 
     // Fail-closed allowlist, before any disk access.
-    let Some(base) = project_root(pm, sessions, Path::new(&params.root)).await else {
-        return Response::error(req.id, INVALID_PARAMS, ROOT_NOT_ADMITTED);
+    let base = match project_root(pm, sessions, Path::new(&params.root)).await {
+        Some(base) => base,
+        None => match resolve_root(pm, km, sessions, FsRootKind::Kiln, &params.root).await {
+            Ok(base) => base,
+            Err(_) => return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                "root is not a registered project, a session's own workspace folder or a registered kiln",
+            ),
+        },
     };
 
     match list_dir(
@@ -151,7 +161,7 @@ pub(crate) async fn handle_fs_list_dir(
     }
 }
 
-/// One level of `base`, which [`project_root`] already admitted.
+/// One level of an admitted canonical root.
 fn list_dir(
     base: &Path,
     rel_path: &str,

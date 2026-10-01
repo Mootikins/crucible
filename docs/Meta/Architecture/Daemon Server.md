@@ -932,3 +932,12 @@ ownership table: business logic, admission checks, and write paths are
 consistently daemon-side; clients reached through `crucible-daemon`'s public
 surface (per `deps.md`, `crucible-cli` and `crucible-web`) send intent and do
 not construct a second config or write pipeline.
+
+### Filesystem listings for the web tree
+
+`fs.list_dir` admits a registered project/session workspace through the existing
+project admission path, or a registered kiln through `admit_kiln_root`. It does
+not register or open arbitrary roots. The existing relative-path and containment
+checks still govern each listing. Files uses this same read method for kiln and
+project trees, so an empty folder or non-Markdown asset is visible without
+waiting for note indexing. Mutation ownership and access policies are unchanged.
