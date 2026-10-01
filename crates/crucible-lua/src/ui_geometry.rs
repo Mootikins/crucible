@@ -278,10 +278,8 @@ fn surface_to_wire(s: &SurfaceStyle) -> Json {
             json!({ "top": p.top, "right": p.right, "bottom": p.bottom, "left": p.left }),
         );
     }
-    for (key, val) in [("max_visible", s.max_visible)] {
-        if let Some(n) = val {
-            m.insert(key.into(), json!(n));
-        }
+    if let Some(n) = s.max_visible {
+        m.insert("max_visible".into(), json!(n));
     }
     Json::Object(m)
 }
