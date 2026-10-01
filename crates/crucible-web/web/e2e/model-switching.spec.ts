@@ -1,3 +1,5 @@
+import { MOCK_SESSION, MOCK_SESSION_DETAIL } from './helpers/fixtures';
+import { openSession } from './helpers/nav';
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { openSessionsList } from './helpers/nav';
@@ -55,4 +57,28 @@ test('switching model calls the API', async ({ page }) => {
     knob: 'model',
     value: 'mistral',
   });
+});
+
+
+test('ACP handshake replaces the profile label and checks the actual model', async ({ page }) => {
+  await setupBasicMocks(page);
+  let model = 'acp-profile';
+  const ids: unknown[] = [];
+  await page.route('**/api/rpc/session.list', route => route.fulfill({ json: { sessions: [{ ...MOCK_SESSION, agent_model: model }], total: 1 } }));
+  await page.route('**/api/rpc/session.get', route => route.fulfill({ json: { ...MOCK_SESSION_DETAIL, agent: { ...MOCK_SESSION_DETAIL.agent, model } } }));
+  await page.route('**/api/rpc/session.list_models', route => {
+    ids.push(route.request().postDataJSON().session_id);
+    model = 'agent-selected-model';
+    return route.fulfill({ json: { models: [model, 'another-model'] } });
+  });
+  await page.goto('/');
+  await openSession(page, MOCK_SESSION.session_id);
+  const picker = page.getByTestId('model-picker-button');
+  await expect(picker).toContainText('agent-selected-model');
+  await picker.click();
+  const selected = page.getByTestId('model-option-agent-selected-model');
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await expect(selected.locator('.lucide-check')).toBeVisible();
+  expect(ids.length).toBeGreaterThan(0);
+  expect(ids.every(id => id === MOCK_SESSION.session_id)).toBe(true);
 });

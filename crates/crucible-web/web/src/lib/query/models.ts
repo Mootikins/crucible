@@ -89,7 +89,20 @@ export function useSessionModels(
       const sessionId = id();
       return {
         queryKey: keys.sessionModels(sessionId ?? ''),
-        queryFn: () => listModels(sessionId as string),
+        queryFn: async () => {
+          // Manual refetch can run a disabled query while selection is changing.
+          if (!sessionId) return [];
+          const models = await listModels(sessionId);
+          // ACP's handshake discovers and persists its active model. The row
+          // may have been fetched before that handshake, so read it again.
+          const client = getQueryClient();
+          await Promise.all([
+            client.invalidateQueries({ queryKey: keys.session(sessionId), exact: true }),
+            client.invalidateQueries({ queryKey: keys.sessions(false) }),
+            client.invalidateQueries({ queryKey: keys.sessions(true) }),
+          ]);
+          return models;
+        },
         enabled: sessionId !== null && sessionId !== '',
       };
     },
@@ -113,6 +126,14 @@ export function useAllModels(): UseQueryResult<string[], Error> {
   );
 }
 
+/** A local write owns its refresh until its awaited settlement completes. */
+export function isSwitchingModel(client: QueryClient, sessionId: string): boolean {
+  return client.isMutating({
+    mutationKey: keys.switchModel(),
+    predicate: mutation => (mutation.state.variables as { id?: string } | undefined)?.id === sessionId,
+  }) > 0;
+}
+
 /**
  * Moves one session to another model.
  *
@@ -130,10 +151,14 @@ export function useSwitchModel(): UseMutationResult<
 > {
   return useMutation(
     () => ({
+      mutationKey: keys.switchModel(),
       mutationFn: ({ id, modelId }: { id: string; modelId: string }) =>
         switchModel(id, modelId),
       onSuccess: (_result: void, { id, modelId }: { id: string; modelId: string }) => {
         patchCachedSession(id, { agent_model: modelId });
+      },
+      onSettled: (_result, _error, { id }) => {
+        // An event can precede even a failed/timed-out response. Always reconcile.
         // One call, not two. The session key is a PREFIX of the session's
         // models key, so this reaches both the row and the list. Naming them
         // separately would refetch the list twice for one switch.

@@ -9,6 +9,7 @@ import { composerComments, type AttachedComment } from '@/stores/composerComment
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
+import { useSession } from '@/lib/query/sessions';
 import { isBuiltinCommand } from '@/lib/slash-commands';
 import { openSessionInChat } from '@/lib/session-actions';
 import { useDeleteDiffComment } from '@/lib/query/diff';
@@ -51,6 +52,7 @@ export const ChatInput: Component = () => {
   let formRef: HTMLFormElement | undefined;
 
   const session = () => currentSession();
+  const sessionRecord = useSession(() => session()?.session_id ?? null);
   // Bound to the accessor, not to an id: the composer outlives the session on
   // screen, so a command typed after a tab switch must reach the session the
   // user is looking at.
@@ -182,6 +184,16 @@ export const ChatInput: Component = () => {
     return formatModelDisplay(s.agent_model);
   };
 
+  const selectedModelKey = () => {
+    const model = currentSession()?.agent_model ?? '';
+    const agent = sessionRecord.data?.agent;
+    // Native catalogue ids include the configured provider key; ACP ids are opaque.
+    // Use the recorded key, never the backend type or an ambiguous suffix match.
+    const key = agent?.agent_type === 'internal' && agent.provider_key
+      ? `${agent.provider_key}/${agent.model}` : model;
+    return availableModels().includes(key) ? key : model;
+  };
+
   const handleModelSelect = (model: string) => {
     void switchModel(model);
   };
@@ -210,7 +222,8 @@ export const ChatInput: Component = () => {
       // than set, so they are the first to fold.
       priority: 20,
       label: 'Model',
-      value: currentSession()?.agent_model ?? '',
+      value: selectedModelKey(),
+      valueLabel: currentModel(),
       options: availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) })),
       onSelect: handleModelSelect,
       disabled: !session() || isLoading(),

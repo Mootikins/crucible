@@ -1,8 +1,11 @@
+import { getQueryClient } from '@/lib/query/client';
+import { keys } from '@/lib/query/keys';
 import {
   createContext,
   useContext,
   ParentComponent,
   createSignal,
+  createMemo,
   createEffect,
 } from 'solid-js';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
@@ -54,7 +57,7 @@ const SessionContext = createContext<SessionContextValue>();
  * gets them too rather than re-implementing them.
  */
 export const SessionProvider: ParentComponent<SessionProviderProps> = (props) => {
-  const [currentSession, setCurrentSession] = createSignal<Session | null>(null);
+  const [selectedSession, setCurrentSession] = createSignal<Session | null>(null);
   const [pickedProviderType, setPickedProviderType] = createSignal<string | null>(null);
   // The failure of one action, which is not the failure of the roster read.
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -66,6 +69,14 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   const sessionsQuery = useSessions(includeArchived);
   const sessions = () => sessionsQuery.data ?? [];
+  // Selection supplies an immediate row while a newly adopted session loads.
+  // Once cached, the shared roster owns its fields, including ACP's model.
+  const currentSession = createMemo(() => {
+    const selected = selectedSession();
+    if (!selected) return null;
+    const row = sessions().find(session => session.session_id === selected.session_id);
+    return row ? { ...selected, ...row } : selected;
+  });
 
   // The provider probe, shared with the composer. It is not gated on the kiln
   // any more: `GET /api/providers` takes no kiln and never did, so the guard
@@ -446,18 +457,13 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  /**
-   * Asks the daemon for the current session's models again.
-   *
-   * The selection drives the query, so the callers that passed a session here
-   * are asking about the session they just selected — which is the one the
-   * query is already keyed to. The failure toast is the API layer's, which
-   * raises one for this route; the second toast this function used to add
-   * showed the same sentence twice.
-   */
-  const refreshModels = async (_sessionOverride?: Session) => {
-    if (!currentSession()?.session_id) return;
-    await modelsQuery.refetch();
+  /** Refresh the requested session; selection may still be settling. */
+  const refreshModels = async (sessionOverride?: Session) => {
+    const id = sessionOverride?.session_id ?? currentSession()?.session_id;
+    if (!id) return;
+    // Selection and the query observer can settle in different reactive turns.
+    // Invalidate the requested session, never refetch the old observer's key.
+    await getQueryClient().invalidateQueries({ queryKey: keys.sessionModels(id) });
   };
 
   const switchModel = async (modelId: string) => {

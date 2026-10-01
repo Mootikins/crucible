@@ -154,7 +154,7 @@ export function useSessions(includeArchived: Accessor<boolean>): UseQueryResult<
  * The status bar follows the focused pane, which may be focused on nothing, so
  * the id is an accessor and a null id asks the daemon nothing.
  */
-export function useSession(id: Accessor<string | null>): UseQueryResult<Session, Error> {
+export function useSession(id: Accessor<string | null>): UseQueryResult<SessionDetail, Error> {
   return useQuery(
     () => {
       const sessionId = id();

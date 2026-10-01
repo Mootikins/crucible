@@ -361,7 +361,6 @@ test.describe('live C2 entities', () => {
     const option = page.locator('[data-testid^="model-option-"]').first();
     await expect(option).toBeVisible({ timeout: 10_000 });
     const model = (await option.getAttribute('data-testid'))!.replace('model-option-', '');
-    const label = (await option.innerText()).trim();
     await option.click();
 
     // `session.knob.set` is one RPC method now (Simplification Plan step 19
@@ -384,8 +383,13 @@ test.describe('live C2 entities', () => {
       model.endsWith(recorded),
       `the picker sent ${model} and the daemon recorded ${recorded}`,
     ).toBe(true);
-    // And the chip names it, from the cache the mutation patched.
-    await expect(page.getByTestId('model-picker-button').first()).toContainText(label);
+    // The chip displays the daemon's model name; the menu keeps the full
+    // catalogue key so equally named models from different providers stay distinct.
+    await expect(page.getByTestId('model-picker-button').first()).toContainText(recorded);
+    await page.getByTestId('model-picker-button').first().click();
+    await expect(page.getByTestId(`model-option-${model}`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('option', { selected: true })).toHaveCount(1);
+    await page.keyboard.press('Escape');
 
     // The list is re-read ONCE, and once is the whole claim.
     //

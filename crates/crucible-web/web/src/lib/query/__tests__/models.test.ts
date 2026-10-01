@@ -5,6 +5,9 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { Session } from '@/lib/types';
 import { resetSessionsForTests, useSessions } from '../sessions';
 import { useAllModels, useSessionModels, useSwitchModel } from '../models';
+import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
+import { sessionEvents } from '../sse';
+import { installSessionEventRoute } from '../routes/session';
 
 // `session.list_models`, `session.knob.set`, `session.list` and
 // `models.list` are all RPC methods now ([[Simplification Plan#Step 19]]
@@ -89,6 +92,27 @@ function inRoot<T>(body: () => T): T {
 }
 
 describe('useSessionModels', () => {
+  it('does not send a null session id when a disabled picker is refreshed', async () => {
+    env = createTestQueryEnv({ [SESSION_MODELS]: () => body(['a/one']) });
+    const query = inRoot(() => useSessionModels(() => null));
+    await query.refetch();
+    expect(env.fetch.calls(SESSION_MODELS)).toBe(0);
+  });
+
+  it('refreshes the session model after the ACP handshake discovers its selection', async () => {
+    let current = 'acp-profile';
+    env = createTestQueryEnv({
+      [SESSION_LIST]: () => ({ sessions: [wire(session('s-1', { agent_model: current }))] }),
+      [SESSION_MODELS]: () => { current = 'actual-model'; return body(['actual-model', 'other-model']); },
+    });
+    const [id, setId] = createSignal<string | null>(null);
+    const { rows, query } = inRoot(() => ({ rows: useSessions(() => false), query: useSessionModels(id) }));
+    await vi.waitFor(() => expect(rows.data?.[0].agent_model).toBe('acp-profile'));
+    setId('s-1');
+    await vi.waitFor(() => expect(query.data).toEqual(['actual-model', 'other-model']));
+    await vi.waitFor(() => expect(rows.data?.[0].agent_model).toBe('actual-model'));
+  });
+
   it('asks once for every reader of one session', async () => {
     env = createTestQueryEnv({ [SESSION_MODELS]: () => body(['a/one', 'a/two']) });
 
@@ -251,4 +275,39 @@ describe('useAllModels', () => {
     await vi.waitFor(() => expect(query.isError).toBe(true));
     expect(query.error?.message).toContain('provider registry is down');
   });
+});
+
+
+it.each([false, true])('shares an event refresh with a slow switch response (rejected=%s), and honors later external events', async (rejected) => {
+  installFakeEventSource();
+  installSessionEventRoute();
+  let release!: () => void;
+  const responseReady = new Promise<void>(resolve => { release = resolve; });
+  env = createTestQueryEnv({
+    [SESSION_MODELS]: () => body(['a/one', 'a/two']),
+    [SWITCH]: async () => { await responseReady; return rejected
+      ? new Response(JSON.stringify({ error: 'response lost after applying model' }), { status: 500 })
+      : new Response(null, { status: 204 }); },
+  });
+  const { query, switching } = inRoot(() => ({
+    query: useSessionModels(() => 's-1'), switching: useSwitchModel(),
+  }));
+  await vi.waitFor(() => expect(query.data).toBeDefined());
+  const stop = sessionEvents('s-1').subscribe(() => {});
+  const source = onlyEventSource();
+  const event = () => source.emit('model_switched', { topic: 's-1', event: 'model_switched', data: { model_id: 'two', provider: 'acp' } });
+  try {
+    const write = switching.mutateAsync({ id: 's-1', modelId: 'a/two' });
+    await vi.waitFor(() => expect(env.fetch.calls(SWITCH)).toBe(1));
+    event();
+    // The HTTP response is deliberately held: the event cannot start a competing read.
+    await new Promise(resolve => setTimeout(resolve, 180));
+    expect(env.fetch.calls(SESSION_MODELS)).toBe(1);
+    release();
+    if (rejected) await expect(write).rejects.toThrow();
+    else await write;
+    expect(env.fetch.calls(SESSION_MODELS)).toBe(2);
+    event();
+    await vi.waitFor(() => expect(env.fetch.calls(SESSION_MODELS)).toBe(3));
+  } finally { release(); stop(); }
 });

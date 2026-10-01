@@ -17,6 +17,7 @@
 import type { QueryClient } from '@tanstack/solid-query';
 import type { ChatEvent } from '@/lib/types';
 import { keys } from '../keys';
+import { isSwitchingModel } from '../models';
 import { diffsetKey } from '@/lib/diffset';
 import { setEventRoute, type SessionRouteContext } from '../sse';
 
@@ -95,6 +96,13 @@ function routeSessionEvent(event: ChatEvent, { client, bus, sessionId }: Session
     // `current_mode_id`, which the event just moved, so an unconditional
     // invalidation keeps a cached list right in both ways a mode change can
     // make it wrong.
+    case 'model_switched':
+      // A local switch awaits one refresh on settlement; its event can arrive first.
+      if (!isSwitchingModel(client, sessionId)) void client.invalidateQueries({ queryKey: keys.session(sessionId) });
+      void client.invalidateQueries({ queryKey: keys.sessions(false) });
+      void client.invalidateQueries({ queryKey: keys.sessions(true) });
+      break;
+
     case 'mode_changed':
       void client.invalidateQueries({ queryKey: keys.sessionModes(sessionId) });
       break;

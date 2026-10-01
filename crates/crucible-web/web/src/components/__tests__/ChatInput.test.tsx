@@ -47,6 +47,9 @@ vi.mock('@/contexts/ChatContext', () => ({
 // spelled `workspace == kilns[0]`, which this side had to re-derive. A test
 // that needs the session's OWN scratch folder sets this instead.
 let workspace: string | null = null;
+let modelOptions = ['model-1', 'model-2'];
+let modelName = 'test-model';
+let agentDetail: Record<string, unknown> | null = null;
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
@@ -55,10 +58,10 @@ vi.mock('@/contexts/SessionContext', () => ({
       state: 'active',
       kilns: ['/tmp/test-kiln'],
       workspace,
-      agent_model: 'test-model',
+      agent_model: modelName,
     }),
     cancelCurrentOperation: mockCancelCurrentOperation,
-    availableModels: () => ['model-1', 'model-2'],
+    availableModels: () => modelOptions,
     switchModel: mockSwitchModel,
     refreshModels: mockRefreshModels,
     selectedProvider: () => ({ provider_type: 'ollama' }),
@@ -111,10 +114,14 @@ let deleteFails = false;
 
 beforeEach(() => {
   deleteFails = false;
+  modelOptions = ['model-1', 'model-2'];
+  modelName = 'test-model';
+  agentDetail = null;
   localStorage.clear();
   resetKilnsForTests();
   installFakeEventSource();
   kilnEnv = createTestQueryEnv({
+    'POST /api/rpc/session.get': () => ({ session_id: 'test-session', agent_model: modelName, agent: agentDetail }),
     'POST /api/rpc/kiln.list': () => [],
     'POST /api/rpc/project.list': () => [],
     'GET /api/session/test-session/modes': () => ({ current_mode_id: 'ask', modes: [] }),
@@ -456,4 +463,27 @@ describe('ChatInput — session context chips', () => {
     expect(chip.textContent).not.toContain('test-session');
     expect(chip.getAttribute('title')).toBe('/data/workspaces/test-session');
   });
+});
+
+
+it('selects the exact native provider catalogue key after the daemon returns a bare model', async () => {
+  modelName = 'vendor/model';
+  modelOptions = ['other/vendor/model', 'my-server/vendor/model'];
+  agentDetail = { agent_type: 'internal', model: modelName, provider_key: 'my-server', provider: 'openai' };
+  render(() => <ChatInput />);
+  fireEvent.click(screen.getByTestId('model-picker-button'));
+  await waitFor(() => expect(screen.getByTestId('model-option-my-server/vendor/model')).toHaveAttribute('aria-selected', 'true'));
+  expect(screen.getByTestId('model-option-other/vendor/model')).toHaveAttribute('aria-selected', 'false');
+  expect(screen.getByTestId('model-picker-button')).toHaveTextContent('vendor/model');
+  expect(screen.getByTestId('model-picker-button')).not.toHaveTextContent('my-server/');
+});
+
+it('keeps ACP model identifiers opaque even when they contain slashes', async () => {
+  modelName = 'vendor/model';
+  modelOptions = ['vendor/model', 'my-server/vendor/model'];
+  agentDetail = { agent_type: 'acp', model: modelName, provider_key: 'my-server' };
+  render(() => <ChatInput />);
+  fireEvent.click(screen.getByTestId('model-picker-button'));
+  await waitFor(() => expect(screen.getByTestId('model-option-vendor/model')).toHaveAttribute('aria-selected', 'true'));
+  expect(screen.getByTestId('model-option-my-server/vendor/model')).toHaveAttribute('aria-selected', 'false');
 });

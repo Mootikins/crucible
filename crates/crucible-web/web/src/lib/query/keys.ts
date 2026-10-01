@@ -28,6 +28,7 @@ export const keys = {
   sessions: (includeArchived: boolean) => ['sessions', { includeArchived }] as const,
   session: (id: string) => ['session', id] as const,
   sessionHistory: (id: string) => ['session', id, 'history'] as const,
+  switchModel: () => ['session-model-switch'] as const,
   sessionModels: (id: string) => ['session', id, 'models'] as const,
   sessionModes: (id: string) => ['session', id, 'modes'] as const,
   sessionStatus: (id: string) => ['session', id, 'status'] as const,

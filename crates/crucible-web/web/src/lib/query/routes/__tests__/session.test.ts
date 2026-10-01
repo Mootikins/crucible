@@ -71,6 +71,14 @@ function history(events: SessionHistoryResponse['history']): SessionHistoryRespo
 }
 
 describe('the session event route', () => {
+  it('refreshes both the selected model and its menu when an ACP model changes', () => {
+    const source = openStream();
+    source.emit('model_switched', { event: 'model_switched', data: { model_id: 'agent-model', provider: 'acp' } });
+    expect(invalidated).toContainEqual(keys.session(SESSION));
+    expect(invalidated).toContainEqual(keys.sessions(false));
+    expect(invalidated).toContainEqual(keys.sessions(true));
+  });
+
   it('refreshes the status list when Lua publishes a replacement', () => {
     const source = openStream();
     source.emit('status_items_changed', { event: 'status_items_changed', data: { status: [] } });
