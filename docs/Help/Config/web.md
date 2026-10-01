@@ -18,7 +18,22 @@ Add it to `~/.config/crucible/init.lua`.
 ## Tabs
 
 The selected tab stays visible when its pane narrows. When tabs overflow,
-use **Show all tabs** to select one from the list.
+the clipped ends fade to show which direction has more tabs. Use
+**Show all tabs** to select one from the list.
+
+## Appearance design preview
+
+The dev-only shell mockup includes a Look toolbox for design experiments.
+It is not a production settings panel. The planned integration puts the
+chosen adjustable controls in the existing **Settings → Appearance** section:
+theme, true black, contrast, navigation tint, an RGB accent, pane gap and
+radius, note text size and file-label presentation. Leaf tabs, the right-hand
+card, and the absence of optional edges, inner lines and shadows are the
+chosen fixed style. These additions are not implemented yet.
+
+The existing editor remains: source mode has line numbers for every note,
+and live preview keeps its rendering and cursor movement. Appearance changes
+do not replace the editor with the mockup's static note view.
 
 ## Voice input
 

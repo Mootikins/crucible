@@ -433,6 +433,7 @@ writes the raw state. The theme decides which state wins.
 | Attribute | Parts | Meaning |
 |---|---|---|
 | `data-active` | `wm-tab`, `wm-tab-menu-item` | The active tab of its group |
+| `data-overflow-start`, `data-overflow-end` | `wm-tabstrip` | Tabs extend beyond that scroll edge; the theme fades only clipped ends |
 | `data-focused` | `wm-tab` | The pane of the tab has focus |
 | `data-modified` | `wm-tab` | The tab holds unsaved work |
 | `data-dragging` | `wm-tab`, `wm-ribbon-tab`, `wm-splitter`, `wm-pane-boundary` | The element moves now |
@@ -549,6 +550,30 @@ of the parts, so the check cannot pass on an empty tree.
 
 ## Shell mockup review design
 
+### Integration target (planned)
+
+The mockup is the presentation target; its Look toolbox remains a mockup-only
+experiment. The selected adjustable controls belong in the existing
+`AppearanceSettingsSection` (`components/settings/AppearanceSettings.tsx`),
+rendered by `SettingsModal`, with persistence through `SettingsContext` and
+`lib/settings.ts`. Integration adds no Look panel or parallel settings store.
+
+The chosen fixed style uses leaf tabs and a right-hand card, with no optional
+edges, inner lines or shadows. Theme, true black, contrast, navigation tint,
+an RGB accent, pane gap and radius, note text size and file-label presentation
+remain configurable. The toolbox's other experiments are not production
+settings. These controls are planned; the fixture's localStorage choices do
+not establish a production settings contract.
+
+The full existing editor remains in place. Source mode retains source line
+numbers for every note, and live preview retains its rendering and cursor
+motion. The mockup's static note article is a visual reference, not an editor
+replacement. Integration preserves the existing query owners for daemon
+entities, the transcript store for daemon-folded transcript operations, and
+the editor's buffers, saves, selection and undo history. It replaces fixture
+reads with those owners rather than migrating the mockup's data store into
+the app.
+
 The dev-only `/shell-mockup.html?review` entry opens Changes and a proposal
 in the real windowing core. Changes shows the read-only session diff directly, in one tab. File headers
 open the note; there is no intermediate file-list or separate Session diff tab. The Inbox lists open proposals separately from
@@ -560,7 +585,9 @@ File diffs fold through a caret beside the filename, without unified-diff
 range headers. Review and permission previews share numbered monospace rows
 with addition/removal markers; review rows use quiet tints with brighter
 word-change backgrounds. Syntax colors remain visible for code.
-The mockup numbers refer to its fixture excerpts.
+The mockup numbers use full-note file positions, excluding fixture marker
+metadata and accounting for earlier edits independently on each side.
+Accepted proposals retain their original review rows and numbering.
 
 This surface uses local design fixtures, not daemon writes. It illustrates the
 current record/proposal split; stale proposals, conflict settlement and
@@ -569,6 +596,12 @@ not this preview. The former Session/Turn, Unreviewed only, per-hunk decision
 and undo variants have been removed from the mockup and its Look toolbox.
 
 
+The mockup's permission prompt uses a raised surface with a faint attention
+tint and no border, including the glass material. Its inset diff uses the
+same base surface, row typography, gutters, and inline change highlights as
+the file buffers, preserving contrast against the raised prompt. The preview
+shows up to 24rem of rows before scrolling, capped at 40% of viewport height.
+Its six-line minimum shrinks with short viewports, keeping space for actions.
 The mockup's comment editor uses a soft control background with no surrounding
 card border; saved comments sit directly below the diff. Transcript copy and
 regenerate controls appear once at the end of a completed assistant turn.
@@ -591,3 +624,8 @@ The tab strip reveals the active tab after its own width changes as well as
 after selection changes. It measures after the overflow controls lay out and
 scrolls only the strip, keeping the selected tab clear of those controls.
 The mockup uses an 8px tab left inset and aligns file/hunk carets on one axis.
+
+The tab strip measures its clipped edges on scrolling, resizing, tab changes,
+and font loading. Overflow data attributes drive the theme's gradient mask,
+which fades tabs without covering neighboring controls and disappears when
+the tabs fit.
