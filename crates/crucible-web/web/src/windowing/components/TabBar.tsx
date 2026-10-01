@@ -291,8 +291,16 @@ interface TabStripProps {
 
 const TabStrip: Component<TabStripProps> = (props) => {
   const [isOverflowing, setIsOverflowing] = createSignal(false);
+  const [overflowStart, setOverflowStart] = createSignal(false);
+  const [overflowEnd, setOverflowEnd] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
   let tabsContainerRef: HTMLDivElement | undefined;
+  const measureEdges = () => {
+    const strip = tabsContainerRef;
+    if (!strip) return;
+    setOverflowStart(strip.scrollLeft > 1);
+    setOverflowEnd(strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 1);
+  };
   let revealFrame: number | undefined;
   const revealActive = () => {
     if (revealFrame !== undefined) cancelAnimationFrame(revealFrame);
@@ -307,6 +315,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
       const selected = tab.getBoundingClientRect();
       if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right;
       else if (selected.left < bounds.left) strip.scrollLeft -= bounds.left - selected.left;
+      measureEdges();
     });
   };
   onCleanup(() => { if (revealFrame !== undefined) cancelAnimationFrame(revealFrame); });
@@ -316,16 +325,21 @@ const TabStrip: Component<TabStripProps> = (props) => {
     const checkOverflow = () => {
       if (tabsContainerRef) {
         setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+        measureEdges();
         revealActive();
       }
     };
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(tabsContainerRef);
+    document.fonts?.addEventListener('loadingdone', checkOverflow);
     createEffect(() => {
       props.tabs();
       checkOverflow();
     });
-    onCleanup(() => observer.disconnect());
+    onCleanup(() => {
+      observer.disconnect();
+      document.fonts?.removeEventListener('loadingdone', checkOverflow);
+    });
   });
 
   // Follow the active tab: newly opened or switched-to tabs scroll into
@@ -362,6 +376,9 @@ const TabStrip: Component<TabStripProps> = (props) => {
           props.onTabsContainerRef?.(el);
         }}
         class="wm-tabstrip flex-1 flex items-end overflow-x-auto scrollbar-hide min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+        data-overflow-start={overflowStart() ? '' : undefined}
+        data-overflow-end={overflowEnd() ? '' : undefined}
+        onScroll={measureEdges}
       >
         {/* Keyed by tab id, NOT object identity: updateTab replaces the tab
             object on every write (dirty flag, title), and a remounting row

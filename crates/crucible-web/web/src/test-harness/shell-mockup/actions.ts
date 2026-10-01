@@ -228,7 +228,7 @@ let hoverWindow: string | null = null;
 function closeHover() {
   if (!hoverWindow) return;
   const w = windowStore.floatingWindows.find((f) => f.id === hoverWindow);
-  if (w?.transient) windowActions.removeFloatingWindow(w.id);
+  if (w?.transient) windowActions.closeFloatingWindow(w.id);
   hoverWindow = null;
 }
 

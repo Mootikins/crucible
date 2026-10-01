@@ -9,7 +9,7 @@ import { basename } from '../path';
 export const NoteMissing: Component<{ path: string; children?: JSX.Element }> = (props) => (
   <article class="mk-note">
     <h1>{basename(props.path)}</h1>
-    <p class="mk-quiet">The mockup carries the text of six notes from the docs kiln. The real app reads {props.path}.md from the daemon.</p>
+    <p class="mk-quiet">The mockup carries the text of selected notes from the docs kiln. The real app reads {props.path}.md from the daemon.</p>
     {props.children}
   </article>
 );

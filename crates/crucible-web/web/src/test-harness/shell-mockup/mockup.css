@@ -328,22 +328,23 @@
 .mk-composerwrap { padding: 8px var(--mk-pad) 12px; }
 [data-edge-expanded] .mk-composerwrap { padding-block: 8px 20px; }
 .mk-cinner { max-width: 48rem; margin: 0 auto; display: grid; gap: 8px; }
-.mk-perm { border: 1px solid color-mix(in srgb, var(--cru-color-attention) 50%, transparent); background: transparent; border-radius: var(--cru-radius-card); box-shadow: var(--cru-shadow-md); overflow: hidden; }
+.mk-perm { border: 0; background: color-mix(in srgb, var(--cru-color-attention) 4%, color-mix(in srgb, var(--cru-color-surface-elevated) 75%, var(--cru-color-surface-base))); border-radius: var(--cru-radius-card); box-shadow: var(--cru-shadow-md); overflow: hidden; }
 .mk-ph { padding: 9px 12px 6px; font-size: 12.5px; color: var(--cru-color-ink); font-weight: 500; }
-/* The change, as the app's diff viewer shows it, in NAV with no frame: the
+/* The same diff surface as the file buffer, without a frame: the
    path and the counts, then the old and new line numbers, the mark, the line. */
-.mk-pdiff { margin: 0 12px 8px; border-radius: 6px; background: var(--mk-nav-solid); overflow: hidden; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.6; }
+.mk-pdiff { margin: 0 12px 8px; border-radius: var(--cru-radius-card); background: var(--cru-color-surface-base); overflow: hidden; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.6; }
 .mk-pdhead { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--cru-color-body); }
 .mk-pdhead .mk-t { flex: 1; }
-.mk-pdiff .mk-diff-rows { max-height: 12rem; overflow: auto; padding-bottom: 2px; }
-.mk-diff-rows { font-family:var(--cru-font-mono); font-size:11px; line-height:1.6; }
-.mk-diff-row { display: grid; grid-template-columns: 4ch 4ch 2.5ch minmax(0, 1fr); color: var(--cru-color-muted); }
+/* More of the proposed edit stays visible; short screens reduce both bounds. */
+.mk-pdiff .mk-diff-rows { min-height:min(6lh, 18dvh); max-height:min(24rem, 40dvh); overflow:auto; padding-bottom:2px; }
+.mk-diff-rows { font-family:var(--cru-font-mono); font-size:12px; line-height:1.6; }
+.mk-diff-row { display:grid; padding-block:2px; grid-template-columns:3.5ch 3.5ch 2.5ch minmax(0,1fr); border-left:2px solid transparent; color:var(--cru-color-body); }
 .mk-diff-row .n { text-align: right; color: var(--cru-color-muted-dark); user-select: none; }
-.mk-diff-row .m { text-align: center; user-select: none; }
+.mk-diff-row .m { text-align:center; user-select:none; font-weight:600; }
 .mk-diff-row .c { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 8px; }
-.mk-diff-row.add { background: var(--mk-diff-add); color: var(--cru-color-body); }
+.mk-diff-row.add { background:color-mix(in srgb, var(--cru-color-ok) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-ok) 65%, transparent); }
 .mk-diff-row.add .m { color: var(--cru-color-ok); }
-.mk-diff-row.remove { background: var(--mk-diff-del); }
+.mk-diff-row.remove { background:color-mix(in srgb, var(--cru-color-error) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-error) 65%, transparent); }
 .mk-diff-row.remove .m { color: var(--cru-color-error); }
 .mk-pa { display: flex; align-items: center; gap: 6px; padding: 0 calc(12px - var(--mk-icon-inset)) 10px 12px; }
 /* A queued message: a mild accent, and the override beside it. */
@@ -778,6 +779,8 @@ body { background: var(--mk-nav); }
 :root[data-material='glass'][data-theme='light'] .wm-floating,
 :root[data-material='glass'][data-theme='light'] .mk-pop,
 :root[data-material='glass'][data-theme='light'] .mk-perm { box-shadow: var(--mk-glass-edge), 0 24px 60px -20px rgba(20, 22, 28, 0.25); }
+:root[data-material='glass'] .mk-perm { box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.6); }
+:root[data-material='glass'][data-theme='light'] .mk-perm { box-shadow: 0 24px 60px -20px rgba(20, 22, 28, 0.25); }
 
 /* The composer is a frosted capsule. */
 :root[data-material='glass'] .mk-composer {
@@ -844,18 +847,15 @@ body { background: var(--mk-nav); }
 .mk-review .mk-comment-toggle .mk-i { width:16px; height:16px; stroke-width:1.8; }
 .mk-review .mk-comment-toggle:hover { color:var(--cru-color-primary-hover); background:var(--cru-color-hover-wash); }
 
-.mk-review-diff .mk-diff-rows { font-size:12px; }
-.mk-review-diff .mk-diff-row { padding-block:2px; grid-template-columns:3.5ch 3.5ch 2.5ch minmax(0,1fr); }
-.mk-review-diff .mk-diff-row { border-left:2px solid transparent; color:var(--cru-color-body); }
-.mk-review-diff .mk-diff-row.add { background:color-mix(in srgb, var(--cru-color-ok) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-ok) 65%, transparent); }
-.mk-review-diff .mk-diff-row.remove { background:color-mix(in srgb, var(--cru-color-error) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-error) 65%, transparent); }
-.mk-review-diff .add .mk-diff-word { background:color-mix(in srgb, var(--cru-color-ok) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
-.mk-review-diff .remove .mk-diff-word { background:color-mix(in srgb, var(--cru-color-error) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
+/* Permission previews and file buffers share row and inline-change colors. */
+.mk-diff-row.add .mk-diff-word { background:color-mix(in srgb, var(--cru-color-ok) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
+.mk-diff-row.remove .mk-diff-word { background:color-mix(in srgb, var(--cru-color-error) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
 .mk-review-diff.code .mk-diff-rows { width:max-content; min-width:100%; }
 .mk-review-diff.code .c { white-space:pre; overflow-wrap:normal; }
 .mk-review-hunk-toggle { display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:0; font-size:11px; color:var(--cru-color-muted-dark); }
 .mk-review-hunk-toggle .mk-i { width:20px; height:14px; padding-inline:3px; box-sizing:border-box; }
 .mk-review-hunk-toggle:hover { color:var(--cru-color-ink); }
-.mk-review-diff .mk-diff-row .m { font-weight:600; }
 .mk-review .mk-diff-toggle { flex-shrink:0; width:20px; min-width:20px; padding:0; height:24px; color:var(--cru-color-muted); }
 .mk-review .mk-diff-toggle:hover { color:var(--cru-color-ink); }
+
+.mk-review-decision { display:inline-flex; align-items:center; height:24px; font-size:12px; line-height:1; color:var(--cru-color-muted); }

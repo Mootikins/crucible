@@ -120,7 +120,7 @@ export const ReviewContainer: Component<{ source: ReviewSource; sid: string; pat
                   <Show when={proposal()}>
                     <Show
                       when={!review.files[file.path]}
-                      fallback={<span class="mk-quiet">{review.files[file.path]}</span>}
+                      fallback={<span class="mk-review-decision">{review.files[file.path]}</span>}
                     >
                       <DecisionButtons
                         acceptLabel="Accept file"

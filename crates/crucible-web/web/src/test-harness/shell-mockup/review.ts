@@ -1,4 +1,5 @@
 /** Design fixtures only: session records are read-only; proposals wait without changing notes. */
+import { NOTE_TEXT } from './data';
 import { SERVER_BASE, SERVER_CURRENT } from '../review-fixture';
 import { analyzeDiff } from '@/lib/diff-stats';
 import { createStore } from 'solid-js/store';
@@ -24,6 +25,56 @@ export const proposalPaths = () => [
   ),
 ];
 export const proposalPending = () => proposalPaths().filter((path) => !review.files[path]);
+/** Strip fixture markers before measuring the file positions of an excerpt. */
+function noteHunk(path: string, id: string) {
+  const marker = new RegExp(`:::hunk ${id}\\n([\\s\\S]*?)\\n:::`);
+  const live = state.notes[path] ?? '';
+  const initial = NOTE_TEXT[path] ?? '';
+  // An accepted proposal has replaced its marker, but its review stays visible.
+  const source = marker.test(live) ? live : marker.test(initial) ? initial : live;
+  const match = source.match(marker);
+  const lines = match
+    ? {
+        del: match[1]
+          .split('\n')
+          .filter((line) => line.startsWith('-'))
+          .map((line) => line.slice(1)),
+        add: match[1]
+          .split('\n')
+          .filter((line) => line.startsWith('+'))
+          .map((line) => line.slice(1)),
+      }
+    : hunkLines(id);
+  const expand = (text: string, sign: string) =>
+    text.replace(/:::hunk \S+\n([\s\S]*?)\n:::/g, (_, body: string) =>
+      body
+        .split('\n')
+        .filter((line) => line.startsWith(sign))
+        .map((line) => line.slice(1))
+        .join('\n'),
+    );
+  if (match) {
+    const prefix = source.slice(0, match.index);
+    return {
+      ...lines,
+      oldOffset: expand(prefix, '-').split('\n').length - 1,
+      newOffset: expand(prefix, '+').split('\n').length - 1,
+    };
+  }
+  const before = lines.del.join('\n');
+  const after = lines.add.join('\n');
+  const accepted = state.hunks[id]?.state === 'accepted';
+  const needle = accepted ? after : before;
+  const at = needle ? source.indexOf(needle) : -1;
+  // Synthetic additions with no existing excerpt use decideProposal's append position.
+  const prefix = at >= 0 ? source.slice(0, at) : `${source}\n`;
+  return {
+    ...lines,
+    oldOffset: expand(prefix, '-').split('\n').length - 1,
+    newOffset: expand(prefix, '+').split('\n').length - 1,
+  };
+}
+
 export function reviewFiles(sid: string) {
   if (sid === 'code-preview') {
     const hunks = [
@@ -67,12 +118,16 @@ export function reviewFiles(sid: string) {
     const hunks = Object.entries(state.hunks)
       .filter(([, h]) => h.session === sid && h.path === path && h.state !== 'absent')
       .map(([id]) => {
-        const lines = hunkLines(id);
+        const lines = noteHunk(path, id);
         const diff = analyzeDiff(lines.del.join('\n'), lines.add.join('\n'));
         return {
           id,
           ...lines,
-          rows: diff.lines,
+          rows: diff.lines.map((row) => ({
+            ...row,
+            oldLineNum: row.oldLineNum === null ? null : row.oldLineNum + lines.oldOffset,
+            newLineNum: row.newLineNum === null ? null : row.newLineNum + lines.newOffset,
+          })),
           additions: diff.additions,
           deletions: diff.deletions,
         };

@@ -311,6 +311,15 @@
     padding-inline: 0.25rem;
   }
 
+  /* Fade clipped tabs without covering the strip's adjacent controls. */
+  .wm-tabstrip:is([data-overflow-start], [data-overflow-end]) {
+    --wm-tab-fade-start: black;
+    --wm-tab-fade-end: black;
+    mask-image: linear-gradient(to right, var(--wm-tab-fade-start), black 0.875rem, black calc(100% - 0.875rem), var(--wm-tab-fade-end));
+  }
+  .wm-tabstrip[data-overflow-start] { --wm-tab-fade-start: transparent; }
+  .wm-tabstrip[data-overflow-end] { --wm-tab-fade-end: transparent; }
+
   .wm-tabbar-actions {
     gap: 0.125rem;
     padding-inline: 0.25rem;

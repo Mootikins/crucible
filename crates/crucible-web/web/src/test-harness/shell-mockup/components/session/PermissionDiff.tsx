@@ -25,6 +25,6 @@ export const PermissionDiff: Component<PermissionDiffProps> = (props) => (
       <span class="mk-t">{props.path}</span>
       <DiffStat add={props.add} del={props.del} />
     </div>
-    <DiffRows rows={props.rows} />
+    <DiffRows rows={props.rows} emphasis fileName={props.path.endsWith('.md') ? undefined : props.path} />
   </div>
 );

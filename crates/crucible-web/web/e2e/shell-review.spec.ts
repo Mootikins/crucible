@@ -56,7 +56,7 @@ test('review diffs have numbered rows and fold with a caret', async ({ page }) =
   const file = page
     .getByTestId('mock-review')
     .locator('[data-review-file="Help/Concepts/Session Compaction"]');
-  await expect(file.locator('.mk-diff-row.remove .n').first()).toHaveText('1');
+  await expect(file.locator('.mk-diff-row.remove .n').first()).toHaveText('2');
   await expect(file.locator('.mk-diff-row.remove .m')).toHaveText('−');
   await expect(file.locator('.mk-diff-row.add .m')).toHaveText('+');
   await file
@@ -134,4 +134,40 @@ test('the active review tab stays visible after narrowing', async ({ page }) => 
     const strip = await pane.locator('.wm-tabstrip').boundingBox();
     return active!.x + active!.width - strip!.x - strip!.width;
   }).toBeLessThanOrEqual(1);
+});
+
+test('tab fades follow the clipped edges while scrolling and resizing', async ({ page }) => {
+  await page.goto('/shell-mockup.html?review');
+  const pane = page.locator('.wm-pane').filter({ has: page.getByTestId('mock-review') });
+  await pane.evaluate(el => { el.style.width = '350px'; el.style.maxWidth = '350px'; });
+  const strip = pane.locator('.wm-tabstrip');
+  await expect(strip).toHaveAttribute('data-overflow-start', '');
+  await strip.evaluate(el => { el.scrollLeft = 0; });
+  await expect(strip).not.toHaveAttribute('data-overflow-start');
+  await expect(strip).toHaveAttribute('data-overflow-end', '');
+  await strip.evaluate(el => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; });
+  await expect(strip).toHaveAttribute('data-overflow-start', '');
+  await expect(strip).toHaveAttribute('data-overflow-end', '');
+  expect(await strip.evaluate(el => getComputedStyle(el).maskImage)).toContain('linear-gradient');
+  await strip.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  await expect(strip).toHaveAttribute('data-overflow-start', '');
+  await expect(strip).not.toHaveAttribute('data-overflow-end');
+  await pane.evaluate(el => { el.style.width = '1200px'; el.style.maxWidth = '1200px'; });
+  await expect(strip).not.toHaveAttribute('data-overflow-start');
+  await expect(strip).not.toHaveAttribute('data-overflow-end');
+  expect(await strip.evaluate(el => getComputedStyle(el).maskImage)).toBe('none');
+});
+
+test('decided file labels match the review control typography', async ({ page }) => {
+  await page.goto('/shell-mockup.html?review');
+  const review = page.getByTestId('mock-review');
+  await review.getByRole('button', { name: 'Accept file', exact: true }).first().click();
+  const label = review.getByText('accepted', { exact: true });
+  const comment = label.locator('..').getByRole('button', { name: 'Comment', exact: true });
+  const typography = await Promise.all([label, comment].map((el) => el.evaluate((node) => {
+    const css = getComputedStyle(node);
+    return { size: css.fontSize, height: css.lineHeight };
+  })));
+  expect(typography[0]).toEqual(typography[1]);
+  await expect(label).toHaveClass('mk-review-decision');
 });
