@@ -240,6 +240,15 @@ behavior on top of them.
 | `crates/crucible-core/src/turn/mod.rs` | 719 | `TurnEvent`/`Agent` trait/`StopReason`/`AgentCapabilities`/`TurnContext`/`TurnStatus`/`TurnOrigin` — the unified agent-event protocol; a turn ends before any handler-requested follow-up runs. |
 | `crates/crucible-core/src/turn/tree.rs` | 622 | `ConversationTree`/`TurnNode`/`NodeContent`/`NodeId` — the append-only, branchable conversation store; `NodeContent::Plugin` gives a plugin-requested turn its own node kind. |
 
+The fold borrows an existing item to read streaming append offsets; whole-item
+updates clone explicitly when they need an owned item for an upsert. Reading an
+offset therefore does not copy the accumulated answer or thinking text.
+`crates/crucible-core/tests/transcript_allocations.rs` checks the allocation
+budget for repeated text and thinking deltas, including UTF-8 byte offsets,
+and streams into twenty resident sessions with one hundred completed turns
+each. Its resident-memory and timing measurements are diagnostic; allocation
+budgets check that streaming does not copy the accumulated history.
+
 ### `crates/crucible-core/src/types/`
 
 | Path | Lines | Role |

@@ -487,7 +487,7 @@ impl TranscriptFold {
                 display,
                 auto_approved,
             } => {
-                let Some(mut item) = self.item(&tool_id(&call_id)) else {
+                let Some(mut item) = self.item(&tool_id(&call_id)).cloned() else {
                     return;
                 };
                 if let ItemBody::ToolCard {
@@ -526,7 +526,7 @@ impl TranscriptFold {
                 // A result belongs to the card of its call. A result whose call id
                 // matches no call (an old ACP recorder wrote fresh ids) has no
                 // card to go on.
-                let Some(mut item) = self.item(&tool_id(&call_id)) else {
+                let Some(mut item) = self.item(&tool_id(&call_id)).cloned() else {
                     return;
                 };
                 if let ItemBody::ToolCard {
@@ -660,7 +660,7 @@ impl TranscriptFold {
                 let Some(turn_id) = self.turn.as_ref().map(|t| t.id.clone()) else {
                     return;
                 };
-                let Some(mut item) = self.item(&turn_id) else {
+                let Some(mut item) = self.item(&turn_id).cloned() else {
                     return;
                 };
                 if let ItemBody::UserTurn { precognition, .. } = &mut item.body {
@@ -729,7 +729,7 @@ impl TranscriptFold {
         text: String,
         ops: &mut Vec<TranscriptOp>,
     ) {
-        let Some(mut item) = self.item(&delegation_item_id(delegation_id)) else {
+        let Some(mut item) = self.item(&delegation_item_id(delegation_id)).cloned() else {
             return;
         };
         if let ItemBody::Delegation {
@@ -758,7 +758,7 @@ impl TranscriptFold {
     /// Add text to the open segment, and open one when there is none.
     fn append(&mut self, field: TextField, text: String, ops: &mut Vec<TranscriptOp>) {
         let id = self.segment_for_text(ops);
-        let at = match self.item(&id).map(|i| i.body) {
+        let at = match self.item(&id).map(|i| &i.body) {
             Some(ItemBody::AssistantSegment {
                 text: seg_text,
                 thinking,
@@ -824,7 +824,7 @@ impl TranscriptFold {
             None if content.is_some() => self.segment_for_text(ops),
             None => return,
         };
-        let Some(mut item) = self.item(&id) else {
+        let Some(mut item) = self.item(&id).cloned() else {
             return;
         };
         if let ItemBody::AssistantSegment {
@@ -864,7 +864,7 @@ impl TranscriptFold {
             None if !rest.trim().is_empty() || usage.is_some() => self.segment_for_text(ops),
             None => return,
         };
-        if let Some(mut item) = self.item(&id) {
+        if let Some(mut item) = self.item(&id).cloned() {
             if let ItemBody::AssistantSegment {
                 text,
                 streaming,
@@ -945,8 +945,8 @@ impl TranscriptFold {
         }
     }
 
-    fn item(&self, id: &str) -> Option<TranscriptItem> {
-        self.transcript.items.iter().find(|i| i.id == id).cloned()
+    fn item(&self, id: &str) -> Option<&TranscriptItem> {
+        self.transcript.items.iter().find(|i| i.id == id)
     }
 
     /// The id of the first user turn after the turn `anchor`.
