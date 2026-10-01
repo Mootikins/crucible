@@ -414,7 +414,7 @@ describe('AssistantTurn — the meta row', () => {
     expect(meta.className).toContain('transition-opacity');
     expect(meta.className).toContain('group-hover:opacity-100');
     expect(meta.className).toContain('group-focus-within:opacity-100');
-    expect(meta.className).toContain('[@media(hover:none)]:opacity-100');
+    expect(meta.className).not.toContain('[@media(hover:none)]:opacity-100');
     // Hidden means untouchable as well: no click lands on an invisible button.
     expect(meta.className).toContain('pointer-events-none');
     expect(meta.className).toContain('group-hover:pointer-events-auto');

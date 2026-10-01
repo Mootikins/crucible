@@ -52,6 +52,8 @@ export interface ChatContextValue {
    * daemon gives the agent the context of each one.
    */
   sendMessage: (content: string, comments?: CommentRef[]) => Promise<void>;
+  removeQueuedMessage: (id: string) => void;
+  sendQueuedMessageNow: (id: string) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   cancelStream: () => Promise<void>;
   addSystemMessage: (content: string) => void;
@@ -124,6 +126,8 @@ export interface ProjectContextValue {
 // =============================================================================
 
 export interface EditorContextValue {
+  /** CodeMirror state has the same lifetime as its canonical buffer. */
+  editorStates: Map<string, import('@codemirror/state').EditorState>;
   openFiles: Accessor<EditorFile[]>;
   activeFile: Accessor<string | null>;
   openFile: (path: string, opts?: { background?: boolean }) => Promise<void>;

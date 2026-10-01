@@ -349,7 +349,7 @@ export const ChipRow: Component<{
     <Show when={keys().length > 0}>
       <div
         ref={rowRef}
-        class="mt-1.5 relative flex flex-nowrap items-center gap-x-1 overflow-hidden min-h-7"
+        class="composer-chips mt-1.5 relative flex flex-nowrap items-center gap-x-1 overflow-hidden min-h-7"
         data-testid="composer-chip-row"
       >
         <For each={drawn()}>

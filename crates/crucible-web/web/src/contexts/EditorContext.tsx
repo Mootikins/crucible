@@ -6,7 +6,11 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  untrack,
 } from 'solid-js';
+import type { EditorState } from '@codemirror/state';
+import { tabHost } from '@/lib/tab-host';
+import { fileHistoryPaths } from '@/lib/file-actions';
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile, FsEvent } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
@@ -63,47 +67,48 @@ export const EditorProvider: ParentComponent = (props) => {
     return kilnForPath(path, roster) ?? null;
   };
 
+  const editorStates = new Map<string, EditorState>();
+  const historyHolds = (path: string) => tabHost().list().some((tab) => fileHistoryPaths(tab).includes(path));
+
+  const pendingReads = new Map<string, Promise<void>>();
   const openFile = async (path: string, opts?: { background?: boolean }) => {
+    openCounts.set(path, (openCounts.get(path) ?? 0) + 1);
     const existing = openFilesStore.find((f) => f.path === path);
     if (existing) {
-      // Already open — take another reference and reuse the (possibly dirty)
-      // buffer instead of re-reading disk and clobbering unsaved edits.
-      openCounts.set(path, (openCounts.get(path) ?? 0) + 1);
       if (!opts?.background) setActiveFileSignal(path);
       return;
     }
-
-    setIsLoading(true);
-    setError(null);
-    setRetryFailedOperation(null);
-
-    try {
-      // Load the raw file bytes from disk. get_note_by_name returns metadata
-      // only (no content), so the note endpoint can't hydrate the editor —
-      // GET /api/kiln/file reads the file itself and is the source of truth.
-      //
-      // Through the offline layer: the network when it answers, and the copy
-      // this device keeps when it does not. It also carries the hash the file
-      // was read at, which is what an offline save is anchored on.
-      const { content, content_hash, baseText } = await readNote(path, await kilnOf(path));
-
-      setOpenFiles(
-        produce((files) => {
-          // The text comes with the hash: the two are one fact, and this is
-          // the only copy of the text a later merge can be made from.
-          files.push({ path, content, dirty: false, baseHash: content_hash, baseText: baseText ?? content });
-        })
-      );
-      openCounts.set(path, 1);
-      if (!opts?.background) setActiveFileSignal(path);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to open file';
-      setError(msg);
-      setRetryFailedOperation(() => () => openFile(path, opts));
-      console.error('Failed to open file:', err);
-    } finally {
-      setIsLoading(false);
+    const pending = pendingReads.get(path);
+    if (pending) {
+      await pending;
+      if (!opts?.background && (openCounts.get(path) ?? 0) > 0) setActiveFileSignal(path);
+      return;
     }
+    const load = (async () => {
+      setIsLoading(true);
+      setError(null);
+      setRetryFailedOperation(null);
+      try {
+        const { content, content_hash, baseText } = await readNote(path, await kilnOf(path));
+        // A fast navigation can release the panel before its read answers.
+        // Only a live panel or a retained history entry still owns the bytes.
+        if ((openCounts.get(path) ?? 0) === 0 && !historyHolds(path)) return;
+        setOpenFiles(produce((files) => {
+          files.push({ path, content, dirty: false, baseHash: content_hash, baseText: baseText ?? content });
+        }));
+        if (!opts?.background && (openCounts.get(path) ?? 0) > 0) setActiveFileSignal(path);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to open file';
+        setError(msg);
+        setRetryFailedOperation(() => () => { openCounts.set(path, Math.max(0, (openCounts.get(path) ?? 1) - 1)); return openFile(path, opts); });
+        console.error('Failed to open file:', err);
+      } finally {
+        pendingReads.delete(path);
+        setIsLoading(pendingReads.size > 0);
+      }
+    })();
+    pendingReads.set(path, load);
+    await load;
   };
 
   const evictFile = (path: string, force?: boolean) => {
@@ -118,6 +123,7 @@ export const EditorProvider: ParentComponent = (props) => {
       if (!window.confirm(`Discard unsaved changes to ${filename}?`)) return;
     }
 
+    editorStates.delete(path);
     setOpenFiles(produce((files) => files.splice(idx, 1)));
 
     if (activeFile() === path) {
@@ -146,11 +152,33 @@ export const EditorProvider: ParentComponent = (props) => {
     // re-takes a reference before this runs, we must NOT evict (that remount
     // would otherwise re-read disk and lose unsaved edits).
     queueMicrotask(() => {
-      if ((openCounts.get(path) ?? 0) > 0) return;
+      if ((openCounts.get(path) ?? 0) > 0 || historyHolds(path)) return;
       openCounts.delete(path);
       evictFile(path, opts?.force);
     });
   };
+
+  createEffect(() => {
+    const tabs = tabHost().list();
+    const held = new Set(tabs.flatMap(fileHistoryPaths));
+    for (const tab of tabs) {
+      if (tab.contentType !== 'file') continue;
+      const paths = fileHistoryPaths(tab);
+      const dirty = openFilesStore.some((file) => paths.includes(file.path) && file.dirty);
+      if (!!tab.isModified !== dirty) untrack(() => tabHost().update(tab.id, { isModified: dirty }));
+    }
+    // Tab close already passed the shell's dirty confirmation. A moved panel
+    // can reacquire its reference in this tick before ownership is released.
+    queueMicrotask(() => {
+      for (const file of [...openFilesStore]) {
+        if (!held.has(file.path) && !historyHolds(file.path) && (openCounts.get(file.path) ?? 0) === 0) {
+          openCounts.delete(file.path);
+          evictFile(file.path, true);
+        }
+      }
+    });
+  });
+  onCleanup(() => editorStates.clear());
 
   const saveFile = async (path: string) => {
     const file = openFilesStore.find((f) => f.path === path);
@@ -525,6 +553,7 @@ export const EditorProvider: ParentComponent = (props) => {
   onCleanup(onNoteConflicted(onConflicted));
 
   const value: EditorContextValue = {
+    editorStates,
     openFiles: () => openFilesStore,
     activeFile,
     openFile,
@@ -557,6 +586,7 @@ export function useEditor(): EditorContextValue {
 const noopAsync = async () => {};
 
 const fallbackEditorContext: EditorContextValue = {
+  editorStates: new Map(),
   openFiles: () => [],
   activeFile: () => null,
   openFile: noopAsync,

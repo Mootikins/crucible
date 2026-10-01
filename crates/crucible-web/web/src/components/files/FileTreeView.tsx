@@ -14,6 +14,7 @@ import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { FileTreeNode, type FileTreeDnd } from './FileTreeNode';
 import { attachFileDropTarget, canDropIntoFolder } from '@/lib/file-dnd';
+import { fileOpenOptionsForEvent, type FileOpenOptions } from '@/lib/file-actions';
 import { shouldUseNativeMenu } from '@/windowing';
 import { FileTreeContextMenu, itemsForNode, type ContextAction } from './FileTreeContextMenu';
 
@@ -50,7 +51,7 @@ export interface FileTreeViewProps {
   density?: TreeDensity;
   openFilePath: string | null;
   defaultExpandedValue?: string[];
-  /** Project lazy loader; `undefined` for kilns (whole tree pre-built). */
+  /** Lazy filesystem loader for either admitted root kind. */
   loadChildren?: (details: TreeViewLoadChildrenDetails<Node>) => Promise<Node[]>;
   /**
    * REQUIRED with `loadChildren`: the collection is controlled, so the machine
@@ -60,7 +61,7 @@ export interface FileTreeViewProps {
    */
   onLoadedTree?: (rootNode: Node) => void;
   /** Opening a leaf routes through selection (one path for mouse AND keyboard). */
-  onOpenLeaf: (node: Node) => void;
+  onOpenLeaf: (node: Node, options?: FileOpenOptions) => void;
   onExpandedChange?: (expandedValue: string[]) => void;
   onContextAction: (action: ContextAction, node: Node) => void;
   /** Hand the live machine api to the parent (toolbar: collapse-all, reveal). */
@@ -92,7 +93,7 @@ export interface FileTreeViewProps {
 export const FileTreeView: Component<FileTreeViewProps> = (props) => {
   const handleSelection = (d: TreeViewSelectionChangeDetails<Node>) => {
     const node = d.selectedNodes[0];
-    if (node && !node.isDir) props.onOpenLeaf(node);
+    if (node && !node.isDir) props.onOpenLeaf(node, { where: 'here' });
   };
 
   const api = useTreeView<Node>(() => ({
@@ -168,12 +169,22 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse' && !routeToRow(e)) e.stopPropagation();
     };
+    const onModifiedClick = (e: MouseEvent) => {
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
+      const node = rowNodeFor(e.target);
+      if (!node || node.isDir) return;
+      e.preventDefault();
+      e.stopPropagation();
+      props.onOpenLeaf(node, fileOpenOptionsForEvent(e));
+    };
+    el.addEventListener('click', onModifiedClick, { capture: true });
     el.addEventListener('contextmenu', onContextMenu, { capture: true });
     el.addEventListener('pointerdown', onPointerDown, { capture: true });
     // Not a leak either way — these live on the element and die with it — but
     // the sibling ref helper above cleans up, and one of two neighbours doing it
     // reads as an oversight in whichever one you notice second.
     onCleanup(() => {
+      el.removeEventListener('click', onModifiedClick, { capture: true });
       el.removeEventListener('contextmenu', onContextMenu, { capture: true });
       el.removeEventListener('pointerdown', onPointerDown, { capture: true });
     });

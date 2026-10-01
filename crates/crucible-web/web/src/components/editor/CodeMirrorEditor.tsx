@@ -89,7 +89,8 @@ export const CodeMirrorEditor: Component<{
   onChange: (content: string) => void;
   onSave?: () => void;
   /** Follow a [[wikilink]] (Ctrl/Cmd+Click or Mod-Enter); markdown files only. */
-  onFollowLink?: (target: string) => void;
+  onFollowLink?: (target: string, options?: import('@/lib/file-actions').FileOpenOptions) => void;
+  editorStates?: Map<string, EditorState>;
   /** Kiln backing `[[` completion; absent for files that belong to no kiln. */
   kiln?: string;
   /** Modal vim editing (@replit/codemirror-vim). */
@@ -225,7 +226,7 @@ export const CodeMirrorEditor: Component<{
     extensions.push(langCompartment.of(getLanguageExtension(props.path) ?? []));
 
     if (props.onFollowLink && isMarkdown) {
-      extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
+      extensions.push(wikilinkNavigation((target, options) => props.onFollowLink?.(target, options)));
     }
     // Reads `props.kiln` lazily so a buffer that gains a kiln (or moves between
     // them) completes against the right note list without rebuilding the view.
@@ -268,13 +269,14 @@ export const CodeMirrorEditor: Component<{
     // Properties card until the first click.
     const fm = extractFrontmatterBlock(props.content);
     view = new EditorView({
-      state: EditorState.create({
+      state: props.editorStates?.get(props.path) ?? EditorState.create({
         doc: props.content,
         selection: { anchor: Math.min(fm?.bodyStart ?? 0, props.content.length) },
         extensions: createExtensions(),
       }),
       parent: el,
     });
+    view.dispatch({ effects: StateEffect.reconfigure.of(createExtensions()) });
     props.apiRef?.(view);
     vimSaveHandlers.set(view, () => props.onSave?.());
     ensureVimWriteEx();
@@ -318,6 +320,17 @@ export const CodeMirrorEditor: Component<{
     });
   };
 
+  let statePath = props.path;
+  createEffect(() => {
+    const path = props.path;
+    if (!view || path === statePath) return;
+    props.editorStates?.set(statePath, view.state);
+    statePath = path;
+    const cached = props.editorStates?.get(path);
+    view.setState(cached ?? EditorState.create({ doc: props.content, extensions: createExtensions() }));
+    view.dispatch({ effects: StateEffect.reconfigure.of(createExtensions()) });
+  });
+
   createEffect(() => {
     const newContent = props.content;
     if (view && view.state.doc.toString() !== newContent) {
@@ -360,6 +373,7 @@ export const CodeMirrorEditor: Component<{
 
   onCleanup(() => {
     detachFileDrop?.();
+    if (view) props.editorStates?.set(statePath, view.state);
     view?.destroy();
   });
 

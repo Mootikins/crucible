@@ -6,7 +6,7 @@
  * backlinks panel so every surface resolves links the same way.
  */
 import { fetchResolvedNoteOnce, invalidateResolvedNotes } from './query/notes';
-import { openFileInEditor } from './file-actions';
+import { openFileInEditor, type FileOpenOptions } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { mostRecentKilnPath } from '@/stores/kilnStore';
 
@@ -83,11 +83,12 @@ async function resolveTarget(name: string, kiln?: string): Promise<NotePreview |
  * Prefers the given kiln (e.g. the chat session's); falls back to the
  * configured default.
  */
-export async function openNoteInEditor(name: string, kiln?: string): Promise<void> {
+export async function openNoteInEditor(name: string, kiln?: string, options?: FileOpenOptions): Promise<void> {
   try {
     const hit = await resolveTarget(name, kiln);
     if (!hit) throw new Error(`not found: ${name}`);
-    openFileInEditor(hit.absPath, hit.title);
+    if (options) openFileInEditor(hit.absPath, hit.title, options);
+    else openFileInEditor(hit.absPath, hit.title);
   } catch (err) {
     const message =
       err instanceof Error && /not found|404/i.test(err.message)

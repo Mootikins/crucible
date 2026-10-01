@@ -92,7 +92,7 @@ test.describe('Editor live preview (markdown default)', () => {
     await story.step(page, 'table revealed for editing');
 
     // 4. Source mode: everything raw, mono, no live-preview styling.
-    await page.getByTestId('mode-toggle').click();
+    await page.getByRole('button', { name: 'Source', exact: true }).click();
     await expect(content).toContainText('# Live Heading');
     await expect(content).toContainText('**bold**');
     await expect(content).toContainText('[[Other Note|the other note]]');
@@ -100,7 +100,7 @@ test.describe('Editor live preview (markdown default)', () => {
     await story.step(page, 'source mode');
 
     // …and back to live.
-    await page.getByTestId('mode-toggle').click();
+    await page.getByRole('button', { name: 'Live preview', exact: true }).click();
     await expect(content).not.toContainText('**bold**');
     await story.step(page, 'back to live preview');
   });
@@ -130,7 +130,7 @@ test.describe('Editor live preview (markdown default)', () => {
     await harness.open(CALLOUT_NOTE);
     const content = page.locator('.cm-content');
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
-    await content.click();
+    await content.getByText('Callouts', { exact: true }).click();
     await page.keyboard.press('Control+End');
 
     // 1. Fancy admonitions: icon + colored title row, raw `> [!type]` hidden.
@@ -273,7 +273,7 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(content).toContainText('jumps over indeed the lazy dog');
 
     // 5. Source mode gives the source lines back, one rendered line each.
-    await page.getByTestId('mode-toggle').click();
+    await page.getByRole('button', { name: 'Source', exact: true }).click();
     const sourceLines = await page.evaluate(() =>
       Array.from(document.querySelectorAll('.cm-line')).map((el) => el.textContent ?? ''),
     );
@@ -340,7 +340,7 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(card).toHaveScreenshot('editor-live-properties.png');
 
     // Reading view: the same card, character for character.
-    await page.getByTestId('preview-toggle').click();
+    await page.getByRole('button', { name: 'Reading view', exact: true }).click();
     await expect(page.getByTestId('fm-card')).toBeVisible();
     await page.getByTestId('fm-summary').click();
     await expect(page.getByTestId('fm-card')).toContainText('tools.semantic_search');
@@ -392,12 +392,10 @@ test.describe('Editor live preview (markdown default)', () => {
     expect(open.cardBorder).toBe('0px');
     expect(closed.cardBorder).toBe('0px');
 
-    // And the row still clears the mode toggles in the open state, which is
-    // what the reserved right gutter is for.
-    const toggle = await page.getByTestId('mode-toggle').evaluate((el) =>
-      Math.round(el.getBoundingClientRect().left),
-    );
-    expect(open.row.right).toBeLessThanOrEqual(toggle);
+    // Mode controls occupy their own toolbar row, outside the note content.
+    const toolbar = await page.getByRole('toolbar', { name: 'Note view' }).boundingBox();
+    const editor = await page.locator('.cm-editor').boundingBox();
+    expect(toolbar!.y + toolbar!.height).toBeLessThanOrEqual(editor!.y);
     await story.step(page, 'one shape, open and closed');
   });
 
@@ -421,7 +419,7 @@ test.describe('Editor live preview (markdown default)', () => {
     const live = await cardMarkup(page);
     await story.step(page, 'raw card in live preview');
 
-    await page.getByTestId('preview-toggle').click();
+    await page.getByRole('button', { name: 'Reading view', exact: true }).click();
     await expect(page.getByTestId('fm-card')).toBeVisible();
     await page.getByTestId('fm-summary').click();
     await expect(page.getByTestId('fm-raw')).toContainText('point = { x = 1, y = 2 }');
@@ -431,7 +429,7 @@ test.describe('Editor live preview (markdown default)', () => {
     // Live preview still edits: clicking the card drops the cursor into the
     // real source lines, which a card must never hide for good. The editor
     // remounts on the way back, so the card starts collapsed again.
-    await page.getByTestId('preview-toggle').click();
+    await page.getByRole('button', { name: 'Live preview', exact: true }).click();
     await expect(page.getByTestId('fm-card')).toBeVisible();
     await page.getByTestId('fm-summary').click();
     await page.getByTestId('fm-raw').click();

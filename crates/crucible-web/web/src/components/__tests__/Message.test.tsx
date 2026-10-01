@@ -17,12 +17,16 @@ vi.mock('@/lib/markdown', () => ({
 
 // ChatContext: capture what handlers do without spinning up a real provider.
 // Message uses chat.sendMessage for the edit "Send as new" flow.
+const removeQueuedMock = vi.fn();
+const sendQueuedNowMock = vi.fn().mockResolvedValue(undefined);
 const sendMessageMock = vi.fn().mockResolvedValue(undefined);
 const messagesMock = vi.fn<() => MessageType[]>(() => []);
 
 vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({
     messages: messagesMock,
+    removeQueuedMessage: removeQueuedMock,
+    sendQueuedMessageNow: sendQueuedNowMock,
     isLoading: () => false,
     isStreaming: () => false,
     pendingInteraction: () => null,
@@ -70,6 +74,17 @@ afterEach(() => {
 // ── Role rendering ─────────────────────────────────────────────────────
 
 describe('Message — role rendering', () => {
+  it('offers send now and removal only for a queued prompt', () => {
+    const result = render(() => <Message message={makeMessage({ queued: true })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Send queued message now' }));
+    expect(sendQueuedNowMock).toHaveBeenCalledWith('m-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove queued message' }));
+    expect(removeQueuedMock).toHaveBeenCalledWith('m-1');
+    result.unmount();
+    render(() => <Message message={makeMessage()} />);
+    expect(screen.queryByRole('button', { name: 'Remove queued message' })).not.toBeInTheDocument();
+  });
+
   it('shows a plugin turn with its owner and full text', () => {
     render(() => <Message message={makeMessage({ role: 'system', plugin: 'alpha', content: 'continue with the detailed plan' })} />);
     expect(screen.getByText('↻ alpha')).toBeInTheDocument();
@@ -324,8 +339,8 @@ describe('Message — the meta row under the prompt', () => {
     expect(meta.className).toContain('transition-opacity');
     expect(meta.className).toContain('group-hover:opacity-100');
     expect(meta.className).toContain('group-focus-within:opacity-100');
-    // A phone has no hover, so the row cannot be gated behind one there.
-    expect(meta.className).toContain('[@media(hover:none)]:opacity-100');
+    // Touch reveals the same row by focusing the turn.
+    expect(meta.className).not.toContain('[@media(hover:none)]:opacity-100');
   });
 
   it('takes no click while it is hidden, and takes one again when it shows', () => {
@@ -336,7 +351,7 @@ describe('Message — the meta row under the prompt', () => {
     expect(meta.className).toContain('pointer-events-none');
     expect(meta.className).toContain('group-hover:pointer-events-auto');
     expect(meta.className).toContain('group-focus-within:pointer-events-auto');
-    expect(meta.className).toContain('[@media(hover:none)]:pointer-events-auto');
+    expect(meta.className).not.toContain('[@media(hover:none)]:pointer-events-auto');
   });
 
   it('changes NOTHING but opacity between rest and hover', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@solidjs/testing-library';
+import { render, fireEvent } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import type { ParentComponent } from 'solid-js';
@@ -7,7 +7,10 @@ import { EdgeHost } from '@/windowing/components/EdgeHost';
 import { WindowingProvider } from '@/windowing/components/context';
 import { renderPanel } from '@/lib/render-panel';
 import { appWindowSlots } from '@/components/shell/windowSlots';
-import { setStore } from '@/stores/windowStore';
+import { setStore, windowStore } from '@/stores/windowStore';
+import { openFileInEditor } from '@/lib/file-actions';
+import { openSessionInChat } from '@/lib/session-actions';
+import { getBus } from '@/lib/bus';
 import { defaultLayout } from '@/stores/defaultLayout';
 
 /** The rails as AppShell draws them: the app chrome on the core's slots. */
@@ -35,7 +38,8 @@ describe('the app rail chrome', () => {
 
     // What the rail keeps: the three toggles that act on the WHOLE shell and
     // have nowhere else to live.
-    for (const id of ['ribbon-cmd-swap-sides', 'ribbon-cmd-theme', 'ribbon-cmd-settings']) {
+    expect(container.querySelector('[data-testid="ribbon-cmd-swap-sides"]')).toBeNull();
+    for (const id of ['ribbon-cmd-swap-centre', 'ribbon-cmd-theme', 'ribbon-cmd-settings']) {
       expect(container.querySelector(`[data-testid="${id}"]`), id).toBeTruthy();
     }
     expect(container.querySelector('[data-testid="layout-menu"]'), 'layout menu').toBeTruthy();
@@ -77,4 +81,38 @@ describe('the app rail chrome', () => {
     expect(seen.right, 'right ribbon hosts the bell').toBeTruthy();
     expect(seen.left, 'left ribbon must not').toBeNull();
   });
+});
+
+
+it('wires search, new-session, and centre/right swap rail commands', () => {
+  const left = renderRail('left');
+  let search = false;
+  const stopSearch = getBus().on('openCommandPalette', () => { search = true; });
+  fireEvent.click(left.getByTestId('ribbon-cmd-search'));
+  expect(search).toBe(true);
+  const before = windowStore.layout.id;
+  const rightBefore = windowStore.edgePanels.right.layout.id;
+  fireEvent.click(left.getByTestId('ribbon-cmd-swap-centre'));
+  expect(windowStore.layout.id).toBe(rightBefore);
+  expect(windowStore.edgePanels.right.layout.id).toBe(before);
+  stopSearch(); left.unmount();
+  const right = renderRail('right');
+  let requested = false;
+  const stopNew = getBus().on('newSession', () => { requested = true; });
+  fireEvent.click(right.getByTestId('ribbon-cmd-new-session'));
+  expect(requested).toBe(true);
+  stopNew();
+});
+
+
+it('new documents and conversations follow their panes after centre/right swap', () => {
+  openFileInEditor('/kiln/one.md');
+  openSessionInChat('one', 'First chat');
+  const view = renderRail('left');
+  fireEvent.click(view.getByTestId('ribbon-cmd-swap-centre'));
+  openFileInEditor('/kiln/two.md');
+  openSessionInChat('two', 'Second chat');
+  const groups = Object.values(windowStore.tabGroups);
+  expect(groups.find(g => g.tabs.some(t => t.metadata?.filePath === '/kiln/one.md'))?.tabs.some(t => t.metadata?.filePath === '/kiln/two.md')).toBe(true);
+  expect(groups.find(g => g.tabs.some(t => t.metadata?.sessionId === 'one'))?.tabs.some(t => t.metadata?.sessionId === 'two')).toBe(true);
 });

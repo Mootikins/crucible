@@ -23,5 +23,5 @@ export function renderPanel(tab: Accessor<Tab>): JSX.Element {
       </div>
     );
   }
-  return <Dynamic component={panel.component} {...reactiveMetadataProps(tab)} />;
+  return <Dynamic component={panel.component} {...reactiveMetadataProps(tab)} {...{ get panelTabId() { return tab().id; } }} />;
 }

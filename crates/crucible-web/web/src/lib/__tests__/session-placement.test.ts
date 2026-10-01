@@ -1,19 +1,9 @@
-// A session is a PEER OF THE EDITOR: it opens as its own pane in the centre
-// tiling, to the LEFT of the editor, sharing the main area with it. Pins the
-// placement rules of openSessionInChat / sessionPane / openTabBesideEditor.
-//
-// It used to dock in an edge panel — first the right rail (where it covered
-// the file tree), then the left (where it covered the session list). Cursor's
-// agents window is the model: a nav rail with the session list, then the
-// conversation and the editor side by side, then the file tree beyond the
-// editor. A conversation has a composer and needs a working surface's width,
-// which is what a rail cannot give it.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import type { LayoutNode, TabGroup } from '@/types/windowTypes';
 import { openSessionInChat, sessionPane } from '../session-actions';
-import { collectLeafGroupIds } from '@/windowing/model/tree';
+import { collectLeafGroupIds, collectPanes } from '@/windowing/model/tree';
 
 /** Centre tab groups, left to right. */
 const centreGroups = () => collectLeafGroupIds(windowStore.layout);
@@ -52,21 +42,20 @@ function resetLayout(layout?: LayoutNode, tabGroups?: Record<string, TabGroup>) 
   );
 }
 
-describe('session placement (a pane beside the editor)', () => {
+describe('session placement (conversation rail)', () => {
   beforeEach(() => resetLayout());
 
-  it('splits the centre and puts the session LEFT of the editor', () => {
+  it('splits a populated conversation rail and preserves the editor', () => {
     openSessionInChat('s1', 'My Session');
 
-    expect(windowStore.layout.type).toBe('split');
-    const [firstGroup, secondGroup] = centreGroups();
-    // Left of the editor: the conversation is what you read and steer from,
-    // and the file it changes sits to its right.
+    expect(windowStore.layout.type).toBe('pane');
+    const [firstGroup, secondGroup] = collectLeafGroupIds(windowStore.edgePanels.right.layout);
     expect(windowStore.tabGroups[firstGroup].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
-    expect(windowStore.tabGroups[secondGroup].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
+    expect(windowStore.tabGroups[secondGroup].tabs.map((t) => t.id)).toEqual(['files-tab']);
+    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
   });
 
-  it('leaves both rails alone', () => {
+  it('preserves existing navigation tabs', () => {
     openSessionInChat('s1', 'My Session');
     // The two defects this arrangement ends: a session used to land in a rail
     // and cover whichever of these was there.
@@ -78,7 +67,7 @@ describe('session placement (a pane beside the editor)', () => {
     openSessionInChat('s1', 'One');
     openSessionInChat('s2', 'Two');
 
-    expect(centreGroups()).toHaveLength(2);
+    expect(centreGroups()).toHaveLength(1);
     const pane = groupWithTab('tab-chat-s1')!;
     expect(pane.tabs.map((t) => t.id)).toEqual(['tab-chat-s1', 'tab-chat-s2']);
     expect(pane.activeTabId).toBe('tab-chat-s2');
@@ -94,7 +83,7 @@ describe('session placement (a pane beside the editor)', () => {
     expect(pane.activeTabId).toBe('tab-chat-s1');
   });
 
-  it('moves a session the user dragged into the editor pane back beside the rail', () => {
+  it('activates a moved session in place without replacing the editor', () => {
     resetLayout(
       { id: 'pane-editor', type: 'pane', tabGroupId: 'g-editor' },
       {
@@ -110,19 +99,9 @@ describe('session placement (a pane beside the editor)', () => {
     );
 
     openSessionInChat('s1', 'One');
-    // The owner's rule (2026-09-15): a session ALWAYS reads beside the
-    // sessions rail. Reopening it splits the centre and moves it there; the
-    // editor keeps its file.
-    expect(windowStore.layout.type).toBe('split');
-    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
-    if (windowStore.layout.type === 'split') {
-      expect(windowStore.layout.direction).toBe('horizontal');
-      const first = windowStore.layout.first;
-      expect(first.type).toBe('pane');
-      if (first.type === 'pane') {
-        expect(windowStore.tabGroups[first.tabGroupId!].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
-      }
-    }
+    expect(windowStore.layout.type).toBe('pane');
+    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toEqual(['tab-file-a', 'tab-chat-s1']);
+    expect(windowStore.tabGroups['g-editor'].activeTabId).toBe('tab-chat-s1');
   });
 
   it('adds to an existing session pane rather than splitting again', () => {
@@ -130,7 +109,7 @@ describe('session placement (a pane beside the editor)', () => {
     const before = windowStore.layout;
     openSessionInChat('s2', 'Two');
     // Same split, same shape: `sessionPane` found the pane by role.
-    expect(centreGroups()).toHaveLength(2);
+    expect(centreGroups()).toHaveLength(1);
     expect(windowStore.layout.type).toBe(before.type);
   });
 
@@ -140,7 +119,7 @@ describe('session placement (a pane beside the editor)', () => {
     expect(sessionPane()).not.toBeNull();
   });
 
-  it('never mistakes a RAIL for the session pane', () => {
+  it('never mistakes the navigation list for a conversation pane', () => {
     // The session LIST is chrome, not a conversation, and it lives in a rail.
     // Matching on it would send every session back into the sidebar.
     windowActions.addTab('g-sessions-list', {
@@ -150,4 +129,30 @@ describe('session placement (a pane beside the editor)', () => {
     });
     expect(sessionPane()).toBeNull();
   });
+});
+
+it('reuses a conversation grouped with supporting tabs without changing the layout', () => {
+  resetLayout();
+  openSessionInChat('s1', 'One');
+  const group = groupWithTab('tab-chat-s1')!;
+  windowActions.addTab(group.id, { id: 'context-backlinks', title: 'Backlinks', contentType: 'backlinks' });
+  windowActions.addTab(group.id, { id: 'context-activity', title: 'Activity', contentType: 'activity' });
+  windowActions.setActiveTab(group.id, 'tab-chat-s1');
+  const before = JSON.stringify(windowStore.edgePanels.right.layout);
+  openSessionInChat('s2', 'Two');
+  expect(JSON.stringify(windowStore.edgePanels.right.layout)).toBe(before);
+  expect(groupWithTab('tab-chat-s2')?.id).toBe(group.id);
+  expect(windowStore.tabGroups[group.id].activeTabId).toBe('tab-chat-s2');
+  expect(windowStore.tabGroups[group.id].tabs.map(t => t.id)).toEqual(['tab-chat-s1', 'context-backlinks', 'context-activity', 'tab-chat-s2']);
+});
+
+it.each(['existing', 'new'])('reveals a folded conversation for an %s session selection', kind => {
+  resetLayout();
+  openSessionInChat('fold-a', 'First');
+  const group = groupWithTab('tab-chat-fold-a')!;
+  const pane = collectPanes(windowStore.edgePanels.right.layout).find(p => p.tabGroupId === group.id)!;
+  windowActions.setPaneCollapsed(pane.id, true);
+  expect(pane.collapsed).toBe(true);
+  openSessionInChat(kind === 'existing' ? 'fold-a' : 'fold-b', 'Selected');
+  expect(pane.collapsed).toBe(false);
 });

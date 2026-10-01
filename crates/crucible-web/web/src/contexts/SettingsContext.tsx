@@ -5,6 +5,7 @@ import {
   createEffect,
   ParentComponent,
 } from 'solid-js';
+import { notifyPaletteChanged } from '@/lib/theme';
 import { createStore, produce } from 'solid-js/store';
 import {
   AppSettings,
@@ -51,6 +52,20 @@ export const SettingsProvider: ParentComponent = (props) => {
     else root.style.removeProperty('--font-mono');
   });
 
+  createEffect(() => {
+    const root = document.documentElement;
+    const appearance = settings.appearance;
+    root.toggleAttribute('data-mk-black', appearance.trueBlack);
+    root.style.setProperty('--mk-gap', `${appearance.gap}px`);
+    root.style.setProperty('--mk-radius', `${appearance.radius}px`);
+    root.style.setProperty('--mk-contrast', String(appearance.contrast));
+    root.style.setProperty('--mk-nav-tint', String(appearance.navTint));
+    root.style.setProperty('--mk-font-note', `${appearance.noteTextSize}px`);
+    if (appearance.accent) root.style.setProperty('--cru-color-primary', appearance.accent);
+    else root.style.removeProperty('--cru-color-primary');
+    notifyPaletteChanged();
+  });
+
   const updateSetting = <K extends SettingsSection>(
     section: K,
     key: keyof AppSettings[K],
@@ -75,6 +90,9 @@ export const SettingsProvider: ParentComponent = (props) => {
   const resetSettings = () => {
     setSettings(produce((s) => {
       s.transcription = { ...defaultSettings.transcription };
+      s.editor = { ...defaultSettings.editor };
+      s.appearance = { ...defaultSettings.appearance };
+      s.terminal = { ...defaultSettings.terminal };
     }));
     saveSettings({ ...defaultSettings });
   };

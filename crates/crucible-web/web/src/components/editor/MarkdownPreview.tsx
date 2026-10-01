@@ -1,3 +1,4 @@
+import type { FileOpenOptions } from '@/lib/file-actions';
 import { mountBases } from '@/components/bases/mount';
 /**
  * Rendered markdown view of a note buffer — the reading half of the editor's
@@ -18,6 +19,7 @@ const dirOf = (path?: string): string | undefined =>
 
 export const MarkdownPreview: Component<{
   content: string;
+  onFollowLink?: (target: string, options?: FileOpenOptions) => void;
   /** Absolute file path — its directory resolves relative image srcs. */
   path?: string;
   /**
@@ -66,7 +68,7 @@ export const MarkdownPreview: Component<{
   // navigator. A caller that cannot say which kiln its content belongs to has
   // content whose links cannot be followed, and that should be visible.
   const kiln = () => props.kiln || undefined;
-  const handleClick = makeMarkdownClickHandler();
+  const handleClick = makeMarkdownClickHandler((target, options) => props.onFollowLink?.(target, options), () => !!props.onFollowLink);
 
   let scrollHost: HTMLDivElement | undefined;
   let proseHost: HTMLDivElement | undefined;

@@ -212,7 +212,7 @@ test.describe('live SSE routing', () => {
       title: 'Surfaces',
       contentType: 'surfaces',
     });
-    await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-surfaces-tab')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
     open = (await eventSources(page)).filter((s) => s.open);
     expect(open.length, 'a second reader of an already-carried topic opened a new connection').toBe(1);
@@ -220,7 +220,7 @@ test.describe('live SSE routing', () => {
     // The surfaces panel leaves; the `system` topic still has the file tree
     // reading it, so the connection is untouched.
     await closeTab(page, groupId, 'surfaces-tab');
-    await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-surfaces-tab')).toHaveCount(0, { timeout: 15_000 });
     await apiQuiet(log, 1500);
     open = (await eventSources(page)).filter((s) => s.open);
     expect(open.length).toBe(1);

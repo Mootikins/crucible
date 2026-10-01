@@ -15,7 +15,7 @@ import { kilnPathOf } from '@/stores/kilnStore';
 import { Copy, Check, RefreshCw } from '@/lib/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
-import { TurnMeta, AuthorHeading } from './TurnMeta';
+import { TurnMeta, AuthorHeading, revealTurnActions } from './TurnMeta';
 import { IconButton } from './ui/IconButton';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -216,20 +216,22 @@ export const AssistantTurn: Component<{
       class="group"
       data-testid="assistant-turn"
       data-role="assistant-turn"
+      tabIndex={0}
+      onPointerUp={revealTurnActions}
       // Same kiln the click handler uses, declared for the document-level
       // hover popovers: a session's transcript belongs to the session's kiln,
       // which is not necessarily the one the status bar points at.
       data-kiln={sessionKiln() || undefined}
     >
       <AuthorHeading>Assistant</AuthorHeading>
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-0.5">
         <For each={props.parts}>
           {(part) => {
             if (part.kind === 'tools') {
               return (
                 <div class="flex justify-start" data-role="tool">
                   <div
-                    class="w-full border border-hairline rounded-md overflow-hidden divide-y divide-hairline bg-surface-base"
+                    class="w-full overflow-hidden"
                     data-testid="tool-group"
                   >
                     <For each={part.ids}>
@@ -265,7 +267,7 @@ export const AssistantTurn: Component<{
 
       {/* One meta row for the whole response; the last turn keeps it on. */}
       <Show when={!turnInFlight()}>
-        <div class="mt-1.5">
+        <div class="mt-0.5">
           <TurnMeta always={props.isLast}>
             {/* Read outward from the text: what you can DO with the turn,
                 then what the turn cost. */}

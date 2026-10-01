@@ -40,15 +40,14 @@ test('the shell boots without errors and preserves its regions when toggled', as
   await expect(root).toBeVisible();
   await expect(center).toBeVisible();
   expect(await page.locator('div.flex-1').count()).toBeGreaterThan(0);
-  // Left ribbon's bottom cluster: the three toggles that act on the whole
-  // shell. The palette bolt and the new-session plus are deliberately gone —
-  // each was a third doorway to an action with a shorter one (Ctrl+P,
-  // Ctrl+Shift+N), spending the rail's most reachable pixels.
-  await expect(page.getByTestId('ribbon-cmd-swap-sides')).toBeVisible();
+  // Rail commands expose the shell actions from the agreed mockup.
+  await expect(page.getByTestId('ribbon-cmd-swap-sides')).toHaveCount(0);
+  await expect(page.getByTestId('ribbon-cmd-swap-centre')).toBeVisible();
   await expect(page.getByTestId('ribbon-cmd-theme')).toBeVisible();
   await expect(page.getByTestId('ribbon-cmd-settings')).toBeVisible();
   await expect(page.getByTestId('ribbon-cmd-palette')).toHaveCount(0);
-  await expect(page.getByTestId('ribbon-cmd-new-session')).toHaveCount(0);
+  await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
+  await expect(page.getByTestId('ribbon-cmd-search')).toBeVisible();
 
   // Both edges expose their own toggle. There is no third: the bottom dock is
   // gone, and the terminal it held is a pane under the file tree.

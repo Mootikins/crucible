@@ -723,7 +723,7 @@ const secondaryButton = `${boxButton} border-hairline text-muted-dark hover:text
  * **Comment** stores the comment and attaches it to the chat of the pane.
  * A pane with no chat still stores it, and the box says that no chat gets it.
  */
-function CommentBox(props: {
+export function CommentBox(props: {
   label: string;
   onComment: (text: string) => Promise<void>;
   /** The pane has a chat that takes the comment. */

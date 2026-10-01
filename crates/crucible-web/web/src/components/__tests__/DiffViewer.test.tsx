@@ -218,8 +218,8 @@ describe('DiffViewer — syntax highlighting', () => {
       <DiffViewer oldContent="fn a() {}" newContent="fn b() {}" language="rust" />
     ));
     // The 'remove' line keeps bg-error/15, the 'add' line keeps bg-ok/15
-    expect(container.querySelector('.bg-ok\\/15')).not.toBeNull();
-    expect(container.querySelector('.bg-error\\/15')).not.toBeNull();
+    expect(container.querySelector('.diff-row.add')).not.toBeNull();
+    expect(container.querySelector('.diff-row.remove')).not.toBeNull();
   });
 
   it('falls back to plain text when language is unknown', () => {

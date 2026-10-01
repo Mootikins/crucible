@@ -1,3 +1,4 @@
+import { isCompact } from '@/stores/deviceStore';
 import { isBasePath } from './markdown-path';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
@@ -17,8 +18,10 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
 /** The tab a file opens as, on either shell. */
 function fileTab(filePath: string, fileName?: string): Tab {
   const contentType = contentTypeForPath(filePath);
+  const preferred = `tab-file-${filePath}`;
+  const id = tabHost().find((tab) => tab.id === preferred) ? `${preferred}-${crypto.randomUUID()}` : preferred;
   return {
-    id: `tab-file-${filePath}`,
+    id,
     // Last-resort basename fallback: a falsy caller value would otherwise
     // mint a tab literally titled "undefined" (save prompts included).
     title: fileName || filePath.split('/').pop() || filePath,
@@ -28,17 +31,69 @@ function fileTab(filePath: string, fileName?: string): Tab {
   };
 }
 
-export function openFileInEditor(filePath: string, fileName?: string): void {
-  // Through the host: on the desktop this is the EDITOR group, not the first
-  // centre leaf (a session opens to its left, so "first" became the chat); on
-  // a phone it is the one content surface.
+export interface FileOpenOptions {
+  where?: 'here' | 'tab' | 'split';
+  tabId?: string;
+}
+
+export function fileOpenOptionsForEvent(event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): FileOpenOptions {
+  return { where: event.shiftKey ? 'split' : event.ctrlKey || event.metaKey ? 'tab' : 'here' };
+}
+
+export interface FileHistory {
+  entries: { path: string; title: string }[];
+  at: number;
+}
+
+export function fileHistory(tab: Tab): FileHistory {
+  const raw = tab.metadata?.fileHistory as FileHistory | undefined;
+  if (raw && Array.isArray(raw.entries) && raw.entries.every((e) => e !== null && typeof e === 'object' && typeof e.path === 'string' && typeof e.title === 'string') && Number.isInteger(raw.at) && raw.at >= 0 && raw.at < raw.entries.length) return raw;
+  const path = tab.metadata?.filePath;
+  return { entries: typeof path === 'string' ? [{ path, title: tab.title }] : [], at: 0 };
+}
+
+export function fileHistoryPaths(tab: Tab): string[] {
+  const retained = tab.metadata?.fileHistoryRetained;
+  return [...new Set([...fileHistory(tab).entries.map((entry) => entry.path), ...(Array.isArray(retained) ? retained.filter((path): path is string => typeof path === 'string') : [])])];
+}
+
+export function goFileHistory(tabId: string, step: -1 | 1): void {
   const host = tabHost();
+  const tab = host.find((t) => t.id === tabId);
+  if (!tab) return;
+  const history = fileHistory(tab);
+  const at = history.at + step;
+  const entry = history.entries[at];
+  if (!entry) return;
+  host.update(tab.id, { title: entry.title, metadata: { ...tab.metadata, filePath: entry.path, fileHistory: { ...history, at }, scrollToLine: undefined, scrollToNote: undefined } });
+  host.activate(tab.id);
+}
+
+export function openFileInEditor(filePath: string, fileName?: string, options: FileOpenOptions = {}): void {
+  const host = tabHost();
+  const active = options.tabId ? host.find((t) => t.id === options.tabId) : host.activeTab();
+  if (options.where === 'here' && active?.contentType === 'file' && contentTypeForPath(filePath) === 'file') {
+    if (active.metadata?.filePath === filePath) return;
+    const history = fileHistory(active);
+    const entries = [...history.entries.slice(0, history.at + 1), { path: filePath, title: fileName || filePath.split('/').pop() || filePath }];
+    host.update(active.id, { title: entries.at(-1)!.title, metadata: { ...active.metadata, filePath, fileHistoryRetained: [...new Set([...fileHistoryPaths(active), filePath])], fileHistory: { entries, at: entries.length - 1 }, scrollToLine: undefined, scrollToNote: undefined } });
+    host.activate(active.id);
+    recordRecentFile(filePath, entries.at(-1)!.title);
+    return;
+  }
   const existing = host.find((t) => t.metadata?.filePath === filePath);
-  if (existing) {
+  if (existing && options.where !== 'tab' && options.where !== 'split') {
     host.activate(existing.id);
     return;
   }
   const tab = fileTab(filePath, fileName);
+  if (options.where === 'split' && !isCompact()) {
+    const pane = windowStore.activePaneId;
+    if (pane && windowActions.openTabInNewPane(pane, 'right', tab)) {
+      recordRecentFile(filePath, tab.title);
+      return;
+    }
+  }
   if (host.open(tab, { placement: 'editor' })) recordRecentFile(filePath, tab.title);
 }
 
@@ -90,15 +145,7 @@ export function openFileInGroup(groupId: string | null, filePath: string, fileNa
   }
   if (!groupId) return;
 
-  const newTab: Tab = {
-    id: `tab-file-${filePath}`,
-    // Last-resort basename fallback: a falsy caller value would otherwise
-    // mint a tab literally titled "undefined" (save prompts included).
-    title: fileName || filePath.split('/').pop() || filePath,
-    contentType: contentTypeForPath(filePath),
-    icon: iconForContentType(contentTypeForPath(filePath)),
-    metadata: { filePath },
-  };
+  const newTab = fileTab(filePath, fileName);
 
   windowActions.addTab(groupId, newTab);
   recordRecentFile(filePath, newTab.title);

@@ -9,6 +9,7 @@ import {
   canDropIntoFolder,
   type FileDragData,
 } from '@/lib/file-dnd';
+import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { fileIconFor } from '@/lib/file-icons';
 import { ChevronRight } from '@/lib/icons';
 import { treeIconSlot, treeRow } from '@/components/tree/tree-style';
@@ -62,7 +63,7 @@ const AUTO_EXPAND_MS = 700;
 /** Shared row skin: full-height flex so indent guides run edge-to-edge.
  * `group` drives the fade-scroll marquee on the name when the row is hovered. */
 const ROW =
-  `group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body ${treeRow}`;
+  `group flex items-stretch pr-2 rounded-control cursor-pointer hover:bg-hover-wash text-shell-body ${treeRow}`;
 /** Fixed icon column — the chevron (folders) and filetype icon (files) share
  * it, so names align at a level regardless of node kind. */
 const ICON_SLOT = `${treeIconSlot} py-1 flex items-center justify-center shrink-0`;
@@ -89,6 +90,8 @@ export const FileTreeNode: Component<{
   formatName?: (name: string) => string;
   dnd?: FileTreeDnd;
 }> = (props) => {
+  const { settings } = useSettingsSafe();
+  const extension = () => props.node.name.match(/\.([^.]+)$/)?.[1] ?? '';
   const shown = () => (props.formatName ? props.formatName(props.node.name) : props.node.name);
   const isCurrent = () => props.node.absPath === props.openFilePath;
   const currentAttrs = () =>
@@ -166,7 +169,10 @@ export const FileTreeNode: Component<{
             {/* fade-scroll masks the overflow with a gradient (no ellipsis
                 glyph to collide with the open-file dot); marquees on hover. */}
             <TreeView.ItemText class="flex-1 min-w-0 fade-scroll py-1 ml-1 leading-5"><span>{shown()}</span></TreeView.ItemText>
-            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary min-w-0 flex-1" />
+            <Show when={settings.appearance.fileLabels && extension() && !['md', 'markdown'].includes(extension().toLowerCase())}>
+              <span class="file-type-label self-center mx-2 rounded-control bg-control px-1 text-floor text-muted-dark" aria-hidden="true">{extension()}</span>
+            </Show>
+            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded-control border border-primary min-w-0 flex-1" />
             {/* Open-in-editor marker: an absolute dot so it never shifts the
                 icon / name / indent guides (the old left border did). */}
             <Show when={isCurrent()}>
@@ -193,7 +199,7 @@ export const FileTreeNode: Component<{
               <ChevronRight class="w-3.5 h-3.5" />
             </TreeView.BranchIndicator>
             <TreeView.BranchText class="flex-1 min-w-0 fade-scroll py-1 ml-1 leading-5"><span>{shown()}</span></TreeView.BranchText>
-            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary min-w-0 flex-1" />
+            <TreeView.NodeRenameInput class="focus-ring bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded-control border border-primary min-w-0 flex-1" />
           </TreeView.BranchControl>
           <TreeView.BranchContent>
             <For each={props.node.children}>

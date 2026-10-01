@@ -77,7 +77,7 @@ async function openNote(page: Page, file: string, name: string): Promise<void> {
  *
  * The join marks the boundary this leg needs: the source line ends where the
  * next join space begins. With no join after it — the paragraph's last line —
- * the rendered line ends there too, so `End` is right.
+ * take the final text rectangle. `End` stops at a visual wrap boundary.
  */
 async function appendToLine(page: Page, text: string, suffix: string): Promise<void> {
   const line = page.locator('.cm-line').filter({ hasText: text }).first();
@@ -85,28 +85,25 @@ async function appendToLine(page: Page, text: string, suffix: string): Promise<v
 
   const lineEnd = await line.evaluate((el, needle) => {
     // The join after `needle`, in document order.
+    const range = document.createRange();
+    range.selectNodeContents(el);
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     let node: Node | null;
     let found = false;
     while ((node = walker.nextNode())) {
       if (!found && (node.textContent ?? '').includes(needle)) found = true;
       else if (found && (node.parentElement as HTMLElement | null)?.classList.contains('cm-lp-softbreak')) {
-        const range = document.createRange();
-        range.setStart(el, 0);
         range.setEndBefore(node.parentElement!);
-        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
-        const last = rects[rects.length - 1];
-        return last ? { x: last.right, y: last.top + last.height / 2 } : null;
+        break;
       }
     }
-    return null;
+    const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+    const last = rects[rects.length - 1];
+    return last ? { x: last.right, y: last.top + last.height / 2 } : null;
   }, text);
 
-  if (lineEnd) await page.mouse.click(lineEnd.x, lineEnd.y);
-  else {
-    await line.click();
-    await page.keyboard.press('End');
-  }
+  if (!lineEnd) throw new Error(`No rendered end for ${text}`);
+  await page.mouse.click(lineEnd.x, lineEnd.y);
   await page.keyboard.type(suffix);
 }
 

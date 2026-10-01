@@ -86,7 +86,7 @@ async function readingViewOf(page: Page, name: string, body: string): Promise<Lo
   await openApp(page);
   await busEmit(page, 'openFile', { path: notePath, name: `${name}.md` });
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId('preview-toggle').click();
+  await page.getByRole('button', { name: 'Reading view', exact: true }).click();
   const preview = page.getByTestId('markdown-preview');
   await expect(preview).toBeVisible({ timeout: 10_000 });
   return preview;

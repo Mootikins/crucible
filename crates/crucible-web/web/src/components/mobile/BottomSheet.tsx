@@ -59,11 +59,7 @@ export const BottomSheet: Component<{
         aria-label={props.label}
         tabIndex={-1}
         data-testid="bottom-sheet"
-        // A modal surface wears modal chrome: `rounded-t` is 3 px, which is
-        // the popover radius this inherited from `menu-style`, and every
-        // other modal in the app pairs a large radius with `shadow-2xl`.
-        class="focus-ring fixed inset-x-0 bottom-0 z-[61] max-h-[75vh] overflow-y-auto rounded-t-2xl border-t border-hairline-strong bg-surface-elevated px-2 py-2 text-reading text-shell-ink shadow-2xl"
-        style={{ 'padding-bottom': 'var(--inset-bottom)' }}
+        class="compact-sheet focus-ring fixed inset-x-0 bottom-0 z-[61] overflow-y-auto px-2 py-2 text-reading text-shell-ink"
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.preventDefault();

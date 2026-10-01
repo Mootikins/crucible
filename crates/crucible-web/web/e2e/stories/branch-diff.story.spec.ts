@@ -1,7 +1,7 @@
 import { test, expect, type Request } from '@playwright/test';
 import { createStory } from './_helpers/story';
 import { setupBasicMocks } from '../helpers/mock-api';
-import { appReady, openSession } from '../helpers/nav';
+import { appReady, openSession, openFilesPanel } from '../helpers/nav';
 import { MOCK_PROJECT, MOCK_SESSION } from '../helpers/fixtures';
 
 /**
@@ -35,19 +35,7 @@ test.describe('Branch diff from the Files panel', () => {
 
     // Open the Files tab in the right edge panel through the store. The
     // pointer path races the JS tween of the panel (see root-dropdown-pick).
-    await page.evaluate(() => {
-      const store = (window as unknown as Record<string, any>).__windowStore;
-      const actions = (window as unknown as Record<string, any>).__windowActions;
-      if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
-      const firstGroup = (node: any): string | null => {
-        if (!node || typeof node !== 'object') return null;
-        if (node.type === 'pane') return node.tabGroupId ?? null;
-        return firstGroup(node.first) ?? firstGroup(node.second);
-      };
-      const groupId = firstGroup(store.edgePanels.right.layout);
-      if (!groupId) throw new Error('right edge panel has no tab group');
-      actions.setActiveTab(groupId, 'files-tab');
-    });
+    await openFilesPanel(page);
 
     const open = page.getByTestId('open-branch-diff');
     await expect(open).toBeVisible();

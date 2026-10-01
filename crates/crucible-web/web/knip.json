@@ -30,6 +30,7 @@
     ]
   },
   "ignoreUnresolved": [
-    "^/src/"
+    "^/src/",
+    "^/node_modules/\\.vite/deps/solid-js(_web)?\\.js$"
   ]
 }

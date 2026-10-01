@@ -1,11 +1,11 @@
 import { filesSide } from './panel-actions';
 import { isCompact } from '@/stores/deviceStore';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
-import { edgeLeaf, firstLeafGroupId, primaryEdgeGroupId } from '@/windowing';
+import { collectPanes, edgeLeaf, firstLeafGroupId, primaryEdgeGroupId } from '@/windowing';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { editorGroupId } from '@/lib/panel-actions';
-import { openTabBesideEditor } from '@/lib/session-actions';
+import { openTabInSessionRail } from '@/lib/session-actions';
 import type { Tab } from '@/types/windowTypes';
 
 /**
@@ -25,8 +25,8 @@ import type { Tab } from '@/types/windowTypes';
 type TabPlacement =
   /** With the editor. */
   | 'editor'
-  /** Beside the editor — the session pane. */
-  | 'beside-editor'
+  /** In the conversation rail. */
+  | 'session-rail'
   /** The panel's registered default zone. */
   | 'zone';
 
@@ -70,9 +70,8 @@ const windowTabHost: TabHost = {
 
   open(tab, opts) {
     const placement = opts?.placement ?? 'editor';
-    if (placement === 'beside-editor') {
-      // Left of the editor, splitting the centre if there is no session pane.
-      return openBesideEditor(tab);
+    if (placement === 'session-rail') {
+      return openTabInSessionRail(tab);
     }
     if (placement === 'zone') return openInDefaultZone(tab);
     const groupId = editorGroup();
@@ -90,6 +89,9 @@ const windowTabHost: TabHost = {
   activate(tabId) {
     const groupId = groupOf(tabId);
     if (!groupId) return;
+    const pane = [windowStore.layout, windowStore.edgePanels.left.layout, windowStore.edgePanels.right.layout]
+      .flatMap(collectPanes).find(pane => pane.tabGroupId === groupId);
+    if (pane?.collapsed) windowActions.setPaneCollapsed(pane.id, false);
     // An edge panel needs expanding first, or the focus lands out of sight.
     const pos = findEdgePanelForGroup(groupId);
     if (pos) {
@@ -115,11 +117,6 @@ const windowTabHost: TabHost = {
  * conversations (the caller then opens a new pane on the files side). */
 function editorGroup(): string | null {
   return editorGroupId();
-}
-
-/** Left of the editor, where a conversation belongs. */
-function openBesideEditor(tab: Tab): boolean {
-  return openTabBesideEditor(tab);
 }
 
 /** The zone the panel registered itself for. An edge zone is expanded, or the

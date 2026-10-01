@@ -88,6 +88,16 @@ describe('expanding a rail over the centre', () => {
     expect(windowStore.expandedEdge).toBeNull();
   });
 
+  it.each(['close', 'move', 'pop-out'] as const)('%s of the final expanded rail tab restores the centre', (action) => {
+    windowActions.expandEdge('right');
+    const group = rightGroup();
+    if (action === 'close') windowActions.removeTab(group, 'tab-right');
+    if (action === 'move') windowActions.moveTab(group, centre().groupId, 'tab-right');
+    if (action === 'pop-out') windowActions.popOutPane(findFirstPane(windowStore.edgePanels.right.layout)!.id, 'tab-right');
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
+    expect(windowStore.expandedEdge).toBeNull();
+  });
+
   it('stowing the OTHER rail keeps the expand', () => {
     windowActions.expandEdge('right');
     windowActions.toggleEdgePanel('left');

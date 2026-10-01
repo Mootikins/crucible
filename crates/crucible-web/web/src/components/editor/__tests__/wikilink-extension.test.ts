@@ -126,13 +126,13 @@ describe('follow gestures', () => {
     expect(onFollow).not.toHaveBeenCalled();
   });
 
-  it('Ctrl+Click on a decorated link follows it', () => {
+  it.each([{ ctrlKey: true }, { metaKey: true }])('modifier click opens a decorated link in a new tab (%j)', (modifier) => {
     const onFollow = vi.fn();
     const view = track(makeView('see [[My Note]]', onFollow));
     const link = view.dom.querySelector('.cm-wikilink')!;
 
-    link.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, ctrlKey: true }));
-    expect(onFollow).toHaveBeenCalledWith('My Note');
+    link.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, ...modifier }));
+    expect(onFollow).toHaveBeenCalledWith('My Note', { where: 'tab' });
   });
 
   it('plain click does not follow (text editing stays untouched)', () => {

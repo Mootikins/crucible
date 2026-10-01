@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
-import { windowActions } from '@/stores/windowStore';
+import { windowActions, windowStore } from '@/stores/windowStore';
 import { closedPanels, openPanelTab } from '@/lib/panel-actions';
 import { useResetLayout } from '@/lib/query/layout';
 import { notificationActions } from '@/stores/notificationStore';
@@ -113,6 +113,12 @@ export const LayoutMenu: Component = () => {
               </Portal>
             </Menu.Root>
 
+            <Menu.CheckboxItem value="centre-focus-exit" class={menuItem}
+              checked={windowStore.expandExit === 'centre-focus'}
+              onCheckedChange={(checked) => windowActions.setExpandExit(checked ? 'centre-focus' : 'toggle')}>
+              <Menu.ItemIndicator>✓</Menu.ItemIndicator>
+              End expansion when focus moves to the centre
+            </Menu.CheckboxItem>
             <hr class={menuSeparator} />
             <Menu.Item
               value="reset"

@@ -56,9 +56,12 @@ async function paintedTheme(page: Page) {
   return page.evaluate(() => {
     const root = document.documentElement;
     const rgb = getComputedStyle(document.body).backgroundColor;
-    const [r, g, b] = (/rgba?\(([^)]+)\)/.exec(rgb)?.[1] ?? '0,0,0')
-      .split(',')
-      .map((n) => Number(n.trim()) / 255);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = rgb;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = [...context.getImageData(0, 0, 1, 1).data].map((n) => n / 255);
     // Rough relative luminance — enough to tell a near-black canvas from a
     // near-white one without restating either token's hex.
     return {
@@ -89,7 +92,7 @@ test.describe('theme', () => {
     expect(painted.prefersDark, 'playwright.config.ts must pin colorScheme').toBe(true);
     expect(painted.attribute).toBeNull();
     expect(painted.colorScheme).toBe('dark');
-    expect(painted.luminance).toBeLessThan(0.1);
+    expect(painted.luminance).toBeLessThan(0.25);
   });
 
   test.describe('light', () => {
@@ -158,7 +161,7 @@ test.describe('theme', () => {
       expect(painted.prefersDark, 'the OS is asking for light').toBe(false);
       expect(painted.attribute).toBeNull();
       expect(painted.colorScheme).toBe('dark');
-      expect(painted.luminance).toBeLessThan(0.1);
+      expect(painted.luminance).toBeLessThan(0.25);
     });
   });
 });

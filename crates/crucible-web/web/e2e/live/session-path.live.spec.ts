@@ -179,7 +179,7 @@ test.describe('the live session path', () => {
     await page.getByTestId('composer-send').click();
 
     // The draft closes and the real session's chat tab takes its place.
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('message-user')).toContainText('hermetic hello from the draft');
 
     // The reply comes off the real chain: browser → axum → daemon → the fake

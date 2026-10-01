@@ -208,7 +208,7 @@ export const ChatInput: Component = () => {
       // controls a user reaches for mid-turn go first. The scope chips state
       // 30 and 40 in `useSessionScopeChips`; the status chips report rather
       // than set, so they are the first to fold.
-      priority: 10,
+      priority: 20,
       label: 'Model',
       value: currentSession()?.agent_model ?? '',
       options: availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) })),
@@ -217,7 +217,7 @@ export const ChatInput: Component = () => {
       testid: 'model-picker-button',
       select: { placeholder: currentModel(), optionTestidPrefix: 'model-option' },
     },
-    { key: 'mode', priority: 20, label: 'Mode', value: chatMode(), render: 'mode' },
+    { key: 'mode', priority: 10, label: 'Mode', value: chatMode(), render: 'mode' },
     ...scopeChips(),
     {
       key: 'status',

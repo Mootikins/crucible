@@ -47,7 +47,7 @@ import {
 } from '@/lib/graph/types';
 import { GraphControls } from './GraphControls';
 import { isMarkdownPath } from '@/lib/markdown-path';
-import { theme } from '@/lib/theme';
+import { theme, paletteRevision } from '@/lib/theme';
 
 // v2: the force wiring changed to degree-aware clustering, so v1's persisted
 // force values would fight the new defaults — a fresh key retires them.
@@ -610,6 +610,7 @@ export const GraphPanel: Component = () => {
     // Then repaint whenever the theme flips.
     createEffect(() => {
       theme();
+      paletteRevision();
       colors = readGraphColors();
       markDirty();
     });

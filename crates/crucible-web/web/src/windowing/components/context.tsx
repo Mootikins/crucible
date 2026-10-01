@@ -12,7 +12,7 @@ export const DROP_OVER_ATTR = 'data-drop-over';
 export interface WindowingSlots {
   /** Above the tab icons on a rail. */
   railHead?: (position: EdgePanelPosition) => JSX.Element;
-  /** Pinned to the far end of a rail. */
+  /** Pinned to the far end of a rail; replaces the default side-swap control. */
   railTail?: (position: EdgePanelPosition) => JSX.Element;
   /** The floating cluster at the bottom-right of the centre. */
   corner?: () => JSX.Element;

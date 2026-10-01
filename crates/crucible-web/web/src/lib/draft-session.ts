@@ -76,7 +76,7 @@ export function openDraftSession(opts: { workspace?: string } = {}): void {
     // ribbon's explicit "no project" — and that draft could then never be
     // retargeted at a project, which is the common path.
     metadata: { draftTabId: tabId, workspace: opts.workspace },
-  }, { placement: 'beside-editor' });
+  }, { placement: 'session-rail' });
   if (!opened) {
     console.error('openDraftSession: no pane available — cannot open draft tab');
   }

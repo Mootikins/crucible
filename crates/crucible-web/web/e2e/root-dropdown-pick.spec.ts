@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { appReady } from './helpers/nav';
+import { appReady, openFilesPanel } from './helpers/nav';
 
 /**
  * E2E: the Files root dropdown must re-root the tree on pick.
@@ -52,19 +52,7 @@ test('picking a non-workspace project from the root dropdown browses it', async 
   // click handler and the ribbon chevron call (collapsed/expanded chevrons
   // animate, which makes pointer-driven opening flaky in a 30s budget).
   // The Files tab ships in the RIGHT edge panel.
-  await page.evaluate(() => {
-    const store = (window as unknown as Record<string, any>).__windowStore;
-    const actions = (window as unknown as Record<string, any>).__windowActions;
-    if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
-    const firstGroup = (node: any): string | null => {
-      if (!node || typeof node !== 'object') return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return firstGroup(node.first) ?? firstGroup(node.second);
-    };
-    const groupId = firstGroup(store.edgePanels.right.layout);
-    if (!groupId) throw new Error('right edge panel has no tab group');
-    actions.setActiveTab(groupId, 'files-tab');
-  });
+  await openFilesPanel(page);
   await expect(page.locator('[data-testid="root-dropdown"]')).toBeVisible();
 
   // Open the Files panel's root dropdown and pick the non-workspace project.

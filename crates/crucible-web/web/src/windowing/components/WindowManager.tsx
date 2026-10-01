@@ -49,7 +49,7 @@ function DragOverlayContent() {
 
   return (
     <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
-      <div data-testid="drag-overlay" class="wm-drag-overlay flex items-center">
+      <div data-testid="drag-overlay" data-rail-side={draggable()?.data.ribbonSide as string | undefined} class="wm-drag-overlay flex items-center">
         <span class="wm-drag-overlay-title truncate max-w-(--cru-measure-tab)" title={title()}>
           {elideTabTitle(title())}
         </span>

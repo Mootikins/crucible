@@ -14,6 +14,9 @@ vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: vi.fn() },
 }));
 
+const openFile = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/file-actions', () => ({ openFileInEditor: openFile }));
+
 const { ToolCard } = await import('../ToolCard');
 
 /** An Edit call whose daemon-recorded diff proposes `a` → `b`. */
@@ -39,6 +42,13 @@ afterEach(() => {
 const expand = () => fireEvent.click(screen.getByRole('button', { expanded: false }));
 
 describe('ToolCard — the attribution record', () => {
+  it('opens canonical file targets from the collapsed tool row', () => {
+    render(() => <ToolCard toolCall={editCall({ display: { kind: 'file_read', tool: 'Read', paths: ['/repo/notes/Start.md'] } })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open /repo/notes/Start.md' }));
+    expect(openFile).toHaveBeenCalledWith('/repo/notes/Start.md');
+    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument();
+  });
+
   it('stamps the daemon call id', () => {
     const { container } = render(() => <ToolCard toolCall={editCall()} />);
     expect(container.querySelector('[data-tool-call-id="call-1"]')).toBeTruthy();

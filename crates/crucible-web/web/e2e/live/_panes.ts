@@ -201,9 +201,9 @@ export async function resetStoredLayout(baseURL: string): Promise<void> {
 export async function openFileTree(page: Page): Promise<void> {
   const dropdown = page.getByTestId('root-dropdown').first();
   if (!(await dropdown.isVisible().catch(() => false))) {
-    await page.getByTestId('ribbon-toggle-right').click();
+    await page.getByTestId('ribbon-toggle-left').click();
   }
-  const tab = page.getByTestId('edge-tab-right-files-tab');
+  const tab = page.getByTestId('rail-tab-files-tab');
   await expect(tab).toBeVisible({ timeout: MOUNT_TIMEOUT });
   if (!(await dropdown.isVisible().catch(() => false))) {
     await tab.click();

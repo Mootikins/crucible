@@ -113,7 +113,7 @@ test('agent writes a file: TUI leg then web leg, both via a real permission appr
   // action chip.
   await expect(page.getByTestId('perm-action-chip')).toHaveText('write_file');
 
-  await page.getByRole('button', { name: 'Allow' }).click();
+  await page.getByRole('button', { name: 'Allow', exact: true }).click();
   await expect(page.getByText('Permission Required')).toHaveCount(0);
 
   await expect(

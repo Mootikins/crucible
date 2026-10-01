@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve as resolvePath, join as joinPath } from 'node:path';
 import { darkTokens, lightTokens, resolveToken, themeAliases } from '@/test-utils/css-tokens';
-import { menuContent } from '@/components/ui/menu-style';
 
 /**
  * Elevation, in both themes.
@@ -35,13 +34,6 @@ const STEPS = ['sm', 'md', 'lg', 'xl', '2xl'] as const;
 function alphaOf(value: string): number {
   const m = /rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\s*\)/.exec(value);
   if (!m) throw new Error(`not an rgba shadow ink: ${value}`);
-  return Number(m[1]);
-}
-
-/** The blur radius, in px — the second length in `x y blur spread`. */
-function blurOf(value: string): number {
-  const m = /^\s*-?[\d.]+(?:px)?\s+-?[\d.]+(?:px)?\s+([\d.]+)px/.exec(value);
-  if (!m) throw new Error(`no blur radius in: ${value}`);
   return Number(m[1]);
 }
 
@@ -140,29 +132,7 @@ function componentFiles(): string[] {
   return files;
 }
 
-describe('menu elevation is in proportion to its edge', () => {
-  /**
-   * One template, mounted everywhere — so this is measured on the template.
-   * It was `border-hairline` (the faintest rule in the palette) under
-   * `shadow-lg`, a 20px blur: a 20:1 ratio of soft to hard, which is the shape
-   * of a panel given a big drop shadow to make up for an edge that does not
-   * read.
-   */
-  const step = /\bshadow-(sm|md|lg|xl|2xl)\b/.exec(menuContent)?.[1];
-
-  it('names a shadow step from the token layer', () => {
-    expect(step).toBeDefined();
-  });
-
-  it('keeps the blur within 10x the 1px border it sits under', () => {
-    const blur = blurOf(resolveToken(darkTokens, `--cru-shadow-${step}`));
-    expect(blur, `${blur}px blur under a 1px border`).toBeLessThanOrEqual(10);
-  });
-
-  it('uses an edge that can be seen, not the faintest one', () => {
-    expect(menuContent).toMatch(/\bborder-hairline-strong\b/);
-  });
-
+describe('menus share one style owner', () => {
   it('is the ONLY menu panel style — no component rolls its own', () => {
     /**
      * The first spelling of this gate matched `class={…}` alone, and passed

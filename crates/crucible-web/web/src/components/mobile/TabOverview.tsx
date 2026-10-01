@@ -47,7 +47,7 @@ export const TabOverview: Component<{
             {(tab) => (
               <li class="flex flex-col gap-1">
                 <Show when={asking() === tab.id}>
-                  <div class="flex items-center gap-2 h-14 px-3 rounded bg-control">
+                  <div class="flex items-center gap-2 h-14 px-3 rounded-control bg-control">
                     <span class="text-reading flex-1 text-shell-ink">Discard unsaved changes?</span>
                     <button
                       type="button"
@@ -73,13 +73,12 @@ export const TabOverview: Component<{
                     stopped short of the close control and the selected row
                     read as a clipped band. */}
                 <div
-                  class={`flex items-stretch overflow-hidden rounded transition-colors ${
-                    tab.id === props.activeId ? 'bg-primary/10' : 'hover:bg-hover-wash'
-                  }`}
+                  class="compact-tab-card flex items-stretch overflow-hidden transition-colors"
+                  data-active={tab.id === props.activeId}
                 >
                 <button
                   type="button"
-                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded text-left focus-ring ${
+                  class={`flex-1 min-w-0 flex items-center gap-2 h-14 px-3 rounded-control text-left focus-ring ${
                     tab.id === props.activeId ? 'text-shell-ink' : 'text-shell-body'
                   }`}
                   onClick={() => props.onPick(tab.id)}
@@ -99,7 +98,7 @@ export const TabOverview: Component<{
                 <button
                   type="button"
                   aria-label={`Close ${tab.title}`}
-                  class="w-11 shrink-0 flex items-center justify-center rounded text-muted-dark hover:text-shell-ink focus-ring"
+                  class="w-11 shrink-0 flex items-center justify-center rounded-control text-muted-dark hover:text-shell-ink focus-ring"
                   onClick={() => requestClose(tab)}
                 >
                   <X class="w-4 h-4" />

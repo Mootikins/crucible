@@ -192,6 +192,7 @@ export function createFloatingWindowActions<C extends string>(
             s.tabGroups[emptyGroupId] = { id: emptyGroupId, tabs: [], activeTabId: null };
             s.edgePanels[edgePos].layout = { ...root, tabGroupId: emptyGroupId };
             s.edgePanels[edgePos].mode = 'strip';
+            if (s.expandedEdge === edgePos) s.expandedEdge = null;
           }
         }
         if (!s.activePaneId || !findPaneAnywhere(s, s.activePaneId)) {

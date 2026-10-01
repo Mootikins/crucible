@@ -1,6 +1,6 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { edgeLeaf, firstLeafGroupId } from '@/windowing';
+import { edgeLeaf, collectLeafGroupIds } from '@/windowing';
 import { sessionsSide } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { tabHost } from './tab-host';
@@ -8,83 +8,52 @@ import { tabHost } from './tab-host';
 /** Content that makes a pane a session pane. */
 const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
 
-/**
- * The centre pane sessions live in, resolved BY ROLE.
- *
- * A session is a PEER OF THE EDITOR, not a sidebar. Cursor's agents window is
- * the model: a nav rail with the session list, then the conversation and the
- * editor side by side sharing the main area, with the file tree beyond the
- * editor. A session is a working surface with its own composer and its own
- * width, so docking it in a rail either starved it or starved the tree.
- *
- * By role, never by side or by a stored id, because panes split, move and
- * swap. `tabHost().find` already honours wherever the user dragged a
- * session to; this only decides where a session with no home goes.
- */
+/** The conversation rail follows the navigation rail when the sides swap. */
+function conversationSide() {
+  return sessionsSide() === 'left' ? 'right' : 'left';
+}
+
 export function sessionPane(): { groupId: string } | null {
-  // The pane next to the sessions rail, when it is a conversation pane or
-  // empty. A session pane that was dragged elsewhere is not the default.
-  const edge = edgeLeaf(windowStore.layout, sessionsSide());
-  if (edge.groupId) {
-    const group = windowStore.tabGroups[edge.groupId];
-    const tabs = group?.tabs ?? [];
-    // A pane that mixes a chat with a file is an editor pane with a stray
-    // chat in it, not the session pane: a session gets its own pane beside it.
-    const sessionsOnly = tabs.length > 0 && tabs.every((t) => SESSION_CONTENT.has(t.contentType));
-    if (sessionsOnly || tabs.length === 0) return { groupId: edge.groupId };
-  }
+  const centreGroups = collectLeafGroupIds(windowStore.layout);
+  const centreHasConversations = centreGroups.some((id) => windowStore.tabGroups[id]?.tabs.some(
+    (tab) => SESSION_CONTENT.has(tab.contentType) || tab.contentType === 'terminal',
+  ));
+  const groups = [
+    ...(centreHasConversations ? centreGroups : []),
+    ...collectLeafGroupIds(windowStore.edgePanels[conversationSide()].layout),
+  ].map(id => windowStore.tabGroups[id]).filter(group => group &&
+    !group.tabs.some(tab => tab.contentType === 'sessions' || tab.contentType === 'files'));
+  // Supporting tabs do not stop a user-arranged pane from being a conversation
+  // pane. Prefer an existing conversation over an unused group in the layout.
+  const group = groups.find(group => group.tabs.some(tab => SESSION_CONTENT.has(tab.contentType)))
+    ?? groups.find(group => group.tabs.length === 0);
+  if (group) return { groupId: group.id };
   return null;
 }
 
-/**
- * Put a session in the centre pane beside the SESSIONS RAIL, splitting the
- * centre if that pane holds an editor.
- *
- * The side follows the rail, so a swap flips it. Every layout has a leaf at
- * each edge, so there is always a pane to use or to split.
- */
-export function openTabBesideEditor(tab: Tab): boolean {
+/** Reuse the conversation pane, or split the rail without replacing its content. */
+export function openTabInSessionRail(tab: Tab): boolean {
+  const side = conversationSide();
   const existing = sessionPane();
   if (existing) {
+    if (collectLeafGroupIds(windowStore.edgePanels[side].layout).includes(existing.groupId)) {
+      windowActions.setEdgeMode(side, 'docked');
+    }
     windowActions.addTab(existing.groupId, tab);
-    windowActions.setActiveTab(existing.groupId, tab.id);
+    tabHost().activate(tab.id);
     return true;
   }
-
-  // The edge pane holds editor content: split it, new pane on the rail side.
-  const edge = edgeLeaf(windowStore.layout, sessionsSide());
-  return windowActions.openTabInNewPane(edge.paneId, sessionsSide(), tab) !== null;
+  windowActions.setEdgeMode(side, 'docked');
+  const edge = edgeLeaf(windowStore.edgePanels[side].layout, 'left');
+  return windowActions.openTabInNewPane(edge.paneId, 'top', tab) !== null;
 }
 
 export function openSessionInChat(sessionId: string, sessionTitle: string): void {
   const host = tabHost();
   const existing = host.find((t) => t.metadata?.sessionId === sessionId);
   if (existing) {
-    // A session ALWAYS reads beside the sessions rail. One that was dragged
-    // elsewhere (a rail, the editor pane) moves back on reopen; the phone
-    // stack has no panes, so there it only comes to the front. The move
-    // remounts the transcript, which a deliberate reopen can afford.
-    const group = Object.entries(windowStore.tabGroups).find(([, g]) =>
-      g.tabs.some((t) => t.id === existing.id),
-    )?.[0];
-    const target = sessionPane();
-    if (!group || (target && group === target.groupId)) {
-      host.activate(existing.id);
-      return;
-    }
-    // Remove, then open; when the open fails, the tab goes back where it
-    // was, so a reopen can never lose a session.
-    const tab: Tab = { ...existing };
-    windowActions.removeTab(group, existing.id);
-    if (openTabBesideEditor(tab)) {
-      host.activate(tab.id);
-      return;
-    }
-    const fallback = windowStore.tabGroups[group] ? group : firstLeafGroupId(windowStore.layout);
-    if (fallback) {
-      windowActions.addTab(fallback, tab);
-      windowActions.setActiveTab(fallback, tab.id);
-    }
+    // Activating an existing tab preserves its buffer, scroll and user placement.
+    host.activate(existing.id);
     return;
   }
 
@@ -94,7 +63,7 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
     contentType: 'chat',
     icon: iconForContentType('chat'),
     metadata: { sessionId },
-  }, { placement: 'beside-editor' });
+  }, { placement: 'session-rail' });
   if (!opened) {
     console.error('openSessionInChat: no pane available — cannot open chat tab');
   }

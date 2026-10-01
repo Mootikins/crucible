@@ -1,0 +1,62 @@
+/* Production content uses the same two surface tones as its window chrome. */
+:root {
+  --cru-shadow-sm: none;
+  --cru-shadow-md: none;
+  --cru-shadow-lg: none;
+  --cru-shadow-xl: none;
+  --cru-shadow-2xl: none;
+  --cru-color-primary-hover: color-mix(in oklab, var(--cru-color-primary), white 15%);
+  --cru-color-primary-active: color-mix(in oklab, var(--cru-color-primary), black 12%);
+}
+:root[data-theme='light'] {
+  --cru-color-primary-hover: color-mix(in oklab, var(--cru-color-primary), black 15%);
+  --cru-color-primary-active: color-mix(in oklab, var(--cru-color-primary), white 12%);
+}
+.wm-edge-host .wm-pane > .wm-pane-content { background: transparent; }
+.note-editor { --text-reading: var(--mk-font-note); }
+.note-editor [data-testid='markdown-preview'] { font-size: var(--mk-font-note); }
+.user-quote { max-width: 88%; line-height: 1.6; border: 0; border-radius: 12px 12px 4px 12px; padding: 8px 12px; }
+.permission-card {
+  border: 0;
+  border-radius: var(--cru-radius-card);
+  background: color-mix(in srgb, var(--cru-color-attention) 4%, color-mix(in srgb, var(--cru-color-surface-elevated) 75%, var(--cru-color-surface-base)));
+}
+.permission-preview { max-height: min(24rem, 40dvh); min-height: min(6lh, 18dvh); }
+.permission-preview .diff-rows { max-height: none; }
+.composer-surface { background: var(--mk-nav-solid); border: 0; outline: 1px solid transparent; box-shadow: none; padding: 6px 6px 6px 16px; column-gap: 6px; }
+.composer-surface textarea { font-size: 13px; padding: 3px 0; }
+.composer-surface:focus-within { outline-color: color-mix(in srgb, var(--cru-color-primary) 60%, transparent); }
+[data-testid='diff-toolbar'] { border: 0; padding: 16px; }
+[data-testid^='diff-file-']:has(> [data-testid='diff-file-editor']) { border: 0; }
+[data-testid='diff-file-editor'] .cm-gutters { border: 0; }
+
+/* Shared transcript spacing; the daemon remains the transcript owner. */
+:root { --cru-turn-gap: 12px; --shell-action-size: 22px; }
+[data-role='user'] { row-gap: 2px; }
+[data-role='assistant'] .prose > :first-child { margin-top: 0; }
+[data-role='assistant'] .prose > :last-child { margin-bottom: 0; }
+.turn-meta { min-height: 22px; gap: 6px; }
+.turn-meta > div { gap: 0; }
+.turn-meta button { width: 22px; height: 22px; }
+.turn-meta button svg { width: 14px; height: 14px; }
+[data-role='assistant-turn'] .turn-meta { margin-inline-start: -4px; }
+[data-role='user'] .turn-meta { margin-inline-end: -4px; padding-inline-end: 0; }
+.composer-chips { min-height: 22px; column-gap: 12px; padding-inline: 4px; }
+.composer-chips button { height: var(--shell-action-size); }
+
+[data-role='assistant'] .prose strong { font-weight: 700; }
+[data-role='assistant'] .prose { color: var(--cru-color-body); }
+
+.note-toolbar { height: 30px; }
+.icon-toggle-group svg { width: 14px; height: 14px; flex: none; }
+
+/* Document navigation and clipped breadcrumbs share the reference shell geometry. */
+[data-fade-y], [data-fade-x] { --mk-fade: 24px; }
+[data-fade-y='start'] { mask-image: linear-gradient(to bottom, transparent, #000 var(--mk-fade)); }
+[data-fade-y='end'] { mask-image: linear-gradient(to bottom, #000 calc(100% - var(--mk-fade)), transparent); }
+[data-fade-y='both'] { mask-image: linear-gradient(to bottom, transparent, #000 var(--mk-fade) calc(100% - var(--mk-fade)), transparent); }
+[data-fade-x='end'] { mask-image: linear-gradient(to right, #000 calc(100% - var(--mk-fade)), transparent); }
+.note-breadcrumb { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+.note-breadcrumb b { color: var(--cru-color-body); font-weight: 500; }
+.note-breadcrumb-separator { opacity: 0.5; margin: 0 4px; }
+.note-history { display: flex; margin-inline-start: calc(-1 * var(--mk-icon-inset)); }

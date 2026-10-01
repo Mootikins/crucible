@@ -5,9 +5,9 @@
  */
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { Component, Show, createSignal } from 'solid-js';
-import { Copy, Check, Pencil } from '@/lib/icons';
+import { Copy, Check, Pencil, ArrowUp, X } from '@/lib/icons';
 import { PrecognitionBadge } from './PrecognitionBadge';
-import { TurnMeta, AuthorHeading } from './TurnMeta';
+import { TurnMeta, AuthorHeading, revealTurnActions } from './TurnMeta';
 import { IconButton } from './ui/IconButton';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -88,6 +88,8 @@ export const Message: Component<MessageProps> = (props) => {
       class="group flex flex-col items-end gap-1"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
+      tabIndex={0}
+      onPointerUp={revealTurnActions}
       data-queued={props.message.queued ? 'true' : undefined}
     >
       <div
@@ -155,6 +157,7 @@ export const Message: Component<MessageProps> = (props) => {
         </Show>
         <Show when={isUser() && hasPrecognition()}>
           <PrecognitionBadge
+            kiln={sessionKiln()}
             notesCount={props.message.precognition!.notesCount}
             notes={props.message.precognition!.notes}
           />
@@ -163,11 +166,12 @@ export const Message: Component<MessageProps> = (props) => {
 
       {/* A system notice offers nothing to do and carries no stamp, so it draws no row. */}
       <Show when={!isSystem()}>
-        <TurnMeta class="justify-end pe-1">
+        <TurnMeta always={props.message.queued} class="justify-end pe-1">
           {/* The stamp sits outside the bubble, so the bubble measures the same with or without one. */}
           <Show when={isUser() && props.message.timestamp}>
             <span
               data-testid="message-time"
+              data-dynamic-time
               title={new Date(props.message.timestamp).toLocaleString()}
             >
               {formatMessageTime(props.message.timestamp)}
@@ -180,6 +184,14 @@ export const Message: Component<MessageProps> = (props) => {
             <span class="text-muted-dark italic" data-testid="message-queued">
               queued
             </span>
+            <IconButton size="sm" title="Send now, interrupting the current turn" aria-label="Send queued message now"
+              onClick={() => void chat.sendQueuedMessageNow(props.message.id)}>
+              <ArrowUp class="w-4 h-4" />
+            </IconButton>
+            <IconButton size="sm" title="Remove queued message" aria-label="Remove queued message"
+              onClick={() => chat.removeQueuedMessage(props.message.id)}>
+              <X class="w-4 h-4" />
+            </IconButton>
           </Show>
           <div class="flex items-center gap-0.5">
             <IconButton

@@ -1,3 +1,4 @@
+import { fileOpenOptionsForEvent } from '@/lib/file-actions';
 /**
  * CodeMirror wikilink navigation for kiln notes.
  *
@@ -133,7 +134,7 @@ export function followWikilinkAtCursor(
  * Full wikilink navigation bundle: decorations, styling, Ctrl/Cmd+Click,
  * and the Mod-Enter follow binding.
  */
-export function wikilinkNavigation(onFollow: (target: string) => void): Extension {
+export function wikilinkNavigation(onFollow: (target: string, options?: import('@/lib/file-actions').FileOpenOptions) => void): Extension {
   return [
     wikilinkHighlighter,
     wikilinkTheme,
@@ -144,7 +145,7 @@ export function wikilinkNavigation(onFollow: (target: string) => void): Extensio
         const target = el?.getAttribute('data-note');
         if (!target) return false;
         event.preventDefault();
-        onFollow(target);
+        onFollow(target, fileOpenOptionsForEvent(event));
         return true;
       },
     }),

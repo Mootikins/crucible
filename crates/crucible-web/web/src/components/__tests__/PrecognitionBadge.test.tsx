@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { PrecognitionBadge } from '../PrecognitionBadge';
 
+const openNote = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/note-actions', () => ({ openNoteInEditor: openNote }));
+
 describe('PrecognitionBadge', () => {
-  it('renders the note count', () => {
+  it('opens a recalled note using the owning session kiln', () => {
+    render(() => <PrecognitionBadge notesCount={1} notes={[{ name: 'Guides/Start', relevance: 0.9 }]} kiln="/session-kiln" />);
+    fireEvent.click(screen.getByTestId('precognition-badge-toggle'));
+    fireEvent.click(screen.getByRole('button', { name: 'Guides/Start' }));
+    expect(openNote).toHaveBeenCalledWith('Guides/Start', '/session-kiln');
+  });
+
+  it('renders the note count' , () => {
     render(() => <PrecognitionBadge notesCount={3} notes={[]} />);
     expect(screen.getByText(/Enriched with 3 notes/)).toBeInTheDocument();
   });

@@ -23,7 +23,7 @@ export const IconButton: Component<
   return (
     <button
       type="button"
-      class={`${local.size === 'sm' ? 'w-6 h-6' : 'w-7 h-7'} hit-32 relative flex items-center justify-center flex-shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring ${local.class ?? ''}`}
+      class={`${local.size === 'sm' ? 'w-6 h-6' : 'w-7 h-7'} hit-32 relative flex items-center justify-center flex-shrink-0 rounded-control text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring ${local.class ?? ''}`}
       {...rest}
     >
       {local.children}

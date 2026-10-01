@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore } from '@/stores/windowStore';
-import { findTabByFilePath, openFileInEditor } from '../file-actions';
+import { findTabByFilePath, openFileInEditor, fileHistory, fileHistoryPaths, goFileHistory } from '../file-actions';
 import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 // -- Helpers (same pattern as windowStore.reorder.test.ts) ----------------
@@ -249,4 +249,43 @@ describe('openFileInEditor — beside the conversation, never on top of it', () 
       expect(windowStore.layout.second.type === 'pane' && windowStore.layout.second.tabGroupId).toBe(holder!.id);
     }
   });
+});
+
+
+describe('document history', () => {
+  beforeEach(() => setupDefaultState());
+  it('navigates one stable tab and truncates forward history after going back', () => {
+    openFileInEditor('/docs/a.md');
+    const id = windowStore.tabGroups['center-group'].activeTabId!;
+    openFileInEditor('/docs/b.md', undefined, { where: 'here' });
+    expect(windowStore.tabGroups['center-group'].tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['center-group'].tabs[0].metadata?.filePath).toBe('/docs/b.md');
+    goFileHistory(id, -1);
+    expect(windowStore.tabGroups['center-group'].tabs[0].metadata?.filePath).toBe('/docs/a.md');
+    goFileHistory(id, 1);
+    expect(windowStore.tabGroups['center-group'].tabs[0].metadata?.filePath).toBe('/docs/b.md');
+    goFileHistory(id, -1);
+    openFileInEditor('/docs/c.md', undefined, { where: 'here' });
+    expect(fileHistory(windowStore.tabGroups['center-group'].tabs[0]).entries.map(e => e.path)).toEqual(['/docs/a.md', '/docs/c.md']);
+  });
+  it('opening the original path after navigation never collides with its old tab id', () => {
+    openFileInEditor('/docs/a.md');
+    openFileInEditor('/docs/b.md', undefined, { where: 'here' });
+    openFileInEditor('/docs/a.md', undefined, { where: 'tab' });
+    const tabs = windowStore.tabGroups['center-group'].tabs;
+    expect(tabs.map(t => t.metadata?.filePath)).toEqual(['/docs/b.md', '/docs/a.md']);
+    expect(new Set(tabs.map(t => t.id)).size).toBe(2);
+  });
+});
+
+
+it.each([null, {}, { entries: [null], at: 0 }, { entries: [{ path: '/other', title: 4 }], at: 0 }, { entries: [{ path: '/other', title: 'other' }], at: 9 }])('malformed saved history falls back to the current file (%j)', (fileHistoryValue) => {
+  const tab = makeTab('file', 'A', 'file', { filePath: '/a.md', fileHistory: fileHistoryValue, fileHistoryRetained: '/not-an-array' });
+  expect(fileHistory(tab)).toEqual({ entries: [{ path: '/a.md', title: 'A' }], at: 0 });
+  expect(fileHistoryPaths(tab)).toEqual(['/a.md']);
+});
+
+it('only valid retained file paths keep buffers alive', () => {
+  const tab = makeTab('file', 'A', 'file', { filePath: '/a.md', fileHistoryRetained: [null, '/b.md', 3, '/a.md'] });
+  expect(fileHistoryPaths(tab)).toEqual(['/a.md', '/b.md']);
 });

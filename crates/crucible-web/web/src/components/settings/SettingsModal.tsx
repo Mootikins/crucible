@@ -102,7 +102,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
             class={`cru-anim-pop overflow-hidden border-hairline-strong bg-shell-panel focus-ring ${
               isCompact()
                 ? 'flex h-dvh w-screen flex-col'
-                : 'grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] rounded-2xl border shadow-2xl'
+                : 'grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] rounded-2xl'
             }`}
           >
             <Show when={isCompact()}>
@@ -118,7 +118,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
 
             <Show when={!isCompact()}>
             {/* ── The section list ─────────────────────────────────────── */}
-            <nav class="flex flex-col overflow-y-auto border-r border-hairline bg-surface-base py-3">
+            <nav class="flex flex-col overflow-y-auto bg-control py-3">
               <For each={settingsGroups(sections())}>
                 {(group) => (
                   <>
@@ -138,7 +138,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                             // A fill, not a coloured edge bar: the selected row
                             // has to read at a glance without adding a second
                             // accent to a panel the ember already governs.
-                            'bg-control text-shell-ink': activeId() === section.id,
+                            'bg-shell-panel text-shell-ink': activeId() === section.id,
                             'text-muted hover:bg-hover-wash hover:text-shell-body':
                               activeId() !== section.id,
                           }}
@@ -165,7 +165,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
                 nothing to overflow, and the dialog's `overflow-hidden` cut the
                 bottom of the form off with no scrollbar anywhere. */}
             <div class="flex min-h-0 min-w-0 flex-col">
-              <header class="flex flex-none items-center justify-between border-b border-hairline px-5 py-3">
+              <header class="flex flex-none items-center justify-between px-5 py-3">
                 <h2 class="text-sm font-semibold text-shell-ink">{active().label}</h2>
                 <button
                   type="button"

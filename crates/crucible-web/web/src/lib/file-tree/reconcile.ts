@@ -3,13 +3,8 @@
  *
  * The daemon emits absolute-path filesystem events; this module maps them onto
  * the in-memory `FileTreeNode` model:
- *  - Kilns (fully built, markdown-only) are patched in place — new markdown
- *    leaves are added (synthesizing missing directory nodes), removed leaves
- *    are dropped. Non-`.md` events are ignored.
- *  - Projects (lazily loaded) are never mutated here; instead we return the set
- *    of already-loaded parent folders that need a fresh `listDir`. In Phase 1
- *    `file_*` events only fire for watched kiln dirs, so the project branch is
- *    exercised by unit tests only (kept for the Task 4e follow-up).
+ * Both kiln and project trees re-read affected loaded folders. Filesystem
+ * events name paths, so a listing supplies the file kind and metadata.
  *
  * `moved` is decomposed into remove(from) + add(to), so a platform that emits
  * `deleted` + `changed{created}` instead converges to the same tree —
@@ -25,9 +20,6 @@ export interface RootMount {
   basePath: string;
   root: FileTreeNode;
 }
-
-/** An atomic filesystem mutation after `moved` is decomposed. */
-type AtomicOp = { op: 'add' | 'remove'; path: string };
 
 const stripTrailingSlash = (p: string): string => p.replace(/\/+$/, '');
 
@@ -50,21 +42,6 @@ export function locate(
   return null;
 }
 
-/** Decompose one event into its atomic add/remove ops (paths absolute). */
-function decompose(event: FsEvent): AtomicOp[] {
-  switch (event.type) {
-    case 'changed':
-      return [{ op: 'add', path: event.path }];
-    case 'deleted':
-      return [{ op: 'remove', path: event.path }];
-    case 'moved':
-      return [
-        { op: 'remove', path: event.from },
-        { op: 'add', path: event.to },
-      ];
-  }
-}
-
 /** Locate an existing node by its root-relative path (`''` => the root). */
 export function findNodeByRelPath(root: FileTreeNode, relPath: string): FileTreeNode | null {
   if (relPath === '') return root;
@@ -78,94 +55,13 @@ export function findNodeByRelPath(root: FileTreeNode, relPath: string): FileTree
 }
 
 /**
- * Kiln patch: apply every event's markdown add/remove ops to a COPY of the
- * tree and return the new root. Missing intermediate directories are
- * synthesized on add; ancestors are never auto-pruned on remove.
- */
-export function reconcileKilnTree(
-  root: FileTreeNode,
-  basePath: string,
-  events: FsEvent[],
-): FileTreeNode {
-  const base = stripTrailingSlash(basePath);
-  let next = root;
-
-  for (const event of events) {
-    for (const { op, path } of decompose(event)) {
-      if (!path.endsWith('.md')) continue; // kilns are markdown-only
-      const owned = locate([{ rootId: 'k', kind: 'kiln', basePath: base, root: next }], path);
-      if (!owned || owned.relParts.length === 0) continue;
-      next =
-        op === 'add'
-          ? addLeaf(next, owned.relParts, base)
-          : removeLeaf(next, owned.relParts);
-    }
-  }
-  return next;
-}
-
-/** Immutably insert a markdown leaf at `relParts`, synthesizing dir nodes. */
-function addLeaf(root: FileTreeNode, relParts: string[], base: string): FileTreeNode {
-  const [head, ...rest] = relParts;
-  const children = root.children ? [...root.children] : [];
-  const childRel = joinRel(root.relPath, head);
-
-  if (rest.length === 0) {
-    if (children.some((c) => !c.isDir && c.name === head)) return root; // already present
-    children.push({
-      relPath: childRel,
-      name: head,
-      isDir: false,
-      absPath: `${base}/${childRel}`,
-    });
-    return { ...root, children };
-  }
-
-  const idx = children.findIndex((c) => c.isDir && c.name === head);
-  const existing =
-    idx >= 0
-      ? children[idx]
-      : ({
-          relPath: childRel,
-          name: head,
-          isDir: true,
-          absPath: `${base}/${childRel}`,
-          children: [],
-        } satisfies FileTreeNode);
-  const updated = addLeaf(existing, rest, base);
-  if (idx >= 0) children[idx] = updated;
-  else children.push(updated);
-  return { ...root, children };
-}
-
-/** Immutably remove the exact leaf at `relParts`; keep empty ancestor dirs. */
-function removeLeaf(root: FileTreeNode, relParts: string[]): FileTreeNode {
-  const [head, ...rest] = relParts;
-  if (!root.children) return root;
-
-  if (rest.length === 0) {
-    const children = root.children.filter((c) => !(!c.isDir && c.name === head));
-    if (children.length === root.children.length) return root; // nothing removed
-    return { ...root, children };
-  }
-
-  const idx = root.children.findIndex((c) => c.isDir && c.name === head);
-  if (idx < 0) return root;
-  const children = [...root.children];
-  children[idx] = removeLeaf(children[idx], rest);
-  return { ...root, children };
-}
-
-const joinRel = (prefix: string, seg: string): string => (prefix ? `${prefix}/${seg}` : seg);
-
-/**
- * Project defensive path: for each affected absolute path (both endpoints of a
+ * For every filesystem tree: for each affected absolute path (both endpoints of a
  * `moved`, deduped), return the relPath of its parent folder IF that folder is
  * already loaded (`isDir && children !== undefined`). Callers re-issue
  * `listDir(root, relPath)` and swap children. Unloaded/missing folders are
  * ignored. Root (`''`) counts as loaded.
  */
-export function projectFoldersToInvalidate(mount: RootMount, events: FsEvent[]): string[] {
+export function foldersToInvalidate(mount: RootMount, events: FsEvent[]): string[] {
   const base = stripTrailingSlash(mount.basePath);
   const out = new Set<string>();
 
@@ -190,10 +86,7 @@ export function reconcileMount(
   mount: RootMount,
   events: FsEvent[],
 ): { root?: FileTreeNode; invalidate?: string[] } {
-  if (mount.kind === 'kiln') {
-    return { root: reconcileKilnTree(mount.root, mount.basePath, events) };
-  }
-  return { invalidate: projectFoldersToInvalidate(mount, events) };
+  return { invalidate: foldersToInvalidate(mount, events) };
 }
 
 export interface FsEventBatcher {

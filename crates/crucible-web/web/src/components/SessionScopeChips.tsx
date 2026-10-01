@@ -142,7 +142,7 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
    */
   const emptyKilnNote = (
     <div
-      class="px-3 py-2 text-xs text-muted-dark border-t border-hairline"
+      class="px-3 py-2 text-xs text-muted-dark"
       data-testid="scope-kiln-empty"
     >
       No kiln attached — this session is tools-only. Note search, wikilinks and precognition are

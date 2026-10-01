@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
+import { batch, createSignal } from 'solid-js';
+import { undo } from '@codemirror/commands';
+import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { LanguageDescription } from '@codemirror/language';
 import { languages as codeLanguages } from '@codemirror/language-data';
@@ -134,4 +136,25 @@ describe('CodeMirrorEditor — vim :write saves', () => {
     Vim.handleEx(cmv, 'wq');
     expect(onSave).toHaveBeenCalledTimes(2);
   });
+});
+
+
+it('history navigation restores each file undo stack without crossing into another file', () => {
+  const states = new Map<string, EditorState>();
+  const [path, setPath] = createSignal('/a.md');
+  const [content, setContent] = createSignal('A');
+  const { container } = render(() => <CodeMirrorEditor path={path()} content={content()} onChange={setContent} editorStates={states} />);
+  const view = findView(container);
+  view.dispatch({ changes: { from: 1, insert: ' edited' } });
+  batch(() => { setPath('/b.md'); setContent('B'); });
+  expect(view.state.doc.toString()).toBe('B');
+  expect(undo(view)).toBe(false);
+  view.dispatch({ changes: { from: 1, insert: ' changed' } });
+  batch(() => { setPath('/a.md'); setContent('A edited'); });
+  expect(view.state.doc.toString()).toBe('A edited');
+  expect(undo(view)).toBe(true);
+  expect(view.state.doc.toString()).toBe('A');
+  batch(() => { setPath('/b.md'); setContent('B changed'); });
+  expect(undo(view)).toBe(true);
+  expect(view.state.doc.toString()).toBe('B');
 });

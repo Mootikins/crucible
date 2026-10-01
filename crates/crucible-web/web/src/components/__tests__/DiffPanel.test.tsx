@@ -6,6 +6,7 @@ import { installFakeEventSource } from '@/test-utils/sse';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { SentRequest } from '@/test-utils/mock-fetch';
+import * as fileActions from '@/lib/file-actions';
 import { composerComments } from '@/stores/composerComments';
 import type {
   DiffComment,
@@ -161,12 +162,31 @@ describe('DiffPanel', () => {
     expect(sent.body).toEqual({ source });
   });
 
+  it('opens a file title in its own root without collapsing the diff', async () => {
+    const open = vi.spyOn(fileActions, 'openFileInEditor').mockImplementation(() => {});
+    serve([entry('src/a.rs'), entry('src/a.rs', { root: '/other/' })]);
+    render(() => <DiffPanel source={source} />);
+    try {
+      const first = await screen.findByTestId('diff-file-/repo:src/a.rs');
+      const second = section('src/a.rs', '/other/');
+      fireEvent.click(within(first).getByRole('button', { name: 'Open src/a.rs' }));
+      fireEvent.click(within(second).getByRole('button', { name: 'Open src/a.rs' }));
+      expect(open.mock.calls).toEqual([['/repo/src/a.rs'], ['/other/src/a.rs']]);
+      expect(within(first).getByTestId('diff-file-toggle')).toHaveAttribute('aria-expanded', 'true');
+      fireEvent.click(within(first).getByTestId('diff-file-toggle'));
+      expect(within(first).getByTestId('diff-file-toggle')).toHaveAttribute('aria-expanded', 'false');
+      expect(open).toHaveBeenCalledTimes(2);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it('names a renamed file by its old and new path', async () => {
     serve([entry('archive/a.md', { status: { kind: 'renamed', from: 'notes/a.md' } })]);
     render(() => <DiffPanel source={source} />);
 
     await waitFor(() => expect(section('archive/a.md')).toBeInTheDocument());
-    const header = within(section('archive/a.md')).getByTestId('diff-file-toggle');
+    const header = within(section('archive/a.md')).getByTestId('diff-file-open');
     expect(header.textContent).toContain('notes/a.md → archive/a.md');
     expect(within(section('archive/a.md')).getByLabelText('renamed')).toBeInTheDocument();
   });
@@ -919,13 +939,14 @@ describe('DiffPanel', () => {
       expect(screen.queryByTestId('proposal-accept-file')).toBeNull();
     });
 
-    it('accept all calls the accept route', async () => {
+    it.each(['accept', 'reject'] as const)('%s all calls its decision route', async (kind) => {
       serveProposal({ kind: 'open' });
       render(() => <DiffPanel source={proposalSource} />);
-      fireEvent.click(await screen.findByTestId('proposal-accept-all'));
+      fireEvent.click(await screen.findByTestId(`proposal-${kind}-all`));
 
-      await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
-      const [sent] = await sentTo('POST', ACCEPT);
+      const route = `/api/rpc/proposal.${kind}`;
+      await waitFor(() => expect(env.fetch.calls(`POST ${route}`)).toBe(1));
+      const [sent] = await sentTo('POST', route);
       expect(sent.body, 'no paths: every file').toEqual({ id: ID, files: [] });
       // The pane reads the proposal again, to show the new state.
       await waitFor(() => expect(env.fetch.calls('POST /api/rpc/proposal.get')).toBe(2));

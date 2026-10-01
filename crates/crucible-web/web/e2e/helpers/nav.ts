@@ -6,7 +6,7 @@ import { expect, type Page } from '@playwright/test';
  * Two shell changes broke the old inline selectors across the suite, so the
  * knowledge lives here instead of in 20 specs:
  *
- *  - Sessions and the file tree are separate panels on opposite rails. The
+ *  - Sessions and the file tree are stacked panels on the navigation rail. The
  *    left panel opens on Sessions, so `session-item-*` rows exist from the
  *    start — no scope to switch, unlike the Navigator this replaced.
  *  - An empty pane holds only its own affordance. The session composer is no
@@ -39,7 +39,7 @@ export async function appReady(page: Page): Promise<void> {
  * and because the callers read better for saying what they need.
  */
 export async function openSessionsList(page: Page): Promise<void> {
-  const tab = page.getByTestId('edge-tab-left-sessions-tab');
+  const tab = page.getByTestId('rail-tab-sessions-tab');
   await expect(tab).toBeVisible({ timeout: READY_TIMEOUT });
   // Probe the tree itself, not a button inside it: New Session moved onto the
   // project rows, so no single control marks the rail as open any more.
@@ -110,20 +110,19 @@ export async function openNewSessionTab(page: Page): Promise<void> {
  * The Files tab opens through the store, not the pointer: the pointer path
  * races the JS tween of the panel (see root-dropdown-pick).
  */
-export async function openBranchDiff(page: Page): Promise<void> {
+export async function openFilesPanel(page: Page): Promise<void> {
   await page.evaluate(() => {
     const store = (window as unknown as Record<string, any>).__windowStore;
     const actions = (window as unknown as Record<string, any>).__windowActions;
-    if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
-    const firstGroup = (node: any): string | null => {
-      if (!node || typeof node !== 'object') return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return firstGroup(node.first) ?? firstGroup(node.second);
-    };
-    const groupId = firstGroup(store.edgePanels.right.layout);
-    if (!groupId) throw new Error('right edge panel has no tab group');
+    const groupId = Object.keys(store.tabGroups).find((id) => store.tabGroups[id].tabs.some((tab: any) => tab.id === 'files-tab'));
+    if (!groupId) throw new Error('Files has no tab group');
     actions.setActiveTab(groupId, 'files-tab');
   });
+  await expect(page.getByTestId('root-dropdown')).toBeVisible({ timeout: READY_TIMEOUT });
+}
+
+export async function openBranchDiff(page: Page): Promise<void> {
+  await openFilesPanel(page);
   const open = page.getByTestId('open-branch-diff');
   await expect(open).toBeVisible({ timeout: READY_TIMEOUT });
   await open.click();

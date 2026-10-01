@@ -48,11 +48,13 @@ test.describe('swap side panels', () => {
 
   test('Ctrl+Shift+\\ mirrors the two rails', async ({ page }) => {
     expect(await sideContents(page, 'left')).toContain('sessions');
-    expect(await sideContents(page, 'right')).toContain('files');
+    expect(await sideContents(page, 'left')).toContain('files');
+    expect(await sideContents(page, 'right')).toContain('terminal');
 
     await page.keyboard.press('Control+Shift+\\');
 
-    await expect.poll(() => sideContents(page, 'left')).toContain('files');
+    await expect.poll(() => sideContents(page, 'left')).toContain('terminal');
+    expect(await sideContents(page, 'right')).toContain('files');
     expect(await sideContents(page, 'right')).toContain('sessions');
   });
 });

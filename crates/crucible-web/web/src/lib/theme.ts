@@ -30,6 +30,14 @@ export const DEFAULT_THEME: Theme = 'dark';
 const [theme, setThemeSignal] = createSignal<Theme>(DEFAULT_THEME);
 export { theme };
 
+/** Canvas consumers repaint after appearance writes the CSS palette. */
+const [paletteRevision, setPaletteRevision] = createSignal(0);
+export { paletteRevision };
+export function notifyPaletteChanged(): void {
+  setPaletteRevision((revision) => revision + 1);
+}
+
+
 /**
  * The theme the user chose, or null when the user has not chosen one.
  *
@@ -139,4 +147,11 @@ function paintTheme(theme: Theme): void {
   if (theme === 'light') root.setAttribute('data-theme', 'light');
   else root.removeAttribute('data-theme');
   setThemeSignal(theme);
+}
+
+/** Color inputs read the palette rather than carrying another copy of it. */
+export function currentAccent(): string {
+  theme();
+  paletteRevision();
+  return getComputedStyle(document.documentElement).getPropertyValue('--cru-color-primary').trim();
 }

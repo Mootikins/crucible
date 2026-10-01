@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { appReady } from '../helpers/nav';
 import { readState } from './_state';
@@ -7,10 +7,10 @@ import { apiQuiet, captureApiRequests, describeRequests, installEventSourceSpy }
 import { mountTab, openFileTree, resetStoredLayout, selectRoot } from './_panes';
 
 /**
- * Part C4 against the daemon: the note list, the search answers, the canvas,
+ * Part C4 against the daemon: the directory listing, the search answers, the canvas,
  * the layout and the terminal socket.
  *
- * Two of these claims can only be made here. The note list refreshes because
+ * Two of these claims can only be made here. The directory listing refreshes because
  * the DAEMON's file watcher saw a write and pushed an event — a mocked tier
  * has no watcher and no daemon, so it can only assert that a handler it wrote
  * was called. And the terminal is a WebSocket upgrade, which no `page.route`
@@ -34,13 +34,16 @@ test.describe.configure({ timeout: 180_000 });
 const PROBE_PREFIX = 'C4Probe-';
 let probeNote = '';
 
-// `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+// `fs.list_dir` reaches the browser through `POST /api/rpc/{method}` now
 // (Simplification Plan step 19 item 3), so its params ride the body rather
 // than the query string.
-function notesFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
+function listingFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
   return log
-    .matching('/api/rpc/list_notes')
-    .filter((r) => r.method === 'POST' && (JSON.parse(r.body ?? '{}') as { kiln?: string }).kiln === kilnDir)
+    .matching('/api/rpc/fs.list_dir')
+    .filter((r) => {
+      const params = JSON.parse(r.body ?? '{}') as { root?: string; rel_path?: string };
+      return r.method === 'POST' && params.root === kilnDir && !params.rel_path;
+    })
     .length;
 }
 
@@ -68,12 +71,12 @@ test.describe('live C4 entities', () => {
     // as the other live specs expect to read it.
     for (const name of readdirSync(state.kilnDir!)) {
       if (name.startsWith(PROBE_PREFIX)) {
-        rmSync(path.join(state.kilnDir!, name), { force: true });
+        rmSync(path.join(state.kilnDir!, name), { force: true, recursive: true });
       }
     }
   });
 
-  test('two file trees on one kiln read its notes once', async ({ page }) => {
+  test('two file trees on one kiln read its directory once', async ({ page }) => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
@@ -81,14 +84,14 @@ test.describe('live C4 entities', () => {
     await selectRoot(page, 'alpha');
     await apiQuiet(log);
 
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
 
     // A second tree, mounted on the other rail, drawing the same corpus.
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
-    await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-files-left')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
 
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
   });
 
   // The tree redraws for a file written into the kiln it browses, without a
@@ -114,9 +117,9 @@ test.describe('live C4 entities', () => {
     await openFileTree(page);
     await selectRoot(page, 'alpha');
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
-    await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-files-left')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
 
     // Count from zero across the write, so an event still in flight from an
     // earlier spec cannot be mistaken for this one's.
@@ -124,7 +127,7 @@ test.describe('live C4 entities', () => {
 
     // Nobody in the browser did this. The daemon's watcher sees it, sends an
     // `fs` event down the one stream both trees share, and the route turns
-    // that event into ONE invalidation of the note list.
+    // that event into ONE invalidation of the directory listing.
     probeNote = `${PROBE_PREFIX}${Date.now()}.md`;
     writeFileSync(
       path.join(state.kilnDir!, probeNote),
@@ -132,7 +135,7 @@ test.describe('live C4 entities', () => {
     );
 
     await expect
-      .poll(() => notesFor(log, state.kilnDir!), {
+      .poll(() => listingFor(log, state.kilnDir!), {
         timeout: 30_000,
         message: 'the write on disk never reached the browser',
       })
@@ -145,7 +148,35 @@ test.describe('live C4 entities', () => {
     // ONE refetch for two mounted trees, not one each. Two caches would make
     // two, and a tree that polled would keep making more.
     await apiQuiet(log, 3000);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
+  });
+
+  test('the kiln Files toolbar creates a visible empty folder and lists non-note files', async ({ page }) => {
+    const folder = `${PROBE_PREFIX}folder-${Date.now()}`;
+    const source = `${PROBE_PREFIX}source-${Date.now()}.ts`;
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await openFileTree(page);
+    await selectRoot(page, 'alpha');
+
+    page.once('dialog', dialog => dialog.accept(folder));
+    await page.getByRole('button', { name: 'New folder', exact: true }).click();
+    await expect(page.getByRole('treeitem').filter({ hasText: folder })).toBeVisible();
+    expect(statSync(path.join(state.kilnDir!, folder)).isDirectory()).toBe(true);
+
+    writeFileSync(path.join(state.kilnDir!, source), 'export const answer = 42;\n');
+    // The kiln watcher covers indexable formats. Refresh also lists external
+    // assets, including source files outside that watcher's format filter.
+    await page.getByRole('button', { name: 'More file actions' }).click();
+    await page.getByRole('menuitem', { name: 'Refresh', exact: true }).click();
+    await expect(page.getByRole('treeitem').filter({ hasText: source.replace(/\.ts$/, '') })).toBeVisible({ timeout: 30_000 });
+
+    await page.reload();
+    await appReady(page);
+    await openFileTree(page);
+    await selectRoot(page, 'alpha');
+    await expect(page.getByRole('treeitem').filter({ hasText: folder })).toBeVisible();
+    await expect(page.getByRole('treeitem').filter({ hasText: source.replace(/\.ts$/, '') })).toBeVisible();
   });
 
   test('a repeated search asks the daemon once', async ({ page }) => {
@@ -199,7 +230,7 @@ test.describe('live C4 entities', () => {
     // times while that settles (the tab, the active tab, the pane), and the
     // writer must fold those into one durable save.
     await mountTab(page, 'left', { id: 'layout-probe', title: 'Files', contentType: 'files' });
-    await expect(page.getByTestId('edge-tab-left-layout-probe')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-layout-probe')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log, 3000);
 
     const writes = log.count('POST', '/api/layout') - writesBefore;
@@ -245,7 +276,7 @@ test.describe('live C4 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await page.getByTestId('ribbon-toggle-right').click();
-    const tab = page.getByTestId('edge-tab-right-terminal-tab-1');
+    const tab = page.getByTestId('rail-tab-terminal-tab-1');
     await expect(tab).toBeVisible({ timeout: 20_000 });
     await tab.click();
     await expect(page.getByTestId('terminal-panel')).toBeVisible({ timeout: 20_000 });

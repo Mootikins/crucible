@@ -55,7 +55,7 @@ const drawerWidthFor = (viewport: number) => Math.min(Math.round(viewport * 0.85
  * tabs. The right drawer is the open note's context — its backlinks. Decision
  * log 2026-09-11; see `docs/Meta/Architecture/Mobile Shell.md`.
  *
- * The tab stack and the drawers' own tabs arrive in later steps of Track A.
+ * Theme tokens are shared with desktop; only the compact layout differs.
  */
 export const MobileShell: Component = () => {
   const activeTab = () => tabStackActions.activeTab();
@@ -148,6 +148,9 @@ export const MobileShell: Component = () => {
     y: e.clientY,
     t: e.timeStamp,
     inDrawer: e.target instanceof Element && e.target.closest('[data-drawer-part]') !== null,
+    inContent: openSide() === null && e.pointerType !== 'mouse' &&
+      e.target instanceof Element && e.target.closest('.compact-surface') !== null &&
+      !e.target.closest('button, a, input, textarea, select, [contenteditable], [role=slider], .cm-editor, pre, table'),
   });
   const each = (fn: (s: (typeof swipes)[number], p: SwipePoint) => void) => (e: PointerEvent) => {
     const p = sample(e);
@@ -172,7 +175,8 @@ export const MobileShell: Component = () => {
 
   return (
     <div
-      class="flex flex-col h-dvh bg-shell-bg text-shell-ink overflow-hidden"
+      class="compact-shell flex flex-col h-dvh text-shell-ink overflow-hidden"
+      style={{ 'padding-bottom': 'var(--inset-bottom)' }}
       data-testid="mobile-shell"
       onPointerDown={each((s, p) => s.down(p))}
       onPointerMove={each((s, p) => s.move(p))}
@@ -180,10 +184,8 @@ export const MobileShell: Component = () => {
       onPointerCancel={() => swipes.forEach((s) => s.cancel())}
     >
       <header
-        // 56 px, not 48: the controls inside are 44 px touch targets, and a
-        // filled one (Read/Write) in a 48 px bar leaves 2 px of clearance, so
-        // its background reads as touching the bar's edges.
-        class="shrink-0 flex items-center gap-1 h-14 px-2 border-b border-hairline bg-surface-elevated"
+        // Leave breathing room around the navigation's 44px touch targets.
+        class="compact-appbar shrink-0 flex items-center gap-1 h-14 px-2"
         style={{ 'padding-top': 'var(--inset-top)', 'box-sizing': 'content-box' }}
       >
         <DrawerButton side="left" label="Sessions and files" icon={FolderTree} />
@@ -191,9 +193,6 @@ export const MobileShell: Component = () => {
           {activeTab()?.title ?? 'Crucible'}
         </h1>
         <OfflineBadge />
-        <Show when={activeTab()?.contentType === 'file' && !overviewOpen()}>
-          <MobileEditorBar filePath={String(activeTab()!.metadata?.filePath ?? '')} />
-        </Show>
         <Show when={tabStack.tabs.length > 0}>
           <button
             type="button"
@@ -219,14 +218,17 @@ export const MobileShell: Component = () => {
         <DrawerButton side="right" label="Backlinks" icon={Link2} />
       </header>
       <main
-        class="flex-1 min-h-0 flex flex-col"
+        class="compact-surface flex-1 min-h-0 flex flex-col"
         // Thumb metrics for everything the pane renders: the properties card
         // header, and the rows of any tree a panel tab opens here. A tree
         // states its own density only when a caller passes one.
         data-density="touch"
         // The browser keeps vertical scroll; horizontal travel reaches the swipe.
-        style={{ 'padding-bottom': 'var(--inset-bottom)', 'touch-action': 'pan-y' }}
+        style={{ 'touch-action': 'pan-y' }}
       >
+        <Show when={activeTab()?.contentType === 'file' && !overviewOpen()}>
+          <MobileEditorBar filePath={String(activeTab()!.metadata?.filePath ?? '')} />
+        </Show>
         <Show
           when={!overviewOpen()}
           fallback={

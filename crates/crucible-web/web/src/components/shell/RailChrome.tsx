@@ -1,11 +1,12 @@
 import { Component, Show, createSignal, type JSX } from 'solid-js';
 import { RibbonCommand, ribbonBtn, type EdgePanelPosition } from '@/windowing';
-import { Bell, Moon, Settings, Sun } from '@/lib/icons';
+import { Bell, Moon, Settings, Sun, Search, Plus, ArrowLeftRight } from '@/lib/icons';
 import { LayoutMenu } from '@/components/shell/LayoutMenu';
 import { OfflineBadge } from '@/components/OfflineBadge';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { applyTheme, theme } from '@/lib/theme';
 import { notificationStore } from '@/stores/notificationStore';
+import { windowActions } from '@/stores/windowStore';
 import { getBus } from '@/lib/bus';
 
 /**
@@ -62,10 +63,21 @@ const RibbonBell: Component = () => {
  */
 export function railHead(position: EdgePanelPosition): JSX.Element {
   return position === 'left' ? (
-    <div class="flex-none w-10 h-9 flex items-center justify-center border-b border-hairline">
-      <LayoutMenu />
-    </div>
-  ) : null;
+    <>
+      <RibbonCommand title="Search (Ctrl+K)" testId="ribbon-cmd-search"
+        onClick={() => getBus().emit('openCommandPalette', { mode: 'notes' })}>
+        <Search class="w-4 h-4" />
+      </RibbonCommand>
+      <div class="flex-none w-10 h-9 flex items-center justify-center border-b border-hairline">
+        <LayoutMenu />
+      </div>
+    </>
+  ) : (
+    <RibbonCommand title="New session" testId="ribbon-cmd-new-session"
+      onClick={() => getBus().emit('newSession', {})}>
+      <Plus class="w-4 h-4" />
+    </RibbonCommand>
+  );
 }
 
 /**
@@ -83,6 +95,10 @@ export function railTail(position: EdgePanelPosition): JSX.Element {
   return (
     <>
       <OfflineBadge />
+      <RibbonCommand title="Swap the centre and the right rail" testId="ribbon-cmd-swap-centre"
+        onClick={() => windowActions.swapCentreWithEdge('right')}>
+        <ArrowLeftRight class="w-4 h-4" />
+      </RibbonCommand>
       <RibbonCommand
         title={theme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
         testId="ribbon-cmd-theme"

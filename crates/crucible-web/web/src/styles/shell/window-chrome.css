@@ -1,0 +1,228 @@
+/* ------------------------------------------------------- 3. shell layout
+ * Every working surface is a card, or it lies on the ground (NAV). One gap,
+ * `--mk-gap`, separates the cards, the window edges and the two panes of a
+ * rail. One inset, `--mk-pad`, starts every bar, column and first tab label
+ * in a card. Both rails use one rule set; the per-rail lines below hold
+ * their differences.
+ */
+:root {
+  /* The foot is the inverted curve at each side of an open tab. The tab row
+     starts at the pane edge, so the first tab label and the content share
+     one inset. An icon button is `--mk-icon-inset` wider than its icon on
+     each side. */
+  --mk-foot: 8px; --mk-tab-pad: 16px; --mk-tab-top: 6px; --mk-icon-inset: 6px;
+  --mk-pad: var(--mk-tab-pad);
+  /* A pane owns one opaque tone. Its tab strip is one step off that tone. */
+  --mk-pane-bg: var(--mk-main-solid); --mk-strip: var(--mk-nav-solid); --mk-line: var(--mk-nav-solid);
+}
+
+/* The rails. `start` is the strip side of a rail, `end` its document side:
+   the right rail runs right to left. By default, rail panes lie on the
+   ground, and their content starts one gap down. */
+.wm-edge-host {
+  --mk-dir: ltr; --mk-start: left; --mk-end: right;
+  --mk-pane-bg: var(--mk-nav-solid); --mk-pane-r: 0px; --mk-pane-top: var(--mk-gap);
+  --mk-card-top: 0px; --mk-card-bottom: 0px;
+  /* The open tab's cutout fades with the slide, so the pane grows out of it. */
+  --mk-cutout-opacity: var(--wm-edge-progress, 1);
+  /* The slide clips only the strip side, so a card shadow shows on the
+     document side and under the card. */
+  --mk-slide-clip: inset(-48px -48px -48px 0);
+}
+/* NAV text, quieter than MAIN. These set the `--cru-*` names (the bodies
+   read them) and the Tailwind `--color-*` names. */
+[data-testid='edge-host-left'],
+.wm-ribbon {
+  --cru-color-ink: var(--mk-nav-ink); --cru-color-body: var(--mk-nav-body);
+  --color-shell-ink: var(--mk-nav-ink); --color-shell-body: var(--mk-nav-body);
+}
+/* The left icon strip takes a third shade, so the icons read apart from
+   the list beside them. The shade mixes in with the slide
+   (`--wm-edge-progress`: 0 shut, 1 open), so a closed rail is only its icons
+   on the plain ground. The cutout is NAV, the tone that the strip mixes
+   toward, so it does not fade: the whole rail then moves evenly to NAV. */
+[data-testid='edge-host-left'] {
+  --mk-strip: color-mix(in oklab, var(--mk-nav-solid), var(--mk-main-base) calc(45% * var(--wm-edge-progress, 1)));
+  --mk-line: var(--mk-main-solid);
+  --mk-cutout-opacity: 1;
+}
+[data-testid='edge-host-right'] { --mk-dir: rtl; --mk-start: right; --mk-end: left; --mk-slide-clip: inset(-48px 0 -48px -48px); }
+/* The right rail uses MAIN cards. Each card starts
+   level with the document tabs. */
+[data-testid='edge-host-right'] {
+  --mk-pane-bg: var(--mk-main-solid); --mk-pane-r: var(--mk-radius); --mk-pane-top: 0px;
+  --mk-card-top: calc(var(--mk-gap) + var(--mk-tab-top)); --mk-card-bottom: var(--mk-gap);
+}
+
+/* Bodies and chrome share the navigation ground. */
+body { background: var(--mk-nav); }
+.wm-root, .wm-edge-host, [data-testid='centre-column'] { background: transparent; }
+/* Cards. The card paints no tone: the content paints MAIN, and a strip
+   stays NAV. */
+:is([data-testid='centre-column'], .wm-edge-host [data-edge-panel-body]) > div { --color-shell-bg: transparent; }
+[data-testid='centre-column'] > div { margin: var(--mk-gap); }
+/* Keep tab feet and slide content visible across the pane gutter. */
+[data-testid='centre-column'] > div, [data-testid='centre-column'] > div > div, [data-testid='centre-column'] .wm-pane,
+:is([data-testid='centre-column'], [data-edge-panel-body]) :is(div:has(+ .wm-splitter), .wm-splitter + div),
+.wm-edge-host :is(.wm-edge-body, div:has(> div > .wm-edge-body)),
+.wm-floating div:has(> .wm-floating-body) { overflow: visible; }
+.wm-edge-host div:has(> div > .wm-edge-body) { clip-path: var(--mk-slide-clip); }
+/* Clip rail chrome at the neighboring card. */
+.wm-edge-host { overflow: clip; overflow-clip-margin: var(--mk-gap); }
+/* Side-by-side panes clip horizontally. */
+[data-testid='centre-column'] :is(div:has(+ .wm-splitter.w-px), .wm-splitter.w-px + div) { overflow-x: clip; }
+/* A rail box takes only vertical margins, because the slide measures
+   widths. It meets the ribbon, so only its document-side corners round. */
+.wm-edge-host [data-edge-panel-body] > div {
+  direction: var(--mk-dir);
+  margin-block: var(--mk-card-top) var(--mk-card-bottom);
+  border-start-end-radius: var(--mk-pane-r); border-end-end-radius: var(--mk-pane-r);
+}
+/* A rail that covers the centre keeps the gap on its document side. The
+   content of a pane runs left to right in both rails. */
+.wm-edge-host[data-edge-expanded] [data-edge-panel-body] > div { margin-inline-end: var(--mk-gap); }
+.wm-edge-host .wm-pane > * { direction: ltr; }
+
+/* Buttons show the icon only: no fill and no corner. The pointer and the
+   pressed state change the icon colour. */
+:is(.wm-ribbon-btn, .wm-ribbon-tab, .wm-tabbar-btn, .wm-window-controls button) { position: relative; isolation: isolate; background: transparent; border-radius: 0; color: var(--cru-color-muted-dark); }
+:is(.wm-ribbon-btn, .wm-ribbon-tab, .wm-tabbar-btn, .wm-window-controls button):hover,
+.wm-ribbon-tab[data-highlighted] { color: var(--cru-color-ink); }
+/* The open tab's icon brightens with the slide, and dims with it on close.
+   A switch between tabs of an open rail eases too. */
+.wm-ribbon-tab { transition: color 150ms ease-out; }
+.wm-ribbon-tab[data-highlighted]:not(:hover) {
+  color: color-mix(in oklab, var(--cru-color-muted-dark), var(--cru-color-ink) calc(var(--wm-edge-progress, 1) * 100%));
+}
+
+/* Centre splits retain a line; rail resize marks appear on hover and drag. */
+.wm-splitter:not(:hover):not([data-dragging]) { background: var(--mk-line); }
+.wm-pane-boundary { height: 1px; top: 0; }
+/* The centre owns the gutter; center both the resize mark and its hit target. */
+[data-testid='edge-host-left'] .wm-edge-handle { transform: translateX(calc(var(--mk-gap) / 2)); }
+[data-testid='edge-host-right'] .wm-edge-handle { transform: translateX(calc(var(--mk-gap) / -2)); }
+.wm-pane-boundary:not(:hover):not([data-dragging]),
+.wm-edge-handle:not(:hover):not([data-dragging]) { background: transparent; }
+.note-toolbar { display: flex; align-items: center; gap: 6px; padding-inline: var(--mk-pad) calc(var(--mk-pad) - var(--mk-icon-inset)); font-size: 12px; color: var(--cru-color-muted); border-bottom: 1px solid var(--cru-color-hairline); min-width: 0; }
+.icon-toggle-group { display: inline-flex; }
+:is(.icon-toggle-group, .wm-window-controls) button { height: 22px; padding: 0 6px; color: var(--cru-color-muted-dark); display: inline-flex; align-items: center; cursor: pointer; }
+.icon-toggle-group button:hover, .icon-toggle-group button[aria-pressed='true'] { color: var(--cru-color-ink); }
+
+:is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .note-toolbar) { border-color: transparent; }
+
+
+/* ONE tab system, vertical (the ribbons) and horizontal (the tab bars). An
+   inactive tab has no fill. The open tab is a cutout of EXACTLY the pane
+   tone, joined to the pane with no gap and no line, with a foot at each
+   side. Opaque, because a translucent tone over two layers gives two
+   colours. The pane views paint no tone of their own. */
+.wm-edge-host .wm-pane { background: var(--mk-pane-bg); border-radius: var(--mk-pane-r); }
+/* In the centre, the content under the strip is the MAIN region. The
+   corners that meet a split line stay square. */
+[data-testid='centre-column'] .wm-pane { background: transparent; }
+[data-testid='centre-column'] .wm-pane > .wm-tabbar + * { background: var(--mk-pane-bg); border-radius: var(--mk-radius); overflow: hidden; }
+[data-testid='centre-column'] div:has(+ .wm-splitter.w-px) .wm-pane > .wm-tabbar + * { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+[data-testid='centre-column'] .wm-splitter.w-px + div .wm-pane > .wm-tabbar + * { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+[data-testid='centre-column'] div:has(+ .wm-splitter.h-px) .wm-pane > .wm-tabbar + * { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+/* Vertical tabs. The cutout runs from the strip over the ribbon's 1px
+   border into the pane. The feet sit above and below it, on the pane side. */
+.wm-ribbon { --color-shell-bg: transparent; background: var(--mk-strip); border-color: transparent; }
+.wm-ribbon-tab { direction: var(--mk-dir); }
+.wm-ribbon-tab[data-highlighted]::before,
+.wm-ribbon-tab[data-highlighted]::after {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  opacity: var(--mk-cutout-opacity);
+}
+.wm-ribbon-tab[data-highlighted]::before { inset-block: 3px; inset-inline: 5px -2px; border-start-start-radius: 8px; border-end-start-radius: 8px; background: var(--mk-pane-bg); }
+.wm-ribbon-tab[data-highlighted]::after {
+  inset-block: calc(3px - var(--mk-foot));
+  inset-inline-end: -2px;
+  width: var(--mk-foot);
+  background:
+    radial-gradient(circle at var(--mk-start) top, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) top / var(--mk-foot) var(--mk-foot) no-repeat,
+    radial-gradient(circle at var(--mk-start) bottom, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) bottom / var(--mk-foot) var(--mk-foot) no-repeat;
+}
+
+/* A lower pane shows its icons at its own top edge, from the geometry that
+   the ribbon publishes. The clamp keeps them clear of the upper icons and
+   of the pinned tail. A folded lower pane keeps its icon at the far end. */
+.wm-edge-host:not(:has(.wm-pane[data-pane-collapsed])) {
+  .wm-ribbon-trailing { position: absolute; inset-inline: 0; top: clamp(var(--wm-ribbon-ceiling), var(--wm-trailing-pane-top), calc(var(--wm-ribbon-floor) - var(--wm-ribbon-trailing-height))); }
+  .wm-ribbon-tail { margin-top: auto; }
+}
+/* Its tab joins the pane at the pane top: the cutout starts flush, with no
+   top foot, and the pane corner under it is square. */
+.wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::before { top: 0; }
+.wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::after { background-size: 0 0, var(--mk-foot) var(--mk-foot); }
+.wm-edge-host .wm-splitter + div .wm-pane { border-start-start-radius: 0; }
+
+/* The split between two rail panes is a gap in the strip colour. A foot on
+   the strip side lets the gap flow out of the strip. On the document side,
+   the gap ends in a round cap. */
+.wm-edge-host .wm-splitter { height: var(--mk-gap); border-start-end-radius: calc(var(--mk-gap) / 2); border-end-end-radius: calc(var(--mk-gap) / 2); }
+.wm-edge-host .wm-splitter:not([data-dragging]) { background: var(--mk-strip); }
+.wm-edge-host .wm-splitter::before {
+  content: ''; position: absolute; inset-inline-start: 0; bottom: 100%; width: var(--mk-radius); height: var(--mk-radius); pointer-events: none;
+  background: radial-gradient(circle at var(--mk-end) top, transparent calc(var(--mk-radius) - 0.5px), var(--mk-strip) var(--mk-radius));
+}
+
+/* Rail tabs are vertical: a rail pane shows no tab bar and no pane marker,
+   because the ribbon icons are its tabs. A folded pane takes no room, and
+   its ribbon icon is the only thing that opens it. */
+.wm-edge-host .wm-tabbar, .wm-pane-marker { display: none; }
+.wm-edge-host .wm-pane { padding-top: var(--mk-pane-top); }
+[data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]),
+[data-edge-panel-body] .wm-splitter:has(+ div > .wm-pane[data-pane-collapsed]),
+[data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]) + .wm-splitter { display: none; }
+
+/* Horizontal tabs: the title is the grab handle, so the icon never turns
+   into the grip. A Markdown note shows no icon, because its title names it. */
+.wm-tab-grip { display: none; }
+.wm-tab:hover .wm-tab-icon { opacity: 1; }
+.wm-tab .wm-tab-title { cursor: grab; }
+.wm-tab[data-dragging] .wm-tab-title { cursor: grabbing; }
+
+/* Leaf tabs (the default), as in Obsidian: the horizontal form of the tab
+   system. The tab bar is the strip. It has no bottom border, because a
+   transparent border still shows the strip as a 1px row. */
+:root {
+  .wm-tabbar { background: var(--mk-strip); border-bottom-width: 0; }
+  .wm-tabstrip { gap: 0; padding-inline: calc(var(--mk-pad) - var(--mk-tab-pad)); align-self: stretch; }
+  .wm-tab { margin: var(--mk-tab-top) 0 0; padding-block: 0; padding-left: 8px; height: 30px; align-self: flex-end; border-radius: 8px 8px 0 0; outline: none; background: transparent; color: var(--cru-color-muted); }
+  .wm-tab:not([data-active]):hover { color: var(--cru-color-ink); }
+  .wm-tab[data-active] { background: var(--mk-pane-bg); color: var(--cru-color-ink); }
+  .wm-tab[data-active]:not([data-focused]) { color: var(--cru-color-body); }
+  .wm-tab[data-active]::before,
+  .wm-tab[data-active]::after { content: ''; position: absolute; bottom: 0; width: var(--mk-foot); height: var(--mk-foot); pointer-events: none; }
+  .wm-tab[data-active]::before { left: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 0 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
+  .wm-tab[data-active]::after { right: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 100% 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
+  /* The tab row starts at the pane's left edge, so the first tab lines up
+     with the content under it. The tab keeps its padding and its rounded
+     top. Selected, it has no left foot, and the pane's top-left corner is
+     square, so the tab and the content share one edge. (Each tab sits in a
+     `display: contents` menu trigger, so the first tab is the tab of the
+     strip's first child.) */
+  .wm-tabstrip { padding-inline-start: 0; }
+  .wm-tabstrip > :first-child .wm-tab[data-active]::before { display: none; }
+  .wm-pane:has(> .wm-tabbar .wm-tabstrip > :first-child .wm-tab[data-active]) > .wm-tabbar + *,
+  .wm-floating:has(.wm-tabstrip > :first-child .wm-tab[data-active]) .wm-floating-body { border-top-left-radius: 0; }
+}
+
+/* A floating window looks as the centre does, lifted off the page: a thin
+   frame in the ground tone, its tabs on the frame, and the MAIN card inside.
+   The card's radius is the frame's radius less the frame, so the two curves
+   stay parallel. A window without a tab bar has the frame on top too. The
+   frame follows the navigation tone. */
+.wm-floating {
+  --color-shell-bg: transparent;
+  --mk-float-frame: 4px;
+  --mk-float-radius: 10px;
+  padding: 0 var(--mk-float-frame) var(--mk-float-frame);
+  border-radius: var(--mk-float-radius);
+  background: var(--mk-nav-solid);
+  box-shadow: none;
+}
+.wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-float-frame); }
+.wm-floating .wm-tabbar { background: transparent; }
+.wm-floating-body { padding: 0; border-radius: calc(var(--mk-float-radius) - var(--mk-float-frame)); background: var(--mk-main-solid); }

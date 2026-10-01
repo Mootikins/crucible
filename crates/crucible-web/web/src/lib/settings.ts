@@ -59,6 +59,14 @@ interface EditorSettings {
 
 /** Appearance / typography settings */
 interface AppearanceSettings {
+  trueBlack: boolean;
+  contrast: number;
+  navTint: number;
+  accent: string;
+  gap: number;
+  radius: number;
+  noteTextSize: number;
+  fileLabels: boolean;
   /** CSS font-family for UI + prose text. Empty = built-in default (Geist). */
   fontSans: string;
   /** CSS font-family for code / monospace. Empty = built-in default (Geist Mono). */
@@ -120,6 +128,14 @@ export const defaultSettings: AppSettings = {
   },
   // Empty = use the built-in @theme defaults (Geist) from index.css.
   appearance: {
+    trueBlack: false,
+    contrast: 8,
+    navTint: 0,
+    accent: '',
+    gap: 8,
+    radius: 12,
+    noteTextSize: 15,
+    fileLabels: true,
     fontSans: '',
     fontMono: '',
   },

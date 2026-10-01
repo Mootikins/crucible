@@ -1,6 +1,6 @@
 import { Component, Show, createSignal, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
-import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
+import { createDraggable, createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions, policy } from '@/windowing/store';
 import { collectPanes, findPaneInLayout, primaryEdgeGroupId } from '@/windowing/model/tree';
 import type { EdgePanelPosition, Tab } from '@/windowing/model/types';
@@ -9,7 +9,7 @@ import { useWindowing } from '@/windowing/components/context';
 import { chordLabel } from '@/windowing/shortcuts';
 import { RibbonPaneStrip } from './RibbonPaneStrip';
 import { RibbonCommand, ribbonBtn } from './RibbonButton';
-import { TabContextMenu } from './TabBar';
+import { TabContextMenu, useTabBarDnD } from './TabBar';
 import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
 import { railShown } from './rail-shown';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
@@ -36,7 +36,7 @@ const RibbonTabButton: Component<{
 }> = (props) => {
   const draggable = createDraggable(
     `edgetab-collapsed:${props.position}:${props.tab.id}`,
-    { type: 'tab', tab: props.tab, sourceGroupId: props.groupId },
+    { type: 'tab', tab: props.tab, sourceGroupId: props.groupId, ribbonSide: props.position },
   );
 
   // A tab that the policy marks unavailable is greyed out instead of opening
@@ -55,6 +55,7 @@ const RibbonTabButton: Component<{
     if (isEdgeCollapsed(panel)) {
       windowActions.setActiveTab(props.groupId, props.tab.id);
       windowActions.setEdgePanelCollapsed(props.position, false);
+      windowActions.setPaneCollapsed(props.paneId, false);
     } else if (paneCollapsed()) {
       // The rail is open and this tab's PANE is the thing tucked away, so
       // open the pane. Collapsing the whole rail here would hide the tabs the
@@ -81,11 +82,13 @@ const RibbonTabButton: Component<{
   const closable = () => windowActions.canCloseTab(props.groupId, props.tab.id);
   return (
     <TabContextMenu groupId={() => props.groupId} paneId={() => props.paneId} tab={props.tab}>
-    <div class="wm-ribbon-tab-slot relative flex-none">
+    <div class="wm-ribbon-tab-slot relative flex-none" data-testid={`rail-tab-${props.tab.id}`}>
     <button
       use:draggable
       type="button"
       data-testid={`collapsed-tab-button-${props.position}`}
+      data-ribbon-tab-id={props.tab.id}
+      data-group-id={props.groupId}
       data-content-type={props.tab.contentType}
       data-orientation={props.isVertical ? 'vertical' : 'horizontal'}
       data-highlighted={highlighted() ? '' : undefined}
@@ -145,6 +148,16 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
   // a viewport coordinate into an offset.
   let ribbonRef: HTMLElement | undefined;
   const panel = () => windowStore.edgePanels[props.position];
+  const dnd = useDragDropContext();
+  const { insertOffset } = useTabBarDnD({
+    groupId: () => {
+      const source = dnd?.[0].active.draggable?.data;
+      return source?.type === 'tab' && collectPanes(panel().layout).some(p => p.tabGroupId === source.sourceGroupId)
+        ? source.sourceGroupId as string : '';
+    },
+    tabsContainerRef: () => ribbonRef,
+    axis: 'y',
+  });
   const insideRail = () => windowStore.ribbonPlacement === 'panel';
 
   // The panel is a layout tree — the ribbon shows every tab across all leaf
@@ -373,6 +386,9 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
           </Key>
         </div>
       </Show>
+      <Show when={insertOffset() !== null}>
+        <div class="wm-ribbon-insert" data-testid="rail-drop-indicator" style={{ top: `${insertOffset()}px` }} />
+      </Show>
       {/* The tail: swapping sides on the left rail, then the app's tail slot.
           The window manager, not the slot, claims the floor for this run when
           no trailing tab cluster above claims it, because only the window
@@ -384,8 +400,9 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
         classList={{ 'relative z-20 mt-auto': trailingEntries().length === 0 }}
         data-ribbon-floor={trailingEntries().length === 0 ? '' : undefined}
       >
-        <Show when={props.position === 'left'}>
-          {/* Swapping sides acts on the whole window, so it sits at the bottom
+        <Show when={props.position === 'left' && !windowing.slots.railTail}>
+          {/* The default tail is replaced by an application tail slot.
+              Swapping sides acts on the whole window, so it sits at the bottom
               of the rail with the other window-wide toggles. */}
           <RibbonCommand
             title={swapTitle()}

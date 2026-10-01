@@ -100,3 +100,17 @@ describe('createEdgeSwipe', () => {
     expect(swipe.dragPx()).toBe(0);
   });
 });
+
+it.each(['left', 'right'] as const)('pulls the %s drawer from the center, without engaging the opposite drawer', side => {
+  const { swipe, onSettle } = setup(side);
+  const opposite = setup(side === 'left' ? 'right' : 'left');
+  const start = { ...at(195, 0), inContent: true };
+  const end = { ...at(side === 'left' ? 355 : 35, 300), inContent: true };
+  for (const s of [swipe, opposite.swipe]) { s.down(start); s.move(end); }
+  expect(swipe.dragPx()).toBe(160);
+  expect(opposite.swipe.dragPx()).toBeNull();
+  swipe.up({ ...end, t: 600 });
+  opposite.swipe.up({ ...end, t: 600 });
+  expect(onSettle).toHaveBeenCalledWith(true);
+  expect(opposite.onSettle).not.toHaveBeenCalled();
+});

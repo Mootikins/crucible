@@ -127,7 +127,7 @@ test.describe('live C2 entities', () => {
       title: 'Sessions again',
       contentType: 'sessions',
     });
-    await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-sessions-second')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
 
     // The unarchived roster is untouched. This is the cache claim: a second
@@ -204,6 +204,8 @@ test.describe('live C2 entities', () => {
     await appReady(page);
     await openSessionsList(page);
 
+    // Both centre composers need room to show their scope controls.
+    await page.evaluate(() => (window as any).__windowActions.setEdgeMode('right', 'strip'));
     const groups = await centerGroupIds(page);
     await mountChat(page, groups[0], id, `tab-chat-${id}`);
     await openInNewPane(page, chatTab(id, `tab-chat-${id}-second`));
@@ -437,7 +439,7 @@ test.describe('live C2 entities', () => {
       title: 'Sessions again',
       contentType: 'sessions',
     });
-    await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-sessions-second')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
 
     // Opening a paused session from the rail resumes it, transparently, so
@@ -501,7 +503,7 @@ test.describe('live C2 entities', () => {
       title: 'Sessions again',
       contentType: 'sessions',
     });
-    await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('rail-tab-sessions-second')).toBeVisible({ timeout: 15_000 });
     await expect(row.first()).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 

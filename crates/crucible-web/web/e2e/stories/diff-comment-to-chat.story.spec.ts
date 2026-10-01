@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { createStory } from './_helpers/story';
 import { setupBasicMocks } from '../helpers/mock-api';
-import { appReady, openSession } from '../helpers/nav';
+import { appReady, openSession, openFilesPanel } from '../helpers/nav';
 import { MOCK_PROJECT, MOCK_SESSION } from '../helpers/fixtures';
 
 /**
@@ -50,65 +50,12 @@ async function selectLines(page: Page, first: number, last: number): Promise<voi
   await page.mouse.up();
 }
 
-/** Open the Files tab of the right edge panel. */
-async function openFilesPanel(page: Page): Promise<void> {
-  // The store, not the pointer: the pointer path races the JS tween of the
-  // panel (see root-dropdown-pick).
-  await page.evaluate(() => {
-    const store = (window as unknown as Record<string, any>).__windowStore;
-    const actions = (window as unknown as Record<string, any>).__windowActions;
-    if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
-    const firstGroup = (node: any): string | null => {
-      if (!node || typeof node !== 'object') return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return firstGroup(node.first) ?? firstGroup(node.second);
-    };
-    const groupId = firstGroup(store.edgePanels.right.layout);
-    if (!groupId) throw new Error('right edge panel has no tab group');
-    actions.setActiveTab(groupId, 'files-tab');
-  });
-  await expect(page.getByTestId('root-dropdown')).toBeVisible();
-}
 
 /** Open the branch diff of the browsed root from the Files panel header. */
 async function openBranchDiff(page: Page): Promise<void> {
   const open = page.getByTestId('open-branch-diff');
   await expect(open).toBeVisible();
   await open.click();
-  await expect(page.getByTestId(FILE)).toBeVisible();
-}
-
-/**
- * Put the diff tab in its own pane, to the right of the chat, so the story
- * shows the comment and the composer together.
- *
- * `splitPaneAndDrop` is the action that a drag of the tab onto the right half
- * of the pane calls. The drag itself belongs to the windowing specs; this
- * story needs the layout, not the pointer path.
- */
-async function moveDiffBesideTheChat(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const store = (window as unknown as Record<string, any>).__windowStore;
-    const actions = (window as unknown as Record<string, any>).__windowActions;
-    const panes: Array<{ id: string; tabGroupId: string | null }> = [];
-    const walk = (node: any): void => {
-      if (!node || typeof node !== 'object') return;
-      if (node.type === 'pane') return void panes.push(node);
-      walk(node.first);
-      walk(node.second);
-    };
-    walk(store.layout);
-    for (const pane of panes) {
-      const group = pane.tabGroupId ? store.tabGroups[pane.tabGroupId] : null;
-      const tab = group?.tabs.find((t: { id: string }) => t.id.startsWith('tab-diff-'));
-      if (group && tab) {
-        actions.splitPaneAndDrop(pane.id, 'right', group.id, tab.id);
-        return;
-      }
-    }
-    throw new Error('no centre pane holds a diff tab');
-  });
-  await expect(page.getByTestId('chat-input')).toBeVisible();
   await expect(page.getByTestId(FILE)).toBeVisible();
 }
 
@@ -136,8 +83,9 @@ test.describe('A comment of the diff pane goes to the chat of the pane', () => {
     await openBranchDiff(page);
     // The tree did its work. Close the rail, so the chat and the diff share
     // the width and the code does not wrap.
-    await page.getByTestId('ribbon-toggle-right').click();
-    await moveDiffBesideTheChat(page);
+    await page.getByTestId('ribbon-toggle-left').click();
+    await expect(page.getByTestId('chat-input')).toBeVisible();
+    await expect(page.getByTestId(FILE)).toBeVisible();
 
     // The pane names the chat that takes its comments: the open session.
     await expect(page.getByTestId('diff-chat-target')).toContainText('Test Session');

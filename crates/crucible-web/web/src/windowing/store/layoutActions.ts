@@ -70,6 +70,7 @@ export interface LayoutActions<C extends string = string> {
     paneId: string,
     collapsed: boolean
   ): void;
+  canCollapsePane(paneId: string): boolean;
   togglePaneCollapsed(paneId: string): void;
   getTabGroup(groupId: string): TabGroup<C> | undefined;
   getPaneTabGroupId(paneId: string): string | null;
@@ -337,16 +338,20 @@ export function createLayoutActions<C extends string>(
    * already does. That invariant holds per root, so it covers the centre
    * tiling for free.
    */
+  const canCollapsePane = (paneId: string) => {
+    const roots = [store.layout, store.edgePanels.left.layout, store.edgePanels.right.layout];
+    const root = roots.find((candidate) => findPaneInLayout(candidate, paneId));
+    return !!root && expandedPanes(root).some((pane) => pane.id !== paneId);
+  };
+
   const setPaneCollapsed = (paneId: string, collapsed: boolean) => {
+    if (collapsed && !canCollapsePane(paneId)) return;
     setStore(
       produce((s) => {
         updateRootWhere(
           s,
           (root) => !!findPaneInLayout(root, paneId),
           (root) => {
-            if (collapsed && expandedPanes(root).every((p) => p.id === paneId)) {
-              return root;
-            }
             // Mutated in place rather than rebuilt: only this leaf's flag
             // changes, so the panes around it keep their nodes and never
             // re-render.
@@ -515,6 +520,7 @@ export function createLayoutActions<C extends string>(
     setPaneReveal,
     setEdgePanelActiveTab,
     setEdgePanelSize,
+    canCollapsePane,
     setPaneCollapsed,
     togglePaneCollapsed,
     getTabGroup,

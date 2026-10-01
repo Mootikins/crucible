@@ -52,7 +52,7 @@ describe('tabHost', () => {
     // Placement describes a desktop layout the phone does not have.
     it('ignores placement, because there is nowhere else to put a tab', () => {
       const host = tabHost();
-      host.open(tab('a'), { placement: 'beside-editor' });
+      host.open(tab('a'), { placement: 'session-rail' });
       host.open(tab('b'), { placement: 'zone' });
       expect(host.list().map((t) => t.id)).toEqual(['a', 'b']);
       expect(tabStack.activeTabId).toBe('b');

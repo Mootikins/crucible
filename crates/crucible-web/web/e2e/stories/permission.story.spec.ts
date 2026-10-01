@@ -66,7 +66,7 @@ test.describe('WS-104 permission from the browser', () => {
     await story.step(page, 'permission modal with diff');
 
     const respondPromise = page.waitForRequest('**/api/interaction/respond');
-    await page.getByRole('button', { name: 'Allow' }).click();
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
     await respondPromise;
 
     const body = ctx.getRespond() as {
@@ -91,12 +91,28 @@ test.describe('WS-104 permission from the browser', () => {
     await page.getByRole('button', { name: /More options/ }).click();
     await page.getByRole('button', { name: 'Session', exact: true }).click();
     const respondPromise = page.waitForRequest('**/api/interaction/respond');
-    await page.getByRole('button', { name: 'Allow' }).click();
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
     await respondPromise;
 
     const body = ctx.getRespond() as { response: { scope: string } };
     expect(body.response.scope).toBe('session');
   });
+
+  test('allow for session shortcut submits the same daemon grant', async ({ page }) => {
+    const ctx = await openSessionWith(page, [permFrame('perm-shortcut', '# Draft\n\nX\n')]);
+    await page.getByRole('button', { name: 'Allow for session', exact: true }).click();
+    await expect.poll(() => ctx.getRespond()).toMatchObject({ response: { allowed: true, scope: 'session', pattern: FILE } });
+  });
+
+  for (const scope of ['project', 'user']) {
+    test(`wider ${scope} scope submits the daemon grant`, async ({ page }) => {
+      const ctx = await openSessionWith(page, [permFrame(`perm-${scope}`, '# Draft\n\nX\n')]);
+      await page.getByRole('button', { name: /More options/ }).click();
+      await page.getByRole('button', { name: scope[0].toUpperCase() + scope.slice(1), exact: true }).click();
+      await page.getByRole('button', { name: 'Allow', exact: true }).click();
+      await expect.poll(() => ctx.getRespond()).toMatchObject({ response: { allowed: true, scope, pattern: FILE } });
+    });
+  }
 
   test('deny posts allowed:false and clears the modal', async ({ page }, testInfo) => {
     const story = createStory(testInfo);
@@ -163,7 +179,7 @@ test.describe('WS-104 permission from the browser', () => {
     // First request shows.
     await expect(page.getByText('first')).toBeVisible({ timeout: 5000 });
     await story.step(page, 'first queued permission');
-    await page.getByRole('button', { name: 'Allow' }).click();
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
 
     // After responding, the second arrives on reconnect.
     await expect(page.getByText('second')).toBeVisible({ timeout: 10000 });
@@ -195,4 +211,34 @@ test.describe('WS-104 permission from the browser', () => {
       mask: [page.getByTestId('chat-connection-banner')],
     });
   });
+});
+
+test('inbox opens the owning session and answers its permission in place', async ({ page }, testInfo) => {
+  const story = createStory(testInfo);
+  await setupBasicMocks(page, { sseEvents: [] });
+  let response: unknown;
+  let pending = true;
+  await page.route('**/api/interactions/pending', (route) => route.fulfill({ json: { pending: pending ? [{
+    session_id: 'test-session-001', request_id: 'inbox-request',
+    request: { kind: 'permission', id: 'inbox-request', action: { type: 'write', segments: [FILE] }, pattern: FILE },
+  }] : [] } }));
+  await page.route('**/api/interaction/respond', (route) => {
+    response = route.request().postDataJSON();
+    pending = false;
+    return route.fulfill({ status: 200, body: '' });
+  });
+  await page.goto('/');
+  await page.getByTestId('layout-menu').click();
+  await page.getByTestId('layout-readd').hover();
+  await page.getByTestId('layout-readd-inbox').click();
+  await page.getByRole('button', { name: 'open session →', exact: true }).click();
+  await expect(page.getByTestId('chat-input')).toBeEnabled();
+  const inbox = page.locator('[data-tab-id]').filter({ hasText: /^Inbox$/ });
+  await inbox.click();
+  const respond = page.waitForRequest('**/api/interaction/respond');
+  await page.getByTestId('centre-column').getByRole('button', { name: 'Allow for session', exact: true }).click();
+  await respond;
+  expect(response).toMatchObject({ session_id: 'test-session-001', request_id: 'inbox-request', response: { allowed: true, scope: 'session' } });
+  await expect(page.getByText(/all clear — nothing waiting/)).toBeVisible();
+  await story.step(page, 'inbox permission answered and shared pending entry cleared');
 });

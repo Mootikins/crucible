@@ -46,7 +46,7 @@ test.describe('Session and file tab integration', () => {
 
     // Click session in sidebar → opens chat tab
     await page.getByTestId('session-item-test-session-001').click();
-    const chatTab = page.locator('[data-tab-id^="tab-chat-"]');
+    const chatTab = page.locator('[data-testid^="rail-tab-tab-chat-"]');
     await expect(chatTab).toBeVisible({ timeout: 5000 });
 
     // Open a file → opens file tab

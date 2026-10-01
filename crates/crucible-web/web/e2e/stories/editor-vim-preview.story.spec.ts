@@ -52,7 +52,7 @@ test.describe('Editor markdown preview', () => {
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
     await story.step(page, 'source view');
 
-    await page.getByTestId('preview-toggle').click();
+    await page.getByRole('button', { name: 'Reading view', exact: true }).click();
     const preview = page.getByTestId('markdown-preview');
     await expect(preview).toBeVisible();
     // Rendered, not source: a real <h1>, list items, and a data-note anchor.
@@ -65,7 +65,7 @@ test.describe('Editor markdown preview', () => {
     await expect(preview).toHaveScreenshot('editor-markdown-preview.png');
 
     // Back to the source editor.
-    await page.getByTestId('preview-toggle').click();
+    await page.getByRole('button', { name: 'Live preview', exact: true }).click();
     await expect(page.locator('.cm-editor')).toBeVisible();
     await expect(page.locator('.cm-content')).toContainText('# Preview Heading');
     await story.step(page, 'back to source');

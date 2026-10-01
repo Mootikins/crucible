@@ -35,6 +35,8 @@ import {
   failOptimisticTurn,
   patchTranscript,
   queueTurn,
+  removeQueuedTurn,
+  prioritizeQueuedTurn,
   releaseTranscript,
   renderTranscript,
   retainTranscript,
@@ -443,6 +445,21 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   };
 
+  const removeQueuedMessage = (id: string) => removeQueuedTurn(props.sessionId, id);
+  const sendQueuedMessageNow = async (id: string) => {
+    const wasBusy = busy();
+    if (!prioritizeQueuedTurn(props.sessionId, id) || !wasBusy) return;
+    try {
+      // Only the daemon's idle event releases the selected prompt. Cancelling
+      // does not grant permission to interleave it into the current turn.
+      await cancel.mutateAsync(props.sessionId);
+    } catch (err) {
+      patchTranscript(props.sessionId, {
+        error: err instanceof Error ? err.message : 'Failed to interrupt the current turn',
+      });
+    }
+  };
+
   /**
    * Skip the backoff wait.
    *
@@ -474,6 +491,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setChatMode: (mode: ChatMode) => patchTranscript(props.sessionId, { chatMode: mode }),
     switchMode,
     sendMessage,
+    removeQueuedMessage,
+    sendQueuedMessageNow,
     respondToInteraction,
     cancelStream,
     addSystemMessage,
@@ -508,6 +527,8 @@ const fallbackChatContext: ChatContextValue = {
   setChatMode: () => {},
   switchMode: () => {},
   sendMessage: noopAsync,
+  removeQueuedMessage: () => {},
+  sendQueuedMessageNow: noopAsync,
   respondToInteraction: noopAsync,
   cancelStream: noopAsync,
   addSystemMessage: () => {},

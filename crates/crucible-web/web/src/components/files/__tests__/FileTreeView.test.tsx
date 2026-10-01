@@ -332,9 +332,9 @@ describe('FileTreeContextMenu action model (itemsForNode)', () => {
     expect(actions).not.toContain('new-folder');
   });
 
-  it('gates new-note to kiln folders (projects have no write API for notes)', () => {
+  it('offers note creation for both root kinds, leaving write policy to the daemon)', () => {
     expect(itemsForNode(dirNode, 'kiln').map((i) => i.action)).toContain('new-note');
-    expect(itemsForNode(dirNode, 'project').map((i) => i.action)).not.toContain('new-note');
+    expect(itemsForNode(dirNode, 'project').map((i) => i.action)).toContain('new-note');
     // ...but folders/rename/delete work on both root kinds (fs.mkdir/fs.trash)
     for (const kind of ['kiln', 'project'] as const) {
       const actions = itemsForNode(dirNode, kind).map((i) => i.action);
@@ -355,5 +355,20 @@ describe('FileTreeContextMenu action model (itemsForNode)', () => {
 
   it('does not offer Open on a directory (files only)', () => {
     expect(itemsForNode(dirNode, 'project').map((i) => i.action)).not.toContain('open');
+  });
+});
+
+
+describe('FileTreeView — document opening gestures', () => {
+  it.each([
+    [{ ctrlKey: true }, 'tab'],
+    [{ metaKey: true }, 'tab'],
+    [{ shiftKey: true }, 'split'],
+  ] as const)('routes %o to %s once without selecting the file twice', async (modifiers, where) => {
+    const view = renderTree();
+    const row = rowNamed(view.container, 'README.md');
+    fireEvent.click(row, modifiers);
+    await waitFor(() => expect(view.onOpenLeaf).toHaveBeenCalledTimes(1));
+    expect(view.onOpenLeaf).toHaveBeenCalledWith(expect.objectContaining({ name: 'README.md' }), { where });
   });
 });

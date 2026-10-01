@@ -197,12 +197,9 @@ test('a drag over the text while a box is open only selects text', async ({ page
 test('Cancel after a drag over the line numbers selects no text', async ({ page }) => {
   const file = await openDiff(page);
   const number = file.locator('[data-testid="diff-line-31"]');
-  await number.scrollIntoViewIfNeeded();
-  const at = await number.boundingBox();
-  if (!at) throw new Error('no line number 31');
-  await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
-  await page.mouse.down();
-  await page.mouse.up();
+  // CodeMirror remeasures its gutters after scrolling and font loading. A
+  // locator click waits for the number to settle before pressing/releasing.
+  await number.click();
   await expect(file.getByTestId('diff-comment-input')).toBeFocused();
   await page.keyboard.press('Escape');
 

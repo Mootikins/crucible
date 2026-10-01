@@ -78,7 +78,7 @@ export const SettingRow: Component<{
   controlClass?: string;
   children: JSX.Element;
 }> = (props) => (
-  <tr class="border-b border-hairline">
+  <tr>
     <td class="py-3 text-shell-body text-sm">
       <div>{props.label}</div>
       <Show when={props.description}>
@@ -156,3 +156,41 @@ export const SettingsSectionState: Component<{
   </>
 );
 
+
+/** Setting controls share labels and live updates across desktop and phone rows. */
+export const BooleanSetting: Component<{
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = (props) => (
+  <SettingRow label={props.label} description={props.description}>
+    <input
+      aria-label={props.label}
+      type="checkbox"
+      checked={props.checked}
+      onChange={(event) => props.onChange(event.currentTarget.checked)}
+    />
+  </SettingRow>
+);
+
+export const RangeSetting: Component<{
+  label: string;
+  description?: string;
+  value: number;
+  min: number;
+  max: number;
+  onInput: (value: number) => void;
+}> = (props) => (
+  <SettingRow label={props.label} description={props.description}>
+    <input
+      type="range"
+      aria-label={props.label}
+      min={props.min}
+      max={props.max}
+      value={props.value}
+      onInput={(event) => props.onInput(Number(event.currentTarget.value))}
+    />
+    <output class="ml-2 tabular-nums">{props.value}</output>
+  </SettingRow>
+);

@@ -1,0 +1,88 @@
+/* Compact layout, shared desktop palette. Keep colour and appearance choices
+   here so both shells follow the same gap, radius, contrast, tint and accent. */
+.compact-shell {
+  --shell-action-size: 44px;
+  background: var(--mk-nav-solid);
+}
+.compact-appbar { background: var(--mk-nav-solid); }
+.compact-appbar > button { border-radius: var(--cru-radius-control); }
+.compact-appbar > button[aria-expanded='true'] { background: var(--mk-main-solid); color: var(--cru-color-ink); }
+.compact-surface {
+  margin: 0 min(var(--mk-gap), 8px) min(var(--mk-gap), 8px);
+  background: var(--mk-main-solid);
+  border-radius: var(--mk-radius);
+  overflow: hidden;
+  isolation: isolate;
+}
+.compact-editorbar { padding: 4px 8px; background: var(--mk-main-solid); }
+.compact-editorbar > button { min-width: 44px; }
+.compact-editorbar > button[aria-label='Save'] { margin-inline-start: auto; }
+.compact-drawer {
+  background: var(--mk-nav-solid);
+  border: 0;
+  box-shadow: none;
+  padding-inline: min(var(--mk-gap), 8px);
+}
+.compact-drawer[data-side='left'] { border-radius: 0 var(--mk-radius) var(--mk-radius) 0; }
+.compact-drawer[data-side='right'] { border-radius: var(--mk-radius) 0 0 var(--mk-radius); }
+.compact-tabstrip { padding-top: max(8px, var(--mk-gap)); gap: 4px; }
+.compact-tab { position: relative; border: 0; border-radius: var(--mk-radius) var(--mk-radius) 0 0; color: var(--cru-color-muted); }
+.compact-tab:hover { color: var(--cru-color-ink); }
+.compact-tab[aria-selected='true'] { background: var(--mk-main-solid); color: var(--cru-color-ink); }
+/* Leaf tabs merge into the panel with a concave join; the exposed outer
+   corner stays rounded on the opposite side of the selected tab. */
+.compact-tab[aria-selected='true']::before,
+.compact-tab[aria-selected='true']::after {
+  content: ''; position: absolute; bottom: 0;
+  width: var(--mk-radius); height: var(--mk-radius); pointer-events: none;
+}
+.compact-tab[aria-selected='true']:not(:first-child)::before {
+  right: 100%;
+  background: radial-gradient(circle at left top, transparent calc(var(--mk-radius) - 0.5px), var(--mk-main-solid) var(--mk-radius));
+}
+.compact-tab[aria-selected='true']:not(:last-child)::after {
+  left: 100%;
+  background: radial-gradient(circle at right top, transparent calc(var(--mk-radius) - 0.5px), var(--mk-main-solid) var(--mk-radius));
+}
+.compact-drawer-content { background: var(--mk-main-solid); border-radius: 0 0 var(--mk-radius) var(--mk-radius); margin-bottom: max(8px, var(--mk-gap)); }
+.compact-tabstrip:has(.compact-tab:first-child[aria-selected='false']) ~ .compact-drawer-content {
+  border-top-left-radius: var(--mk-radius);
+}
+.compact-tabstrip:has(.compact-tab:last-child[aria-selected='false']) ~ .compact-drawer-content {
+  border-top-right-radius: var(--mk-radius);
+}
+.compact-sheet {
+  background: var(--mk-main-solid);
+  border: 0;
+  border-radius: var(--mk-radius) var(--mk-radius) 0 0;
+  box-shadow: none;
+  max-height: min(75dvh, calc(100dvh - var(--inset-top) - 16px));
+  padding-bottom: max(8px, var(--inset-bottom));
+  overscroll-behavior: contain;
+}
+.compact-tab-card { background: var(--mk-nav-solid); border-radius: var(--mk-radius); }
+.compact-tab-card[data-active='true'] { box-shadow: inset 3px 0 var(--cru-color-primary); }
+.compact-settings-body { background: var(--mk-nav-solid); }
+.compact-settings-group { background: var(--mk-main-solid); border-radius: var(--mk-radius); }
+.compact-shell .composer-surface textarea { font-size: 16px; }
+.compact-shell .composer-chips { column-gap: 8px; }
+.compact-shell .composer-chips button { min-width: 44px; }
+.compact-drawer .files-toolbar button { min-width: 44px; min-height: 44px; }
+.compact-drawer .files-toolbar { flex-wrap: wrap; padding: 4px; }
+.compact-drawer .files-toolbar > div:first-child { flex-basis: 100%; }
+
+.compact-surface .panel-shell, .compact-drawer-content .panel-shell { background: var(--mk-main-solid); }
+.compact-shell .composer-surface button { min-width: 44px; min-height: 44px; }
+.compact-shell .session-header { height: auto; min-height: 44px; }
+.compact-shell .session-header button { min-width: 44px; min-height: 44px; }
+/* Menus are portalled outside either shell. Match the shell's width boundary. */
+@media (max-width: 767px) {
+  [data-scope='menu'][data-part='item'],
+  [data-testid='chat-mode-popout'] [role='option'] { min-height: 44px; }
+}
+
+/* Tree selection and hover fills use the same corners as menu options. */
+.tree-row { border-radius: var(--cru-radius-control); }
+
+/* A quiet tonal step separates portaled menus without an outline or shadow. */
+.shell-popup { background: color-mix(in srgb, var(--mk-nav-solid) 92%, var(--cru-color-ink)); }

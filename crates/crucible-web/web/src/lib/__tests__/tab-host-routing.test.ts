@@ -68,3 +68,11 @@ describe('the shared openers on the compact shell', () => {
     expect(ids()).toEqual(['tab-file-/kiln/other.md']);
   });
 });
+
+
+it('a split gesture on compact opens a tab without changing desktop layout', () => {
+  const desktop = JSON.stringify(windowStore);
+  openFileInEditor('/kiln/split.md', undefined, { where: 'split' });
+  expect(ids()).toEqual(['tab-file-/kiln/split.md']);
+  expect(JSON.stringify(windowStore)).toBe(desktop);
+});

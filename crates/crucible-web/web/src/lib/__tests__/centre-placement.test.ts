@@ -24,21 +24,21 @@ beforeEach(() => {
 
 // The centre reads sessions | editor, with each next to its own rail.
 describe('centre placement follows the rails', () => {
-  it('opens a session in the pane next to the sessions rail (left by default)', () => {
+  it('opens a session in the conversation rail', () => {
     openSessionInChat('s1', 'One');
-    expect(groupOf('tab-chat-s1')).toBe(edgeCenterPane('left').groupId);
+    expect(collectLeafGroupIds(windowStore.edgePanels.right.layout)).toContain(groupOf('tab-chat-s1'));
   });
 
-  it('occupies the empty centre pane instead of splitting it', () => {
+  it('reserves the centre for documents', () => {
     // A fresh shell has ONE empty centre pane, and that pane already IS the
     // pane next to the sessions rail. A split there would draw an empty
     // editor pane beside the chat; the editor pane appears when a file opens.
     openSessionInChat('s1', 'One');
     expect(collectLeafGroupIds(windowStore.layout)).toHaveLength(1);
-    expect(groupOf('tab-chat-s1')).toBe(edgeCenterPane('left').groupId);
+    expect(collectLeafGroupIds(windowStore.edgePanels.right.layout)).toContain(groupOf('tab-chat-s1'));
 
     openFileInEditor('/k/Note.md');
-    expect(collectLeafGroupIds(windowStore.layout)).toHaveLength(2);
+    expect(collectLeafGroupIds(windowStore.layout)).toHaveLength(1);
   });
 
   it('opens a file in the pane next to the files rail, never on the chat', () => {
@@ -49,18 +49,18 @@ describe('centre placement follows the rails', () => {
     expect(fileGroup).not.toBe(groupOf('tab-chat-s1'));
   });
 
-  it('after a swap, a new session opens next to the sessions rail on the RIGHT', () => {
+  it('after a swap, the conversation rail moves to the left', () => {
     // An editor in the centre first, so the two edges are different panes.
     openFileInEditor('/k/Note.md');
     windowActions.swapSidePanels();
     openSessionInChat('s2', 'Two');
-    expect(groupOf('tab-chat-s2')).toBe(edgeCenterPane('right').groupId);
+    expect(collectLeafGroupIds(windowStore.edgePanels.left.layout)).toContain(groupOf('tab-chat-s2'));
     expect(groupOf('tab-chat-s2')).not.toBe(edgeCenterPane('left').groupId);
   });
 });
 
-describe('reopening a session brings it back beside the sessions rail', () => {
-  it('moves a session tab out of another centre pane', () => {
+describe('reopening a session preserves its user placement', () => {
+  it('activates a session moved to the editor pane', () => {
     openFileInEditor('/k/Note.md');
     openSessionInChat('s1', 'One');
     const home = groupOf('tab-chat-s1')!;
@@ -71,16 +71,14 @@ describe('reopening a session brings it back beside the sessions rail', () => {
 
     openSessionInChat('s1', 'One');
     const back = groupOf('tab-chat-s1')!;
-    expect(back).toBe(edgeCenterPane('left').groupId);
-    // Its own pane again: no file shares it, and the editor sits to its right.
-    expect(windowStore.tabGroups[back].tabs.some((t) => t.contentType === 'file')).toBe(false);
-    expect(edgeCenterPane('right').groupId).not.toBe(back);
+    expect(back).toBe(editorGroup);
+    expect(windowStore.tabGroups[back].activeTabId).toBe('tab-chat-s1');
     // Still exactly one tab for the session.
     const count = Object.values(windowStore.tabGroups).flatMap((g) => g.tabs).filter((t) => t.id === 'tab-chat-s1').length;
     expect(count).toBe(1);
   });
 
-  it('moves a session tab out of a rail', () => {
+  it('activates a session moved to the navigation rail', () => {
     openFileInEditor('/k/Note.md');
     openSessionInChat('s1', 'One');
     const home = groupOf('tab-chat-s1')!;
@@ -92,8 +90,8 @@ describe('reopening a session brings it back beside the sessions rail', () => {
 
     openSessionInChat('s1', 'One');
     const back = groupOf('tab-chat-s1')!;
-    expect(back).toBe(edgeCenterPane('left').groupId);
-    expect(back).not.toBe(rail);
+    expect(back).toBe(rail);
+    expect(windowStore.tabGroups[back].activeTabId).toBe('tab-chat-s1');
     expect(windowStore.tabGroups[back].tabs.some((t) => t.contentType === 'file')).toBe(false);
   });
 });

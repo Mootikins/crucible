@@ -9,13 +9,15 @@ export interface SwipePoint {
   t: number;
   /** Whether the pointer is over the drawer or its scrim. */
   inDrawer: boolean;
+  /** A touch on the main content surface, outside interactive controls. */
+  inContent?: boolean;
 }
 
 /** Movement below this, in px, has no direction yet. */
 const SLOP_PX = 8;
 
 /**
- * Track one drawer's swipe: open from the screen edge, or close from inside.
+ * Track one drawer's swipe: open from the screen edge or main content, or close from inside.
  *
  * The caller feeds pointer samples in and reads `dragPx` out — how far open the
  * drawer should draw while a finger holds it, or `null` when no finger does.
@@ -54,7 +56,7 @@ export function createEdgeSwipe(opts: {
     dragPx,
     down(p: SwipePoint) {
       reset();
-      if (!opts.isOpen() && startsInEdge({ x: p.x, viewportWidth: opts.viewportWidth(), side: opts.side })) {
+      if (!opts.isOpen() && !p.inDrawer && (p.inContent || startsInEdge({ x: p.x, viewportWidth: opts.viewportWidth(), side: opts.side }))) {
         mode = 'open';
       } else if (opts.isOpen() && p.inDrawer) {
         mode = 'close';
@@ -71,6 +73,11 @@ export function createEdgeSwipe(opts: {
         if (dx < SLOP_PX && dy < SLOP_PX) return;
         // A mostly vertical drag is a scroll. Let it go for the whole gesture.
         if (dy >= dx) {
+          reset();
+          return;
+        }
+        // Both drawers may observe a center start; only the pulled side owns it.
+        if (mode === 'open' && openingTravel(p) <= 0) {
           reset();
           return;
         }

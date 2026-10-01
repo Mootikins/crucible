@@ -13,11 +13,12 @@ const EMOJI = ['📝', '🔷', '🟨', '🦀', '📋', '⚙️', '🎨', '🌐',
 // (`createTestQueryEnv`), which is what makes the deduplication assertions
 // mean something: a second panel that fetched behind the cache's back would
 // still be counted here, and a module mock would hide it.
-const listNotesMock = vi.fn();
+const kilnFilesMock = vi.fn();
 // The roster this run's `GET /api/kilns` answers. The panel reads it through
 // `useKilns`, which runs the real `listKilns` against the mocked fetch.
 let kilnRoster: unknown[] = [];
 const listDirMock = vi.fn();
+const mkdirMock = vi.fn();
 // Mutable so one describe can browse a PROJECT root (lazy, listDir) while the
 // rest use the kiln fallback (eager, listNotes).
 let projectRoots: unknown[] = [];
@@ -38,13 +39,21 @@ let projectRoots: unknown[] = [];
 function fsRoutes() {
   return {
     'POST /api/rpc/kiln.list': () => kilnRoster,
-    'POST /api/rpc/list_notes': async (request: Request) => {
-      const body = (await request.clone().json()) as { kiln: string };
-      return listNotesMock(body.kiln);
-    },
+    'POST /api/rpc/fs.mkdir': async (request: Request) => { mkdirMock(await request.json()); return null; },
     'POST /api/rpc/fs.list_dir': async (request: Request) => {
       const body = (await request.clone().json()) as { root: string; rel_path?: string };
-      return listDirMock(body.root, body.rel_path ?? '');
+      if (body.root !== '/project/kiln') return listDirMock(body.root, body.rel_path ?? '');
+      const files: Array<{ name: string; path: string; is_dir?: boolean }> = await kilnFilesMock(body.root);
+      const prefix = body.rel_path ? body.rel_path + '/' : '';
+      const entries = new Map();
+      for (const file of files) {
+        if (!file.path.startsWith(prefix)) continue;
+        const rest = file.path.slice(prefix.length);
+        const name = rest.split('/')[0];
+        if (!name) continue;
+        entries.set(name, { name, rel_path: prefix + name, is_dir: rest.includes('/') || !!file.is_dir, modified: null, size: 0, status: null });
+      }
+      return { entries: [...entries.values()], truncated: false };
     },
   };
 }
@@ -133,7 +142,7 @@ beforeEach(() => {
   // stream on mount. The fake one stands in for the daemon's.
   installFakeEventSource();
   env = createTestQueryEnv(fsRoutes());
-  listNotesMock.mockResolvedValue(
+  kilnFilesMock.mockResolvedValue(
     NOTE_NAMES.map((name) => ({
       name,
       path: name,
@@ -307,6 +316,24 @@ describe('FilesPanel — a project root loads once', () => {
     // persisted-expanded folder, once per pass.
     expect(listDirMock.mock.calls.map((c) => c[1])).toEqual(['', 'src']);
   });
+
+  it('refreshes an expanded child once across two panes without re-reading the root', async () => {
+    installFsEventRoute();
+    const view = render(() => <><FilesPanel /><FilesPanel /></>);
+    await waitFor(async () => expect(await view.findAllByText('main.rs')).toHaveLength(2));
+    listDirMock.mockClear();
+    listDirMock.mockResolvedValue({ entries: [file('src/fresh.rs')], truncated: false });
+
+    vi.useFakeTimers();
+    onlyEventSource().emit('fs_changed', {
+      topic: 'system', type: 'changed', path: '/proj/src/fresh.rs', kind: 'created',
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    vi.useRealTimers();
+
+    await waitFor(async () => expect(await view.findAllByText('fresh.rs')).toHaveLength(2));
+    expect(listDirMock.mock.calls.map((c) => c[1])).toEqual(['src']);
+  });
 });
 
 describe('FilesPanel — the navigator does not follow the focused tab', () => {
@@ -318,7 +345,7 @@ describe('FilesPanel — the navigator does not follow the focused tab', () => {
   ];
 
   beforeEach(() => {
-    listNotesMock.mockResolvedValue(
+    kilnFilesMock.mockResolvedValue(
       NESTED.map(({ name, path }) => ({ name, path, title: null, tags: [], updated_at: '' })),
     );
   });
@@ -393,23 +420,30 @@ describe('FilesPanel — a root picked before any session', () => {
     await waitFor(() => expect(kilnRoster.length).toBe(1));
     await pickRoot(trigger, 'kiln');
     await findByText('readme.md');
-    expect(listNotesMock).toHaveBeenCalledTimes(1);
+    expect(kilnFilesMock).toHaveBeenCalledTimes(1);
+
+    render(() => <FilesPanel />);
+    await waitFor(() => expect(document.querySelectorAll('[role="tree"]')).toHaveLength(2));
 
     // The session list lands. `SessionContext` prunes the pins of sessions
     // that are gone; this browse belongs to none of them.
     treeRootActions.prune(['s-1']);
 
     // The daemon says a note was written into the browsed kiln.
+    vi.useFakeTimers();
     onlyEventSource().emit('fs_changed', {
       topic: 'system',
       type: 'changed',
       path: '/project/kiln/fresh.md',
       kind: 'created',
     });
+    // Include each pane's batched reconciliation, not just the first cache read.
+    await vi.advanceTimersByTimeAsync(200);
+    vi.useRealTimers();
 
     // One refetch, into the entry the tree is reading.
-    await waitFor(() => expect(listNotesMock).toHaveBeenCalledTimes(2));
-    expect(listNotesMock).toHaveBeenLastCalledWith('/project/kiln');
+    await waitFor(() => expect(kilnFilesMock).toHaveBeenCalledTimes(2));
+    expect(kilnFilesMock).toHaveBeenLastCalledWith('/project/kiln');
   });
 });
 
@@ -457,4 +491,55 @@ describe('FilesPanel — the branch diff button', () => {
     const view = await browse(false);
     expect(view.queryByRole('button', { name: 'Open branch diff' })).toBeNull();
   });
+});
+
+
+describe('FilesPanel — toolbar integration', () => {
+  it('offers root-folder creation and refresh for a kiln', async () => {
+    const view = render(() => <FilesPanel />);
+    await view.findByText('readme.md');
+    expect(view.getByRole('button', { name: 'New folder' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'More file actions' }));
+    const refresh = await waitFor(() => { const el = document.querySelector<HTMLElement>('[data-value="refresh"][role="menuitem"]'); expect(el).toBeTruthy(); return el!; });
+    fireEvent.pointerDown(refresh); fireEvent.click(refresh);
+    await waitFor(() => expect(kilnFilesMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('reveals the active file only when explicitly requested from the toolbar', async () => {
+    kilnFilesMock.mockResolvedValue([{ name: 'buried.md', path: 'folder/buried.md', tags: [], updated_at: '' }]);
+    const view = render(() => <FilesPanel />);
+    await view.findByText('folder');
+    focusFileTab('/project/kiln/folder/buried.md');
+    fireEvent.click(view.getByRole('button', { name: 'More file actions' }));
+    const reveal = await waitFor(() => { const el = document.querySelector<HTMLElement>('[data-value="reveal"][role="menuitem"]'); expect(el).toBeTruthy(); return el!; });
+    fireEvent.pointerDown(reveal); fireEvent.click(reveal);
+    await view.findByText('buried.md');
+  });
+});
+
+
+it('creates a root folder through the existing filesystem mutation', async () => {
+  const prompt = vi.spyOn(window, 'prompt').mockReturnValue('New chapter');
+  const view = render(() => <FilesPanel />);
+  await view.findByText('readme.md');
+  mkdirMock.mockImplementation(() => kilnFilesMock.mockResolvedValue([{ name: 'New chapter', path: 'New chapter', is_dir: true }]));
+  fireEvent.click(view.getByRole('button', { name: 'New folder' }));
+  await waitFor(() => expect(mkdirMock).toHaveBeenCalledWith({ root: '/project/kiln', kind: 'kiln', rel_path: 'New chapter' }));
+  await view.findByText('New chapter');
+  prompt.mockRestore();
+});
+
+
+it('reveals through multiple lazy folders before focusing the active file', async () => {
+  kilnFilesMock.mockImplementation(async () => {
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    return [{ name: 'nested.md', path: 'one/two/nested.md' }];
+  });
+  const view = render(() => <FilesPanel />);
+  await view.findByText('one');
+  focusFileTab('/project/kiln/one/two/nested.md');
+  fireEvent.click(view.getByRole('button', { name: 'More file actions' }));
+  const reveal = await waitFor(() => { const el = document.querySelector<HTMLElement>('[data-value="reveal"][role="menuitem"]'); expect(el).toBeTruthy(); return el!; });
+  fireEvent.pointerDown(reveal); fireEvent.click(reveal);
+  await view.findByText('nested.md');
 });

@@ -21,19 +21,38 @@ The selected tab stays visible when its pane narrows. When tabs overflow,
 the clipped ends fade to show which direction has more tabs. Use
 **Show all tabs** to select one from the list.
 
-## Appearance design preview
+## Appearance
 
-The dev-only shell mockup includes a Look toolbox for design experiments.
-It is not a production settings panel. The planned integration puts the
-chosen adjustable controls in the existing **Settings → Appearance** section:
-theme, true black, contrast, navigation tint, an RGB accent, pane gap and
-radius, note text size and file-label presentation. Leaf tabs, the right-hand
-card, and the absence of optional edges, inner lines and shadows are the
-chosen fixed style. These additions are not implemented yet.
+**Settings → Appearance** controls dark/light theme, true black, contrast,
+navigation tint, RGB accent, pane gap and radius, note text size, file type
+labels, and fonts. Changes apply immediately and persist in this browser.
+True black affects dark working surfaces; the navigation keeps its contrast.
+The file-label toggle shows type badges for non-note files. The Files toolbar
+still controls which extensions are hidden in names.
 
-The existing editor remains: source mode has line numbers for every note,
-and live preview keeps its rendering and cursor movement. Appearance changes
-do not replace the editor with the mockup's static note view.
+The shell uses leaf tabs and a conversation card with no shadows or optional
+inner lines. Sessions and Files share the left navigation rail; conversations
+open on the right above the folded terminal. Documents open in the centre.
+Click the terminal ribbon icon to open it, even when the whole rail is folded.
+Right-click a rail tab and choose **Fold pane** to hide just that pane while
+keeping its siblings visible; **Unfold pane** opens it again. The last open
+pane in a rail cannot be folded.
+Use **Expand session** or **Shift+Escape** to enlarge a conversation. The
+editor stays mounted while hidden, retaining unsaved edits and undo history.
+Reopening a session respects a tab you have moved. Reset layout from the layout
+menu to get the default arrangement.
+The mode selector is the first control at the far left below the composer,
+followed by the model selector and the remaining session controls.
+
+The full editor remains: source mode shows line numbers; live preview hides them.
+Live preview joins hard-wrapped paragraphs and wraps prose within the readable
+column (768px by default), preserving rendering and cursor movement. Appearance changes
+preserve editor buffers and session transcripts. Review keeps its existing
+opening actions; **Comment** beside a file's decisions anchors a comment to
+that file's complete range. Line-range comments still start in the diff.
+
+Appearance uses the production settings above. The migration's temporary shell
+mockup and experimental Look toolbox have been retired.
 
 ## Voice input
 
@@ -593,3 +612,51 @@ no effect.
 - [[Help/Config/permissions]] — tool permission rules, which apply to web sessions too
 - [[Help/Extending/Workflow Authoring]] — the `webhook` workflow trigger these deliveries feed
 - [[Help/CLI/Index]] — full CLI reference
+
+Use the note toolbar to select **Live preview**, **Source**, or **Reading view**.
+The compact shell keeps **Read**/**Write** and **Save** in a toolbar below the
+app bar, leaving room for the note title.
+
+The note toolbar's Back and Forward buttons walk that tab's document history.
+Plain clicks in Files and reading-view links navigate in place; Ctrl/Cmd-click opens
+another tab, and adding Shift opens a split. Returning to a note preserves its
+unsaved text and undo state. Source mode keeps line numbers; live preview does not.
+
+The Files toolbar can create notes and folders, sort by name or modification
+time, collapse folders, change extension labels, refresh, reveal the active file,
+and open project/kiln settings. Kilns list actual filesystem entries, including
+empty folders and non-Markdown files. Use Refresh after external changes to files
+outside the kiln watcher's indexable formats. File access still follows daemon
+admission.
+
+Queued prompts offer **Send now** and **Remove**. Send now interrupts the current
+turn and waits for the daemon to become idle before sending the selected prompt;
+Remove withdraws a prompt that has not been sent. Recalled notes and tool file
+paths open their real files. The session menu offers Stop, Archive/Restore and
+Copy session ID. Permission cards offer Allow once, Allow for session, Deny,
+and the available broader scopes in More options.
+
+The rail exposes Search and New session. Its centre-swap action exchanges the
+main and right-hand areas, keeping the left navigation rail in place. It is the
+only swap button; subsequent files and sessions follow their swapped areas.
+The Layout menu controls whether focusing a document ends an expanded session.
+
+
+On phones, the same Appearance settings style the desktop and compact shell:
+card radius, navigation tint, contrast, accent and theme. The content sits in a
+rounded card; Sessions/Files use leaf tabs in the drawer. Sheets and settings
+use the same surface colors. Phone edge gaps are capped at 8px to preserve
+reading space. Composer controls have 44px touch targets. Transcript spacing and actions match
+desktop; tap a message to reveal its actions. Swipe right across the main content
+to pull in Sessions/Files, or left to pull in Backlinks. Editable controls and
+horizontally scrolling code/tables keep their own gestures.
+
+The Appearance corner radius also applies to navigation rows, root pickers and
+menus. Controls cap the radius at 12px; menus follow the full setting. Dropdowns
+use a flat tonal background, without decorative borders or shadows.
+
+Selecting another session activates it in the existing conversation pane,
+including when that pane also holds supporting tabs such as Backlinks or
+Activity. It does not add a tile for each selected session.
+
+Selecting a session reveals its conversation pane even when that pane was folded.

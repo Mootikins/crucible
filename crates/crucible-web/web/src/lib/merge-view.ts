@@ -89,19 +89,27 @@ const tint = (color: string, percent: number) =>
  * last class. Each rule then has one class more than the library's rule.
  */
 const diffTheme = EditorView.theme({
-  '&.cm-editor.cm-merge-b .cm-changedLine': { backgroundColor: tint('--color-ok', 22) },
+  '.cm-line, .cm-deletedChunk > .cm-deletedLine': { position: 'relative', paddingLeft: '2ch' },
+  '.cm-changedLine::before, .cm-deletedChunk > .cm-deletedLine::before': {
+    position: 'absolute', left: '0.25ch', width: '1ch', pointerEvents: 'none',
+    content: '"+"', color: 'var(--color-ok)',
+  },
+  '&.cm-merge-a .cm-changedLine::before, .cm-deletedChunk > .cm-deletedLine::before': {
+    content: '"−"', color: 'var(--color-error)',
+  },
+  '&.cm-editor.cm-merge-b .cm-changedLine': { backgroundColor: tint('--color-ok', 12) },
   '&.cm-editor.cm-merge-a .cm-changedLine, &.cm-editor .cm-deletedChunk': {
-    backgroundColor: tint('--color-error', 22),
+    backgroundColor: tint('--color-error', 12),
   },
   // The changed side draws its own word marks (`wordMarks`), so the library's
   // marks on the changed side carry no tint.
   '&.cm-editor.cm-merge-b .cm-changedText.cm-changedText': { background: 'none' },
   '&.cm-editor .cm-wordChange': {
-    background: tint('--color-ok', 38),
+    background: tint('--color-ok', 32),
     borderRadius: 'var(--cru-radius-sm)',
   },
   '&.cm-editor.cm-merge-a .cm-changedText.cm-changedText, &.cm-editor .cm-deletedChunk .cm-deletedText.cm-deletedText':
-    { background: tint('--color-error', 38), borderRadius: 'var(--cru-radius-sm)' },
+    { background: tint('--color-error', 32), borderRadius: 'var(--cru-radius-sm)' },
   '&.cm-editor .cm-changedLineGutter.cm-changedLineGutter': { background: 'var(--color-ok)' },
   '&.cm-editor .cm-deletedLineGutter.cm-deletedLineGutter, &.cm-editor.cm-merge-a .cm-changedLineGutter.cm-changedLineGutter':
     { background: 'var(--color-error)' },

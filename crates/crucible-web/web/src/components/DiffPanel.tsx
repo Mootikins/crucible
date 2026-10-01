@@ -84,6 +84,7 @@ import {
   usePostDiffComment,
   useResolveDiffComment,
 } from '@/lib/query/diff';
+import { openFileInEditor } from '@/lib/file-actions';
 import { openDiff } from '@/lib/panel-actions';
 import { useSession } from '@/lib/query/sessions';
 import { composerComments } from '@/stores/composerComments';
@@ -94,6 +95,7 @@ import { ConflictView } from './ConflictView';
 import { UnreadableRoots } from './UnreadableRoots';
 import {
   commentExtensions,
+  CommentBox,
   setComments,
   spanLabel,
   type CommentHost,
@@ -580,7 +582,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
         class="flex min-h-(--cru-row-md) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-hairline px-3 py-1"
         data-testid="diff-toolbar"
       >
-        <h2 class="sr-only">Diff</h2>
+        <h2 class="w-full text-sm font-semibold text-shell-ink">Changes</h2>
         {/* The label keeps room for itself: in a narrow pane, the controls
             move to a second row before the label shrinks to nothing. */}
         <div class="flex min-w-40 flex-1 items-center gap-2">
@@ -761,6 +763,7 @@ const STATUS: Record<DiffFileEntry['status']['kind'], { letter: string; tone: st
 };
 
 const FileSection: Component<FileSectionProps> = (props) => {
+  const [commentOpen, setCommentOpen] = createSignal(false);
   const renamedFrom = () => (props.file.status.kind === 'renamed' ? props.file.status.from : null);
   const copyPath = () =>
     void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
@@ -772,15 +775,16 @@ const FileSection: Component<FileSectionProps> = (props) => {
 
   return (
     <section
-      class="border-b border-hairline"
+      class="mb-6 px-4"
       data-testid={`diff-file-${fileKey(props.file)}`}
       data-file-key={fileKey(props.file)}
     >
-      <div class="sticky top-0 z-10 flex h-(--cru-row-sm) items-center gap-1 bg-shell-bg pl-1.5 pr-2">
+      <div class="sticky top-0 z-10 flex min-h-(--cru-row-sm) flex-wrap items-center gap-2 bg-shell-panel pb-2">
         <button
           type="button"
           aria-expanded={props.expanded}
           data-testid="diff-file-toggle"
+          aria-label={`${props.expanded ? 'Collapse' : 'Expand'} changes for ${props.file.path}`}
           onClick={() => props.onToggle()}
           class={`flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-hover-wash focus-ring ${hit()}`}
         >
@@ -789,6 +793,15 @@ const FileSection: Component<FileSectionProps> = (props) => {
           ) : (
             <ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-dark" />
           )}
+        </button>
+        <button
+          type="button"
+          data-testid="diff-file-open"
+          aria-label={`Open ${props.file.path}`}
+          title={`Open ${props.file.path}`}
+          onClick={() => openFileInEditor(`${props.file.root.replace(/\/$/, '')}/${props.file.path}`)}
+          class={`flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-hover-wash focus-ring ${hit()}`}
+        >
           <Dynamic
             component={icon().icon}
             class="h-3.5 w-3.5 shrink-0"
@@ -829,6 +842,10 @@ const FileSection: Component<FileSectionProps> = (props) => {
           added={props.file.added}
           removed={props.file.removed}
         />
+        <button type="button" data-testid="diff-file-comment" class="text-xs text-primary hover:text-primary-hover focus-ring" disabled={!!noTextReason(props.file)} onClick={() => {
+          if (!props.expanded) props.onToggle();
+          setCommentOpen((open) => !open);
+        }}>Comment</button>
         <Show when={props.decide}>
           {(decide) => (
             <div class="ml-1 flex shrink-0 items-center gap-1">
@@ -862,6 +879,8 @@ const FileSection: Component<FileSectionProps> = (props) => {
           fallback={
             <NearViewport>
               <FileBody
+                commentOpen={commentOpen()}
+                onCommentClose={() => setCommentOpen(false)}
                 source={props.source}
                 session={props.session}
                 file={props.file}
@@ -879,7 +898,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
           {(reason) => <p class="px-3 pb-2 text-xs text-muted-dark">{reason()}</p>}
         </Show>
         <EndComments
-          comments={props.comments}
+          comments={props.comments.filter((listed) => listed.outdated || (!props.split && listed.comment.side === 'base'))}
           split={props.split}
           onResolve={props.onResolve}
           chips={props.chips}
@@ -932,20 +951,19 @@ const EndComments: Component<{
   /** The pane has a chat, so a comment can take a chip. */
   hasChat: boolean;
 }> = (props) => {
-  const rows = () =>
-    props.comments.filter((l) => l.outdated || (!props.split && l.comment.side === 'base'));
+  const rows = () => props.comments;
   return (
     <Show when={rows().length > 0}>
       <ul class="flex flex-col gap-1 px-3 pb-2">
         <For each={rows()}>
           {(listed) => (
             <li
-              data-testid={listed.outdated ? 'diff-comment-outdated' : 'diff-comment-base'}
-              class="border-l-2 border-hairline px-2 py-1 text-xs"
+              data-testid={listed.outdated ? 'diff-comment-outdated' : listed.comment.side === 'base' ? 'diff-comment-base' : 'diff-comment-file'}
+              class="px-2 py-1 text-xs"
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="text-floor text-muted-dark">
-                  {listed.outdated ? 'Outdated' : 'Base side'} ·{' '}
+                  {listed.outdated ? 'Outdated' : listed.comment.side === 'base' ? 'Base side' : 'File'} ·{' '}
                   {spanLabel({
                     first: listed.comment.line_range.start,
                     last: listed.comment.line_range.end - 1,
@@ -1035,7 +1053,7 @@ const FileBody: Component<
     | 'wrap'
     | 'hunks'
     | 'onHunkToggle'
-  >
+  > & { commentOpen: boolean; onCommentClose: () => void }
 > = (props) => {
   const text = useDiffFile(
     () => props.source,
@@ -1073,7 +1091,15 @@ const FileBody: Component<
   const hosts = { base: host('base'), current: host('current') };
 
   // The comments that the editor shows under their lines.
-  const placed = () => props.comments.filter((l) => !l.outdated).map((l) => l.comment);
+  const wholeFile = (comment: DiffComment) => {
+    const data = text.data;
+    if (!data) return false;
+    const content = (comment.side === 'base' ? data.base_text : data.current_text) ?? '';
+    const lines = Math.max(1, content.replace(/\n$/, '').split('\n').length);
+    return comment.line_range.start === 1 && comment.line_range.end === lines + 1;
+  };
+  const placed = () => props.comments.filter((listed) => !listed.outdated && !wholeFile(listed.comment)).map((listed) => listed.comment);
+  const fileComments = () => props.comments.filter((listed) => !listed.outdated && wholeFile(listed.comment) && (props.split || listed.comment.side === 'current'));
 
   return (
     <Switch>
@@ -1082,6 +1108,18 @@ const FileBody: Component<
       </Match>
       <Match when={text.data}>
         {(data) => (
+          <>
+          <Show when={props.commentOpen}>
+            <div class="mb-3">
+              <CommentBox label={props.file.path} hasChat={!!props.session} onCancel={props.onCommentClose} onComment={async (body) => {
+                const side = props.file.status.kind === 'deleted' ? 'base' : 'current';
+                const content = (side === 'base' ? data().base_text : data().current_text) ?? '';
+                const lines = Math.max(1, content.replace(/\n$/, '').split('\n').length);
+                await comment(side, { first: 1, last: lines }, body);
+                props.onCommentClose();
+              }} />
+            </div>
+          </Show>
           <FileEditor
             path={props.file.path}
             text={data()}
@@ -1092,6 +1130,8 @@ const FileBody: Component<
             hunks={props.hunks}
             onHunkToggle={props.onHunkToggle}
           />
+          <EndComments comments={fileComments()} split={props.split} onResolve={props.onResolve} chips={props.chips} hasChat={!!props.session} />
+          </>
         )}
       </Match>
       <Match when={true}>

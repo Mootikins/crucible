@@ -141,7 +141,7 @@ test.describe('live C3 entities', () => {
       title: 'Surfaces',
       contentType: 'surfaces',
     });
-    await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('rail-tab-surfaces-tab')).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
     const initialReads = log.count('POST', SURFACE_LIST);
@@ -176,7 +176,7 @@ test.describe('live C3 entities', () => {
       title: 'Surfaces',
       contentType: 'surfaces',
     });
-    await expect(page.getByTestId('edge-tab-left-surfaces-again')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('rail-tab-surfaces-again')).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
     // Reopening reconciles again: the joiner gets `onOpen` at once when the

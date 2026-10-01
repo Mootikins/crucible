@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@solidjs/testing-library';
+import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import { ChatContent } from '../ChatContent';
 
 // Mock the child components
@@ -39,9 +39,18 @@ vi.mock('./interactions', () => ({
 
 // Mock the context
 const mockRespondToInteraction = vi.fn();
+const archiveSession = vi.fn();
+vi.mock('@/contexts/SessionContext', () => ({ useSessionSafe: () => ({
+  sessions: () => [{ session_id: 'session-in-pane', title: 'Pane session' }],
+  archiveSession,
+  unarchiveSession: vi.fn(),
+}) }));
 
 vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({
+    sessionId: () => "session-in-pane",
+    isStreaming: () => false,
+    isLoading: () => false,
     activeTools: () => [],
     subagentEvents: () => [],
     pendingInteraction: () => null,
@@ -53,6 +62,15 @@ vi.mock('@/contexts/ChatContext', () => ({
 describe('ChatContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('archives the session belonging to this pane from its More menu', async () => {
+    render(() => <ChatContent />);
+    fireEvent.click(screen.getByRole('button', { name: 'Session actions' }));
+    const item = await screen.findByRole('menuitem', { name: 'Archive session' });
+    fireEvent.pointerDown(item);
+    fireEvent.click(item);
+    await waitFor(() => expect(archiveSession).toHaveBeenCalledWith('session-in-pane'));
   });
 
   it('renders MessageList component', () => {

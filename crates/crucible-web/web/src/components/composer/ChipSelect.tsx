@@ -1,6 +1,6 @@
 import { Component, For, JSX, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { ChevronRight, Check } from '@/lib/icons';
+import { ChipOptionRow } from './ChipOptionRow';
 import { Caret } from '@/components/ui/Caret';
 import { placeFlyout, placePopup, type FlyoutPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
@@ -68,7 +68,7 @@ export const ChipSelect: Component<{
   searchThreshold?: number;
   /** Leading icon on the trigger chip. */
   icon?: Component<{ class?: string }>;
-  /** Replace the default quiet-chip trigger classes (e.g. a bordered field). */
+  /** Replace the default quiet-chip trigger classes (e.g. a root selector). */
   triggerClass?: string;
   /**
    * `false` lets the trigger be exactly as wide as its text.
@@ -425,7 +425,7 @@ export const ChipSelect: Component<{
   });
 
   return (
-    <div ref={rootRef} class="relative inline-flex">
+    <div ref={rootRef} class="relative inline-flex min-w-0">
       <button
         ref={triggerRef}
         type="button"
@@ -437,8 +437,8 @@ export const ChipSelect: Component<{
         classList={{
           [props.triggerClass ??
           (props.truncate === false
-            ? 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap'
-            : 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]')]: true,
+            ? 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-control text-xs transition-colors whitespace-nowrap'
+            : 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-control text-xs transition-colors max-w-[220px]')]: true,
           'text-shell-body hover:bg-hover-wash': !props.triggerClass && !open(),
           'bg-hover-wash text-shell-ink': !props.triggerClass && open(),
           'opacity-50 cursor-not-allowed': props.disabled,
@@ -478,7 +478,7 @@ export const ChipSelect: Component<{
             // click inside one of its own pickers from a click outside itself.
             data-chip-popout=""
             data-testid={props.testid ? `${props.testid}-popout` : undefined}
-            class="fixed z-50 flex flex-col min-w-[220px] max-w-[320px] overflow-hidden bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+            class="fixed z-50 flex flex-col min-w-[220px] max-w-[320px] overflow-hidden shell-popup rounded-card p-1 cru-anim-rise"
             style={{
               left: `${panelPos().left}px`,
               ...(panelPos().top !== undefined
@@ -492,7 +492,7 @@ export const ChipSelect: Component<{
             }}
           >
             <Show when={searchable()}>
-              <div class="shrink-0 px-2 pb-1 pt-0.5 border-b border-hairline">
+              <div class="shrink-0 px-2 pb-1 pt-0.5">
                 <input
                   ref={inputRef}
                   value={filter()}
@@ -517,51 +517,17 @@ export const ChipSelect: Component<{
                     <Show when={o.group && o.group !== visible()[i() - 1]?.group}>
                       <div class={treeSectionHeader}>{o.group}</div>
                     </Show>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={isPicked(o)}
-                      disabled={o.disabled}
-                      onMouseEnter={(e) => {
+                    <ChipOptionRow
+                      option={o} selected={isPicked(o)} hovered={hover() === i()}
+                      submenu={!!o.children?.length} expanded={flyoutFor() === i()}
+                      testid={props.optionTestidPrefix ? `${props.optionTestidPrefix}-${o.value}` : undefined}
+                      onHover={(e) => {
                         setHover(i());
-                        // Hovering a plain row dismisses a flyout left open by
-                        // a sibling — two open submenus would both look live.
                         if (o.children?.length) openFlyout(i(), e.currentTarget);
                         else if (flyoutFor() !== -1) closeFlyout();
                       }}
-                      onClick={(e) => activate(o, i(), e.currentTarget)}
-                      aria-haspopup={o.children?.length ? 'menu' : undefined}
-                      aria-expanded={o.children?.length ? flyoutFor() === i() : undefined}
-                      data-testid={
-                        props.optionTestidPrefix
-                          ? `${props.optionTestidPrefix}-${o.value}`
-                          : undefined
-                      }
-                      classList={{
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
-                        'bg-hover-wash': hover() === i(),
-                        'text-shell-ink': !o.disabled,
-                        'text-muted-dark cursor-not-allowed': !!o.disabled,
-                      }}
-                    >
-                      <Show when={o.icon} keyed>
-                        {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
-                      </Show>
-                      <span class="truncate">{o.label}</span>
-                      <Show when={isPicked(o)}>
-                        <Check class="w-3.5 h-3.5 flex-shrink-0 text-primary" />
-                      </Show>
-                      <Show when={o.hint}>
-                        <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
-                          {o.hint}
-                        </span>
-                      </Show>
-                      <Show when={o.children?.length}>
-                        <ChevronRight
-                          class={`w-3.5 h-3.5 flex-shrink-0 text-muted-dark ${o.hint ? '' : 'ml-auto'}`}
-                        />
-                      </Show>
-                    </button>
+                      onActivate={(e) => activate(o, i(), e.currentTarget)}
+                    />
                   </>
                 )}
               </For>
@@ -573,7 +539,7 @@ export const ChipSelect: Component<{
                   <button
                     type="button"
                     onClick={runCreate}
-                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                    class="rounded-control w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors"
                     data-testid={props.testid ? `${props.testid}-create` : undefined}
                   >
                     <span class="w-3.5 flex-shrink-0">＋</span>
@@ -592,7 +558,7 @@ export const ChipSelect: Component<{
                       setActionMode(true);
                       queueMicrotask(() => actionInputRef?.focus());
                     }}
-                    class="shrink-0 w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                    class="shrink-0 rounded-control w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors"
                     data-testid={props.testid ? `${props.testid}-action` : undefined}
                   >
                     <span class="w-3.5 flex-shrink-0">＋</span>
@@ -600,7 +566,7 @@ export const ChipSelect: Component<{
                   </button>
                 }
               >
-                <div class="shrink-0 px-2 py-1.5 border-t border-hairline flex items-center gap-1.5">
+                <div class="shrink-0 px-2 py-1.5 flex items-center gap-1.5">
                   <input
                     ref={actionInputRef}
                     value={actionText()}
@@ -616,7 +582,7 @@ export const ChipSelect: Component<{
                     }}
                     placeholder={props.action!.placeholder}
                     aria-label={props.action!.label}
-                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted rounded border border-hairline focus:border-primary focus-ring px-2 py-1"
+                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted rounded-control focus-ring px-2 py-1"
                     data-testid={props.testid ? `${props.testid}-action-input` : undefined}
                   />
                   <button
@@ -650,7 +616,7 @@ export const ChipSelect: Component<{
                 aria-label={visible()[flyoutFor()]?.label}
                 data-chip-popout=""
                 data-testid={props.testid ? `${props.testid}-flyout` : undefined}
-                class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+                class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto shell-popup rounded-card p-1 cru-anim-rise"
                 style={{
                   left: `${pos.left}px`,
                   top: `${pos.top}px`,
@@ -659,38 +625,12 @@ export const ChipSelect: Component<{
               >
                 <For each={flyoutOptions()}>
                   {(child, i) => (
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={isPicked(child)}
-                      disabled={child.disabled}
-                      onMouseEnter={() => setFlyoutHover(i())}
-                      onClick={() => pick(child)}
-                      data-testid={
-                        props.optionTestidPrefix
-                          ? `${props.optionTestidPrefix}-${child.value}`
-                          : undefined
-                      }
-                      classList={{
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors': true,
-                        'bg-hover-wash': flyoutHover() === i(),
-                        'text-shell-ink': !child.disabled,
-                        'text-muted-dark cursor-not-allowed': !!child.disabled,
-                      }}
-                    >
-                      <Show when={child.icon} keyed>
-                        {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
-                      </Show>
-                      <span class="truncate">{child.label}</span>
-                      <Show when={isPicked(child)}>
-                        <Check class="w-3.5 h-3.5 flex-shrink-0 text-primary" />
-                      </Show>
-                      <Show when={child.hint}>
-                        <span class="ml-auto pl-3 text-muted-dark truncate max-w-[140px]">
-                          {child.hint}
-                        </span>
-                      </Show>
-                    </button>
+                    <ChipOptionRow
+                      option={child} selected={isPicked(child)} hovered={flyoutHover() === i()}
+                      testid={props.optionTestidPrefix ? `${props.optionTestidPrefix}-${child.value}` : undefined}
+                      onHover={() => setFlyoutHover(i())}
+                      onActivate={() => pick(child)}
+                    />
                   )}
                 </For>
                 <Show when={flyoutOptions().length === 0}>

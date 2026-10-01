@@ -128,7 +128,7 @@ test.describe('live session management', () => {
     // already had. A 200 is part of the claim: the stored-session read used to
     // answer 422 here.
     expect((await read).status()).toBe(200);
-    await expect(page.locator(`[data-tab-id="tab-chat-${target}"]`)).toBeVisible({
+    await expect(page.locator(`[data-testid="rail-tab-tab-chat-${target}"]`)).toBeVisible({
       timeout: 15_000,
     });
 

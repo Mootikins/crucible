@@ -10,7 +10,7 @@ import {
 } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
+import { openFileInEditor, closeTabsUnder, type FileOpenOptions } from '@/lib/file-actions';
 import { getBus } from '@/lib/bus';
 import { PanelShell } from './PanelShell';
 import {
@@ -25,7 +25,6 @@ import {
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { useKilns } from '@/lib/query/kilns';
 import { useConnectSessionKiln } from '@/lib/query/scope';
-import { invalidateNotes, useListNotes } from '@/lib/query/notes';
 import { fsEvents } from '@/lib/query/sse';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { FsEntry, FsListing } from '@/lib/types';
@@ -35,14 +34,12 @@ import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions } from '@/stores/tre
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { SortSpec } from '@/lib/file-tree/types';
 import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
-import { notesToTree } from '@/lib/file-tree/kiln-builder';
-import { createFsEventBatcher, reconcileMount, type RootMount } from '@/lib/file-tree/reconcile';
+import { createFsEventBatcher, reconcileMount, findNodeByRelPath, type RootMount } from '@/lib/file-tree/reconcile';
 import { FileTreeView, cssId, type TreeDensity } from './files/FileTreeView';
-import { RootDropdown } from './files/RootDropdown';
+import { FilesToolbar } from './files/FilesToolbar';
 import type { ContextAction } from './files/FileTreeContextMenu';
-import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
+import { currentOpenFilePath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
-import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus, Link2, GitCompare } from '@/lib/icons';
 import { openDiff } from '@/lib/panel-actions';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -121,10 +118,10 @@ export const FilesPanel: Component<{
   const [building, setBuilding] = createSignal(false);
   // The panel is busy while the daemon is answering for the root AND while
   // the expanded folders under it are read. The first half belongs to the
-  // query now — the note index for a kiln, the top level for a project — so
+  // query, for the top level of either kind of root, so
   // reading only the second would drop the spinner for the whole of the first
   // fetch, the longest part of opening a big root.
-  const loading = () => building() || topLevel.isFetching || kilnNotes.isFetching;
+  const loading = () => building() || topLevel.isFetching;
   const [sort, setSort] = createSignal<SortSpec>(readJson<SortSpec>(SORT_KEY, DEFAULT_SORT));
   const [showHidden, setShowHidden] = createSignal<boolean>(
     readJson<boolean>(SHOW_HIDDEN_KEY, false),
@@ -163,7 +160,7 @@ export const FilesPanel: Component<{
     // daemon's stream says, so the same key must answer differently now. The
     // invalidation waits a turn: the hook has to take the new toggle before
     // the refetch reads it, or the refetch asks the old question again.
-    if (r?.kind === 'project') queueMicrotask(() => void refreshProjectTree(r));
+    if (r) queueMicrotask(() => void refreshFilesystemTree(r));
   };
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
@@ -249,27 +246,6 @@ export const FilesPanel: Component<{
   // ---- data-source discriminant --------------------------------------------
 
   /**
-   * The browsed kiln, or nothing while a project is on screen.
-   *
-   * A kiln's whole tree comes from its note index in ONE answer, which is why
-   * a kiln has no per-folder read and a project does.
-   */
-  const kilnRootPath = createMemo<string | null>(() => {
-    const root = activeRoot();
-    return root && root.kind === 'kiln' ? root.path : null;
-  });
-
-  /**
-   * That index, as a cache entry.
-   *
-   * The command palette and the canvas note picker hold the same entry, so a
-   * palette opened over this panel asks the daemon nothing. The refresh action
-   * invalidates it (`reloadRoot`) rather than calling a loader, which is the
-   * same shape the project side already has.
-   */
-  const kilnNotes = useListNotes(kilnRootPath);
-
-  /**
    * A root the daemon refused to list.
    *
    * A workspace that is not a registered project — `~/.crucible`, a scratch
@@ -283,28 +259,10 @@ export const FilesPanel: Component<{
     setError(e instanceof Error && e.message ? e.message : `Failed to list ${root.path}`);
   }
 
-  /**
-   * The browsed project root, or nothing while a kiln is on screen.
-   *
-   * A kiln's tree comes from `listNotes` in one answer, so only a project has
-   * a top level to hold.
-   */
-  const projectRoot = createMemo<TreeRoot | null>(() => {
-    const root = activeRoot();
-    return root && root.kind === 'project' ? root : null;
-  });
-
-  /**
-   * The top level of the browsed project, as a cache entry.
-   *
-   * It is held under the ABSOLUTE folder, which is the name the daemon's
-   * filesystem stream uses, so a write anywhere in that folder reaches this
-   * panel — and reaches a second panel browsing the same root without a
-   * second fetch. `showHidden` is not in the key, so the toggle invalidates
-   * (`toggleHidden`) rather than keying a second entry the stream cannot name.
-   */
+  // Filesystem listings include empty folders and non-note files for every
+  // admitted root. The note index remains the search/backlink owner's data.
   const topLevel = useListDir(() => {
-    const root = projectRoot();
+    const root = activeRoot();
     return root ? { root: root.path, relPath: '', showHidden: showHidden() } : null;
   });
 
@@ -313,7 +271,7 @@ export const FilesPanel: Component<{
   // reload. A flat top-level build would discard the loaded subtrees — the
   // machine then paints the persisted-expanded nodes as empty, which reads as
   // the tree spontaneously collapsing (the bug this replaces).
-  async function buildProjectTree(root: TreeRoot, listing: FsListing) {
+  async function buildFilesystemTree(root: TreeRoot, listing: FsListing) {
     setBuilding(true);
     setError(null);
     const expanded = new Set(expandedFor(root));
@@ -358,7 +316,7 @@ export const FilesPanel: Component<{
    * top level is observed and re-reads itself, and the rebuild below re-reads
    * the expanded folders under it.
    */
-  const refreshProjectTree = (root: TreeRoot) => invalidateDirsUnder(root.path);
+  const refreshFilesystemTree = (root: TreeRoot) => invalidateDirsUnder(root.path);
 
   // Keyed on the root's identity AS A PATH, not on the memo's object. `roster()`
   // rebuilds fresh TreeRoot objects on every recompute and the kiln query
@@ -385,34 +343,9 @@ export const FilesPanel: Component<{
     on(activeRootKey, (key) => {
       setRawRoot(null);
       if (!key) return;
-      // Neither kind starts a read here. A project root builds from
-      // `topLevel` and a kiln from `kilnNotes`, both of which are already
-      // asking for it: a second read here is the duplicate fetch this panel
-      // spent three fixes removing.
+      // The query below owns the listing; a second read here would duplicate it.
     }),
   );
-
-  // The kiln tree, rebuilt from the index whenever the cache answers — which
-  // is on the first read, on a refresh, and on an invalidation from anywhere
-  // else holding the same entry.
-  createEffect(
-    on(
-      () => [kilnNotes.data, kilnNotes.dataUpdatedAt] as const,
-      ([notes]) => {
-        const kiln = kilnRootPath();
-        if (!kiln || !notes) return;
-        setRawRoot(notesToTree(notes, kiln));
-        setError(null);
-      },
-    ),
-  );
-
-  createEffect(() => {
-    const failure = kilnNotes.error;
-    if (!kilnRootPath() || !failure) return;
-    setRawRoot(null);
-    setError(failure.message || 'Failed to load notes');
-  });
 
   // `dataUpdatedAt` moves on every answer, including one that equals the last.
   // Without it a refresh that found no change would leave the expanded folders
@@ -421,16 +354,16 @@ export const FilesPanel: Component<{
     on(
       () => [topLevel.data, topLevel.dataUpdatedAt] as const,
       ([listing]) => {
-        const root = projectRoot();
+        const root = activeRoot();
         if (!root || !listing) return;
-        void buildProjectTree(root, listing);
+        void buildFilesystemTree(root, listing);
       },
     ),
   );
 
   createEffect(() => {
     const failure = topLevel.error;
-    const root = projectRoot();
+    const root = activeRoot();
     if (failure && root) failRoot(root, failure);
   });
 
@@ -448,7 +381,7 @@ export const FilesPanel: Component<{
   const persistExpanded = (r: TreeRoot, values: string[]) =>
     writeJson(EXPANDED_KEY(rootKey(r)), values.slice(0, EXPANDED_CAP));
 
-  // Project lazy loader (kilns build the whole tree so they pass undefined).
+  // Every root lazily lists expanded folders through the same query owner.
   const loadChildren = (root: TreeRoot) => async (details: { node: Node }) => {
     const { entries, truncated } = await fetchDirOnce({
       root: root.path,
@@ -463,7 +396,7 @@ export const FilesPanel: Component<{
     return entries.map((e) => fsEntryToNode(e, root.path));
   };
 
-  const onOpenLeaf = (node: Node) => openFileInEditor(node.absPath, node.name);
+  const onOpenLeaf = (node: Node, options?: FileOpenOptions) => openFileInEditor(node.absPath, node.name, options);
 
   // ---- drag-and-drop move --------------------------------------------------
   // Refresh-after-move (not optimistic patching): the tree remounts on
@@ -507,8 +440,7 @@ export const FilesPanel: Component<{
   });
 
   const reloadRoot = async (root: TreeRoot) => {
-    if (root.kind === 'kiln') await invalidateNotes(root.path);
-    else await refreshProjectTree(root);
+    await refreshFilesystemTree(root);
   };
 
   /** Surface a mutation failure in the banner without killing the tree. */
@@ -551,7 +483,7 @@ export const FilesPanel: Component<{
     })();
   };
 
-  /** Create a note inside `dirRel` (kiln only — projects have no write API). */
+  /** Create a note in the browsed root; the daemon enforces its write policy. */
   const newNoteIn = (root: TreeRoot, dirRel: string) => {
     const name = window.prompt('Note name', 'Untitled');
     if (name === null || !isValidName(name)) return;
@@ -562,6 +494,16 @@ export const FilesPanel: Component<{
       await saveFile.mutateAsync({ path: abs, content: '' });
       if (dirRel) treeApi?.().expand([dirRel]);
       openFileInEditor(abs, file);
+    });
+  };
+
+  const newFolderIn = (root: TreeRoot, dirRel: string) => {
+    const name = window.prompt('Folder name', 'New folder');
+    if (name === null || !isValidName(name)) return;
+    const rel = dirRel ? `${dirRel}/${name}` : name;
+    runMutation(root, async () => {
+      await makeFolder.mutateAsync({ root: root.path, kind: root.kind, relPath: rel });
+      if (dirRel) treeApi?.().expand([dirRel]);
     });
   };
 
@@ -582,8 +524,8 @@ export const FilesPanel: Component<{
         void navigator.clipboard?.writeText(node.relPath);
         break;
       case 'refresh':
-        // Project-only: refetch this folder (top-level refetch keeps it simple).
-        if (root.kind === 'project') void refreshProjectTree(root);
+        // Invalidate the root so its expanded folders are read again.
+        void refreshFilesystemTree(root);
         break;
       case 'toggle-hidden':
         toggleHidden();
@@ -597,16 +539,9 @@ export const FilesPanel: Component<{
       case 'new-note':
         newNoteIn(root, node.relPath);
         break;
-      case 'new-folder': {
-        const name = window.prompt('Folder name', 'New folder');
-        if (name === null || !isValidName(name)) break;
-        const rel = node.relPath ? `${node.relPath}/${name}` : name;
-        runMutation(root, async () => {
-          await makeFolder.mutateAsync({ root: root.path, kind: root.kind, relPath: rel });
-          treeApi?.().expand([node.relPath]);
-        });
+      case 'new-folder':
+        newFolderIn(root, node.relPath);
         break;
-      }
       case 'delete': {
         if (!window.confirm(`Move "${node.name}" to trash?`)) break;
         runMutation(root, async () => {
@@ -625,6 +560,31 @@ export const FilesPanel: Component<{
   // ---- toolbar actions -----------------------------------------------------
   const collapseAll = () => treeApi?.().collapse();
 
+  const revealWaiters = new Map<string, { resolve: () => void; reject: () => void }>();
+  createEffect(() => {
+    const root = rawRoot();
+    if (!root) return;
+    for (const [path, waiter] of revealWaiters) {
+      if (findNodeByRelPath(root, path)?.children !== undefined) waiter.resolve();
+    }
+  });
+  onCleanup(() => { for (const waiter of revealWaiters.values()) waiter.reject(); });
+
+  function waitForChildren(path: string): Promise<void> {
+    const root = rawRoot();
+    if (root && findNodeByRelPath(root, path)?.children !== undefined) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const finish = (ok: boolean) => {
+        clearTimeout(timeout);
+        revealWaiters.delete(path);
+        if (ok) resolve(); else reject(new Error('Folder could not be revealed'));
+      };
+      const timeout = setTimeout(() => finish(false), 10000);
+      revealWaiters.get(path)?.reject();
+      revealWaiters.set(path, { resolve: () => finish(true), reject: () => finish(false) });
+    });
+  }
+
   function revealActive(relPathOverride?: string) {
     const root = activeRoot();
     const col = collection();
@@ -639,19 +599,14 @@ export const FilesPanel: Component<{
     }
     if (!rel) return;
     const api = treeApi();
-    if (root.kind === 'kiln') {
-      revealLoadedPath(api, col, rel);
-    } else {
-      void revealLazyPath(
-        {
-          expand: (v) => api.expand(v),
-          focus: (v) => api.focus(v),
-          onLoaded: async () => Promise.resolve(),
-        },
-        rel,
-      );
-    }
-    scrollRelIntoView(rel);
+    void revealLazyPath(
+      {
+        expand: (v) => api.expand(v),
+        focus: (v) => api.focus(v),
+        onLoaded: waitForChildren,
+      },
+      rel,
+    ).then((revealed) => { if (revealed) scrollRelIntoView(rel!); });
   }
 
   /** Scroll a revealed row into view. Deferred so lazy-expanded ancestors have
@@ -669,22 +624,13 @@ export const FilesPanel: Component<{
   // the file you are editing. `revealActive` stays for the explicit
   // `reveal-in-tree` action, which is where VSCode's behaviour actually belongs.
 
-  const cycleSort = () => {
-    const s = sort();
-    // name-asc -> name-desc -> modified-desc -> modified-asc -> name-asc
-    const order: SortSpec[] = [
-      { key: 'name', dir: 'asc' },
-      { key: 'name', dir: 'desc' },
-      { key: 'modified', dir: 'desc' },
-      { key: 'modified', dir: 'asc' },
-    ];
-    const i = order.findIndex((o) => o.key === s.key && o.dir === s.dir);
-    const next = order[(i + 1) % order.length];
+  const chooseSort = (key: SortSpec['key']) => {
+    const next: SortSpec = { key, dir: key === 'name' ? 'asc' : 'desc' };
     setSort(next);
     writeJson(SORT_KEY, next);
   };
 
-  // ---- live SSE reconcile (kilns patch in-memory; projects refetch) --------
+  // ---- live filesystem event reconciliation ------------------------------
   const batcher = createFsEventBatcher(150, (events) => {
     const root = activeRoot();
     const raw = rawRoot();
@@ -695,12 +641,13 @@ export const FilesPanel: Component<{
       basePath: root.path,
       root: raw,
     };
-    const { root: patched, invalidate } = reconcileMount(mount, events);
-    if (patched) setRawRoot(patched);
-    if (invalidate && invalidate.length > 0 && root.kind === 'project') {
-      // Defensive path (unused in P1: only kiln dirs are watched). Any loaded
-      // folder change -> refetch the whole top level (keeps it simple).
-      void refreshProjectTree(root);
+    const { invalidate } = reconcileMount(mount, events);
+    if (invalidate && invalidate.length > 0) {
+      // The shared filesystem route already invalidated the affected listings.
+      // Rebuild expanded children through that cache without invalidating again
+      // for every pane. Top-level answers also rebuild through the effect above.
+      const listing = topLevel.data;
+      if (listing) void buildFilesystemTree(root, listing);
     }
   });
 
@@ -739,10 +686,10 @@ export const FilesPanel: Component<{
     // is the shared root of `lib/query/sse.ts`, and the editor watches the same
     // stream for its open buffers. Each side keeps its own handler on it.
     const unsub = fsEvents().subscribe((ev) => batcher.push(ev));
-    // Project roots are refresh-on-interaction: refetch expanded folders on focus.
+    // Revalidate expanded folders when returning to the browser.
     const onFocus = () => {
       const root = activeRoot();
-      if (root?.kind === 'project') void refreshProjectTree(root);
+      if (root) void refreshFilesystemTree(root);
     };
     window.addEventListener('focus', onFocus);
     onCleanup(() => {
@@ -756,117 +703,33 @@ export const FilesPanel: Component<{
     <PanelShell class="overflow-hidden">
       {/* No "Files" heading — the panel tab already names it. The dropdown
           leads so the browsed root reads as the panel's title. */}
-      <div class="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-hairline">
-        <div class="flex items-center gap-1 min-w-0 flex-1" ref={rootBarRef}>
-          <RootDropdown
-            own={ownRoots()}
-            groups={roster()}
-            selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
-            onSelect={selectRoot}
-            activeRoot={activeRoot()}
-            onNotice={setError}
-          />
-
-          {/* Only on the ACTIVE unattached kiln: an affordance for a root you
-              are not looking at would be a claim about a corpus you cannot
-              see. */}
-          <Show when={activeRoot()?.origin === 'other-kiln' ? activeRoot() : null} keyed>
-            {(root) => (
-              <button
-                type="button"
-                data-testid="root-attach"
-                title={`Let this session query ${root.name}`}
-                onClick={() => attachRoot(root)}
-                class="flex items-center gap-1 px-1.5 py-1 rounded text-floor text-muted hover:text-shell-ink hover:bg-hover-wash whitespace-nowrap transition-colors"
-              >
-                <Link2 class="w-3 h-3" /> Attach
-              </button>
-            )}
-          </Show>
-        </div>
-        <div class="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            aria-label="Sort"
-            title="Cycle sort (name / modified)"
-            onClick={cycleSort}
-            class="p-1 rounded hover:bg-hover-wash text-muted"
-          >
-            <ArrowUpDown class="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Collapse all"
-            title="Collapse all"
-            onClick={collapseAll}
-            class="p-1 rounded hover:bg-hover-wash text-muted"
-          >
-            <ChevronsDownUp class="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Hide extensions"
-            title={`Hide extensions (${hiddenExts().join(' ') || 'none'}) — right-click to edit`}
-            aria-pressed={hideExts()}
-            onClick={toggleHideExts}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              editHiddenExts();
-            }}
-            classList={{
-              'p-1 rounded hover:bg-hover-wash text-floor font-mono leading-none w-6 h-6 flex items-center justify-center': true,
-              'text-primary': hideExts(),
-              'text-muted': !hideExts(),
-            }}
-          >
-            .ext
-          </button>
-          <Show when={activeRoot()?.kind === 'kiln'}>
-            <button
-              type="button"
-              aria-label="New note"
-              title="New note"
-              onClick={() => {
-                const r = activeRoot();
-                if (r) newNoteIn(r, '');
-              }}
-              class="p-1 rounded hover:bg-hover-wash text-muted"
-            >
-              <Plus class="w-3.5 h-3.5" />
-            </button>
-          </Show>
-          <Show when={activeRoot()?.git}>
-            <button
-              type="button"
-              aria-label="Open branch diff"
-              title="Open branch diff"
-              data-testid="open-branch-diff"
-              onClick={() => openBranchDiff(null)}
-              class="p-1 rounded hover:bg-hover-wash text-muted"
-            >
-              <GitCompare class="w-3.5 h-3.5" />
-            </button>
-          </Show>
-          <Show when={activeRoot()?.kind === 'project'}>
-            <button
-              type="button"
-              aria-label="Refresh"
-              title="Refresh"
-              onClick={() => {
-                const r = activeRoot();
-                if (r) void refreshProjectTree(r);
-              }}
-              class="p-1 rounded hover:bg-hover-wash text-muted"
-            >
-              <RefreshCw class="w-3.5 h-3.5" />
-            </button>
-          </Show>
-        </div>
-      </div>
+      <FilesToolbar
+        ownRoots={ownRoots()}
+        groups={roster()}
+        activeRoot={activeRoot()}
+        selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
+        rootBarRef={(el) => { rootBarRef = el; }}
+        sort={sort()}
+        hideExtensions={hideExts()}
+        hasOpenFile={!!openFilePath()}
+        onSelectRoot={selectRoot}
+        onNotice={setError}
+        onAttachRoot={attachRoot}
+        onSort={chooseSort}
+        onNewNote={() => { const root = activeRoot(); if (root) newNoteIn(root, ''); }}
+        onNewFolder={() => { const root = activeRoot(); if (root) newFolderIn(root, ''); }}
+        onCollapseAll={collapseAll}
+        onToggleExtensions={toggleHideExts}
+        onEditExtensions={editHiddenExts}
+        onRefresh={() => { const root = activeRoot(); if (root) void reloadRoot(root); }}
+        onRevealActive={revealActive}
+        onManageRoots={() => getBus().emit('openSettings', {})}
+        onBranchDiff={() => openBranchDiff(null)}
+      />
 
       <div class="flex-1 overflow-y-auto py-2">
         <Show when={error()}>
-          <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30">
+          <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded-control border border-error/30">
             {error()}
           </div>
         </Show>
@@ -905,10 +768,8 @@ export const FilesPanel: Component<{
                 density={props.density}
                 openFilePath={openFilePath()}
                 defaultExpandedValue={expandedFor(root)}
-                loadChildren={root.kind === 'project' ? loadChildren(root) : undefined}
-                onLoadedTree={
-                  root.kind === 'project' ? (rootNode) => setRawRoot(rootNode) : undefined
-                }
+                loadChildren={loadChildren(root)}
+                onLoadedTree={(rootNode) => setRawRoot(rootNode)}
                 onOpenLeaf={onOpenLeaf}
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}

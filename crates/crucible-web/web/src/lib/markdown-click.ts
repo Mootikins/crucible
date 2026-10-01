@@ -1,3 +1,4 @@
+import { fileOpenOptionsForEvent, type FileOpenOptions } from './file-actions';
 import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
 
 /**
@@ -14,7 +15,7 @@ import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
  * surface remembered to set both, and one did not.
  * between clicks.
  */
-export function makeMarkdownClickHandler(): (event: MouseEvent) => void {
+export function makeMarkdownClickHandler(onFollow?: (target: string, options: FileOpenOptions) => void, canFollow: () => boolean = () => !!onFollow): (event: MouseEvent) => void {
   return (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
 
@@ -40,7 +41,10 @@ export function makeMarkdownClickHandler(): (event: MouseEvent) => void {
     if (noteElement) {
       event.preventDefault();
       const note = noteElement.dataset.note;
-      if (note) void openNoteInEditor(note, kilnForElement(noteElement));
+      if (note) {
+        if (canFollow()) onFollow?.(note, fileOpenOptionsForEvent(event));
+        else void openNoteInEditor(note, kilnForElement(noteElement));
+      }
       return;
     }
 
@@ -56,6 +60,7 @@ export function makeMarkdownClickHandler(): (event: MouseEvent) => void {
     const note = decodeURIComponent(href)
       .replace(/^\.?\//, '')
       .replace(/\.md$/i, '');
-    void openNoteInEditor(note, kilnForElement(anchor));
+    if (canFollow()) onFollow?.(note, fileOpenOptionsForEvent(event));
+    else void openNoteInEditor(note, kilnForElement(anchor));
   };
 }

@@ -19,7 +19,7 @@ import { getBus } from '@/lib/bus';
 import { notifyAuthRequired } from '@/lib/api-client';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { theme } from '@/lib/theme';
+import { theme, paletteRevision } from '@/lib/theme';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
 
 /**
@@ -55,9 +55,8 @@ function withAlpha(hex: string, alpha: number): string {
 function buildEmberTheme() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  // Match the dock chrome (EdgePanel content is bg-shell-bg) — shell-panel
-  // here made the terminal render as a visibly lighter rectangle.
-  const bg = v('--cru-color-shell-bg', '#0e0d11');
+  // Match the working surface of the conversation rail.
+  const bg = v('--cru-color-shell-panel', '#0e0d11');
   return {
     background: bg,
     foreground: v('--cru-color-ink', '#e7e4df'),
@@ -155,6 +154,7 @@ export const TerminalPanel: Component = () => {
     // A tracked read only: applyTheme sets the root attribute BEFORE it sets
     // this signal, so buildEmberTheme already reads the new token values.
     theme();
+    paletteRevision();
     if (!term) return;
     term.options.theme = buildEmberTheme();
   });

@@ -38,7 +38,7 @@ test.describe('WS-202 editor round-trip', () => {
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.cm-content')).toContainText('Hello world');
     // Tab present, not yet dirty.
-    await expect(page.getByText('Note A.md')).toBeVisible();
+    await expect(page.getByTestId('editor-tab').filter({ hasText: 'Note A.md' })).toBeVisible();
     await expect(page.getByText('●')).toHaveCount(0);
     await story.step(page, 'note opened clean');
 

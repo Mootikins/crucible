@@ -23,24 +23,24 @@ const isChat = (t: { contentType: string }) =>
  * The sessions rail is fixed on the LEFT (WS-324), so leaf 0 is the centre
  * pane next to it — the pane a session opens in (WS-220).
  */
-async function getCentrePanes(page: Page): Promise<PaneState[]> {
-  return page.evaluate(() => {
+async function getCentrePanes(page: Page, rail = false): Promise<PaneState[]> {
+  return page.evaluate((rail) => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
     const leaves = (node: any): string[] =>
       !node ? [] : node.type === 'pane'
         ? (node.tabGroupId ? [node.tabGroupId] : [])
         : [...leaves(node.first), ...leaves(node.second)];
-    return leaves(store?.layout).map((id: string) => {
+    return leaves(rail ? store?.edgePanels.right.layout : store?.layout).map((id: string) => {
       const group = store.tabGroups[id];
       return { groupId: id, tabs: group?.tabs ?? [], activeTabId: group?.activeTabId ?? null };
     });
-  });
+  }, rail);
 }
 
 /** The CENTRE pane that holds conversations. A session is a PEER of the
  * editor — its own pane on the sessions rail's side — not a tab in a rail. */
 async function getSessionPaneState(page: Page): Promise<PaneState> {
-  return (await getCentrePanes(page)).find((p) => p.tabs.some(isChat))
+  return (await getCentrePanes(page, true)).find((p) => p.tabs.some(isChat))
     ?? { groupId: null, tabs: [], activeTabId: null };
 }
 
@@ -52,7 +52,7 @@ test.describe('New Session -> Chat Tab', () => {
     await openSessionsList(page);
   });
 
-  test('clicking New Session opens a draft; first message opens the chat tab in the centre pane beside the sessions rail', async ({ page }) => {
+  test('clicking New Session opens a draft; first message opens the chat tab in the conversation rail', async ({ page }) => {
     const createdSession = {
       ...MOCK_SESSION,
       session_id: 'test-session-new',
@@ -98,7 +98,7 @@ test.describe('New Session -> Chat Tab', () => {
     await page.getByTestId('composer-send').click();
     await createRequest;
 
-    await expect(page.locator('[data-tab-id="tab-chat-test-session-new"]')).toBeVisible();
+    await expect(page.locator('[data-testid="rail-tab-tab-chat-test-session-new"]')).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -121,10 +121,10 @@ test.describe('New Session -> Chat Tab', () => {
     // an empty editor.
     const centreAfter = await getCentrePanes(page);
     expect(centreAfter).toHaveLength(1);
-    expect(centreAfter[0].groupId).toBe(sessionAfter.groupId);
+    expect(centreAfter[0].groupId).not.toBe(sessionAfter.groupId);
   });
 
-  test('clicking an existing session opens its chat tab in the centre pane beside the sessions rail', async ({ page }) => {
+  test('clicking an existing session opens its chat tab in the conversation rail', async ({ page }) => {
     // `session.get` is one RPC method now (Simplification Plan step 19 item
     // 9), told apart per session by the request body, not the URL.
     await page.route('**/api/rpc/session.get', (route) => {
@@ -147,7 +147,7 @@ test.describe('New Session -> Chat Tab', () => {
     await page.getByTestId('session-item-test-session-002').click();
     await getSessionRequest;
 
-    await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).toBeVisible();
+    await expect(page.locator('[data-testid="rail-tab-tab-chat-test-session-002"]')).toBeVisible();
 
     const sessionAfter = await getSessionPaneState(page);
     const chatTab = sessionAfter.tabs.find((t) => t.contentType === 'chat');
@@ -158,6 +158,26 @@ test.describe('New Session -> Chat Tab', () => {
     // The session OCCUPIED the empty centre pane next to the sessions rail.
     const centreAfter = await getCentrePanes(page);
     expect(centreAfter).toHaveLength(1);
-    expect(centreAfter[0].groupId).toBe(sessionAfter.groupId);
+    expect(centreAfter[0].groupId).not.toBe(sessionAfter.groupId);
   });
+});
+
+test('selecting another session reuses a conversation pane with supporting tabs', async ({ page }) => {
+  await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
+  await page.goto('/');
+  await openSessionsList(page);
+  await page.getByTestId(`session-item-${MOCK_SESSION.session_id}`).click();
+  await expect(page.getByTestId(`rail-tab-tab-chat-${MOCK_SESSION.session_id}`)).toBeVisible();
+  const before = await page.evaluate(() => {
+    const w = window as any;
+    const group = Object.values(w.__windowStore.tabGroups).find((g: any) => g.tabs.some((t: any) => t.contentType === 'chat')) as any;
+    w.__windowActions.addTab(group.id, { id: 'supporting-backlinks', title: 'Backlinks', contentType: 'backlinks' });
+    w.__windowActions.setActiveTab(group.id, group.tabs.find((t: any) => t.contentType === 'chat').id);
+    return { layout: JSON.stringify(w.__windowStore.edgePanels.right.layout), groupId: group.id };
+  });
+  await page.getByTestId(`session-item-${MOCK_SESSION_2.session_id}`).click();
+  await expect.poll(() => page.evaluate(id => (window as any).__windowStore.tabGroups[id].activeTabId, before.groupId)).toBe(`tab-chat-${MOCK_SESSION_2.session_id}`);
+  expect(await page.evaluate(() => JSON.stringify((window as any).__windowStore.edgePanels.right.layout))).toBe(before.layout);
+  await page.getByTestId(`session-item-${MOCK_SESSION.session_id}`).click();
+  await expect.poll(() => page.evaluate(id => (window as any).__windowStore.tabGroups[id].activeTabId, before.groupId)).toBe(`tab-chat-${MOCK_SESSION.session_id}`);
 });

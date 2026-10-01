@@ -1,8 +1,10 @@
 import { Component, Show, For, createSignal } from 'solid-js';
+import { openNoteInEditor } from '@/lib/note-actions';
 import { ChevronRight, Sparkles } from '@/lib/icons';
 
 interface PrecognitionBadgeProps {
   notesCount: number;
+  kiln?: string;
   notes: { name: string; relevance: number }[];
 }
 
@@ -45,7 +47,7 @@ export const PrecognitionBadge: Component<PrecognitionBadgeProps> = (props) => {
           <For each={props.notes}>
             {(note) => (
               <li class="flex items-center gap-2 text-floor font-mono text-muted">
-                <span class="text-shell-ink truncate">{note.name}</span>
+                <button type="button" class="text-shell-ink truncate hover:underline" onClick={() => void openNoteInEditor(note.name, props.kiln)}>{note.name}</button>
                 <span class="text-muted-dark">{note.relevance.toFixed(2)}</span>
               </li>
             )}

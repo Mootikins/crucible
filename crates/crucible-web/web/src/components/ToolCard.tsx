@@ -4,6 +4,7 @@ import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
 import { toolDiffsFromWire } from '@/lib/tool-diffs';
+import { openFileInEditor } from '@/lib/file-actions';
 import { openDiff } from '@/lib/panel-actions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
@@ -188,10 +189,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       // without one carries no id.
       data-tool-call-id={props.toolCall.callId ?? undefined}
     >
+      <div class="flex items-center min-w-0">
       <button
         onClick={() => setExpanded(!expanded())}
         aria-expanded={expanded()}
-        class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
+        class="min-w-0 flex-1 flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
       >
         <Dynamic
           component={KIND_ICONS[display()?.kind ?? ''] ?? Wrench}
@@ -233,6 +235,12 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           class={`w-3 h-3 flex-shrink-0 text-muted-dark transition-transform ${expanded() ? 'rotate-90' : ''}`}
         />
       </button>
+      <For each={display()?.paths ?? []}>{(path) => (
+        <button type="button" title={`Open ${path}`} aria-label={`Open ${path}`}
+          class="max-w-[40%] truncate px-2 text-floor text-shell-ink hover:underline"
+          onClick={() => openFileInEditor(path)}>{path.split('/').pop()}</button>
+      )}</For>
+      </div>
 
       <Show when={expanded()}>
         <div class="border-t border-hairline">
@@ -323,8 +331,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                 <div class="mb-1.5 last:mb-0">
                   {/* Review this change in the session record — one
                       control per file. */}
+                    <div class="flex items-center justify-end gap-2 mb-1">
+                      <button type="button" class="text-floor text-muted hover:text-shell-ink" title={`Open ${d.fileName}`} onClick={() => openFileInEditor(d.fileName)}>Show file</button>
                   <Show when={sessionId()}>
-                    <div class="flex items-center justify-end mb-1">
                       <button
                         type="button"
                         onClick={() => openInDiff(d.fileName)}
@@ -334,8 +343,8 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                       >
                         <FileOutput class="w-3.5 h-3.5" /> Open diff
                       </button>
-                    </div>
                   </Show>
+                    </div>
                   {d.kind === 'single' ? (
                     <DiffViewer
                       fileName={d.fileName}

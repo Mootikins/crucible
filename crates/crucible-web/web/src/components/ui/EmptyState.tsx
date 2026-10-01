@@ -63,7 +63,7 @@ export const EmptyState: Component<{
               <button
                 type="button"
                 data-testid="empty-state-action"
-                class="focus-ring inline-flex items-center gap-1.5 rounded bg-control px-2.5 py-1 text-reading text-shell-ink transition-colors hover:bg-hover-wash"
+                class="focus-ring inline-flex items-center gap-1.5 rounded-control bg-control px-2.5 py-1 text-reading text-shell-ink transition-colors hover:bg-hover-wash"
                 onClick={() => action.onClick()}
               >
                 <span>{action.label}</span>

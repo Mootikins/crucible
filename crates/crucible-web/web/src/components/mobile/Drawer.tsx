@@ -116,13 +116,14 @@ export const Drawer: Component<{
       <div
         ref={panel}
         data-testid={`drawer-${props.side}`}
+        data-side={props.side}
         role={props.open ? 'dialog' : undefined}
         aria-modal={props.open ? 'true' : undefined}
         aria-label={props.label}
         aria-hidden={props.open ? undefined : 'true'}
         tabIndex={-1}
-        class={`fixed top-0 bottom-0 z-50 flex flex-col bg-shell-bg border-hairline shadow-xl focus-ring ${
-          props.side === 'left' ? 'left-0 border-r' : 'right-0 border-l'
+        class={`fixed top-0 bottom-0 z-50 flex flex-col compact-drawer focus-ring ${
+          props.side === 'left' ? 'left-0' : 'right-0'
         }`}
         style={{
           width: `${props.width}px`,

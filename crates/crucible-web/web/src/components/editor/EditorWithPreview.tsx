@@ -11,22 +11,26 @@
  * Non-markdown files are always source with no mode controls.
  */
 import { Component, Show, createSignal, createEffect } from 'solid-js';
+import { HistoryNav, type HistoryNavProps } from './HistoryNav';
+import { Breadcrumb } from './Breadcrumb';
+import type { FileOpenOptions } from '@/lib/file-actions';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
-import { Eye, Pencil, Code } from '@/lib/icons';
+import { NoteViewSwitch, type EditorMode } from './NoteViewSwitch';
 import { editNote } from '@/lib/offline/sync';
 import { applyTaskToggle, taskEditForLine } from '@/lib/task-toggle';
 import { notificationActions } from '@/stores/notificationStore';
 import { isMarkdownPath } from '@/lib/markdown-path';
 
-type EditorMode = 'live' | 'source' | 'reading';
 
 export const EditorWithPreview: Component<{
   content: string;
+  editorStates?: Map<string, import('@codemirror/state').EditorState>;
+  history?: HistoryNavProps;
   path: string;
   onChange: (content: string) => void;
   onSave?: () => void;
-  onFollowLink?: (target: string) => void;
+  onFollowLink?: (target: string, options?: FileOpenOptions) => void;
   /**
    * Kiln owning the file in the buffer. Wikilinks resolve here — in the
    * rendered view, and (via `data-kiln`) in the document-level hover
@@ -47,8 +51,7 @@ export const EditorWithPreview: Component<{
    * hover mode; default live). Non-markdown is always source. */
   initialMode?: EditorMode;
   /** Drive the mode from outside. The compact shell does: its app bar carries
-   * the Read/Write control, because these floating buttons are ~26 px and sit
-   * over the text. Supplying it also hides them. */
+   * the Read/Write control. Supplying it hides the desktop toolbar. */
   mode?: EditorMode;
   onModeChange?: (mode: EditorMode) => void;
   /** Readable line length in px (0 = full width). */
@@ -131,40 +134,22 @@ export const EditorWithPreview: Component<{
     if (!controlled()) setOwnMode(defaultMode());
   });
 
-  const modeButton =
-    'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
-
   return (
-    <div class="relative h-full w-full" data-kiln={props.kiln || undefined}>
+    <div class="note-editor flex flex-col h-full w-full" data-kiln={props.kiln || undefined} onKeyDown={(event) => {
+      if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+      const step = event.key === 'ArrowLeft' ? -1 : 1;
+      if (!(step === -1 ? props.history?.canBack : props.history?.canForward)) return;
+      event.preventDefault();
+      props.history?.onGo(step);
+    }}>
       <Show when={isMarkdown() && !controlled()}>
-        <div class="absolute right-3 top-2 z-10 flex items-center gap-1">
-          {/* Live ↔ source: the prose flow vs the mono/raw code flow. */}
-          <Show when={mode() !== 'reading'}>
-            <button
-              type="button"
-              data-testid="mode-toggle"
-              title={mode() === 'live' ? 'Source mode' : 'Live preview'}
-              onClick={() => setMode((m) => (m === 'live' ? 'source' : 'live'))}
-              class={modeButton}
-            >
-              <Show when={mode() === 'live'} fallback={<Pencil class="h-3.5 w-3.5" />}>
-                <Code class="h-3.5 w-3.5" />
-              </Show>
-            </button>
-          </Show>
-          <button
-            type="button"
-            data-testid="preview-toggle"
-            title={mode() === 'reading' ? 'Edit (Ctrl+Shift+E)' : 'Reading view (Ctrl+Shift+E)'}
-            onClick={() => setMode((m) => (m === 'reading' ? 'live' : 'reading'))}
-            class={modeButton}
-          >
-            <Show when={mode() === 'reading'} fallback={<Eye class="h-3.5 w-3.5" />}>
-              <Pencil class="h-3.5 w-3.5" />
-            </Show>
-          </button>
+        <div class="note-toolbar shrink-0" role="toolbar" aria-label="Note view">
+          <Show when={props.history}>{(history) => <HistoryNav {...history()} />}</Show>
+          <Breadcrumb root={props.kiln?.split('/').pop() || ''} path={props.kiln && props.path.startsWith(`${props.kiln}/`) ? props.path.slice(props.kiln.length + 1) : props.path.replace(/^\//, '')} />
+          <NoteViewSwitch mode={mode()} onChange={setMode} />
         </div>
       </Show>
+      <div class="relative min-h-0 flex-1 overflow-hidden">
       <Show
         when={mode() !== 'reading' || !isMarkdown()}
         fallback={
@@ -175,11 +160,13 @@ export const EditorWithPreview: Component<{
             maxWidth={props.lineWidth}
             scrollToNote={props.scrollToNote}
             onToggleTask={toggleTask}
+            onFollowLink={props.onFollowLink}
           />
         }
       >
         <CodeMirrorEditor
           apiRef={props.editorApiRef}
+          editorStates={props.editorStates}
           content={props.content}
           path={props.path}
           onChange={props.onChange}
@@ -198,6 +185,7 @@ export const EditorWithPreview: Component<{
           scrollToLine={props.scrollToLine}
         />
       </Show>
+      </div>
     </div>
   );
 };

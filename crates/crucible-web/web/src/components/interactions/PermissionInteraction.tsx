@@ -96,12 +96,12 @@ export const PermissionInteraction: Component<Props> = (props) => {
     ].filter(Boolean);
   const hasDiff = () => requestDiffs().length > 0;
 
-  const handleAllow = () => {
+  const allowWithScope = (chosen: PermissionScope) => {
     props.onRespond({
       kind: 'permission',
       allowed: true,
       pattern: props.request.pattern,
-      scope: scope(),
+      scope: chosen,
     });
   };
 
@@ -117,7 +117,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
     // Type sits at the transcript sizes: `text-floor` for the argument
     // listing (mono reads a step wider than prose), `text-xs` for the rest.
     // The card used to read a size above the turn it interrupts.
-    <div class="bg-surface-elevated rounded-lg p-3 mb-4 border border-hairline">
+    <div class="permission-card bg-surface-elevated rounded-lg p-3">
       <div class="flex items-center gap-2 mb-2">
         <span
           class={`px-2 py-0.5 text-floor font-medium rounded-md ${actionInfo().chip} ${isNamedTool() ? 'font-mono' : ''}`}
@@ -173,7 +173,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
                 now docks on the composer. A 500-line write must not push the
                 Allow/Deny row off the bottom of the screen, so the preview
                 scrolls and the decision stays where the user can reach it. */}
-            <div class="max-h-64 overflow-y-auto">
+            <div class="permission-preview overflow-y-auto">
               <For each={requestDiffs()}>
                 {(d) => (
                   <DiffViewer
@@ -215,7 +215,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
         <button onClick={handleDeny} class={btnNeutral} data-testid="perm-deny">
           Deny
         </button>
-        <button onClick={handleAllow} class={btnConsent} data-testid="perm-allow">
+        <button onClick={() => allowWithScope(scope())} class={btnConsent} data-testid="perm-allow">
           Allow
         </button>
 
@@ -223,6 +223,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
             grant that can name the call, a wider scope would save nothing,
             so the disclosure is not offered. */}
         <Show when={props.request.pattern}>
+          <button onClick={() => allowWithScope('session')} class={btnNeutral} data-testid="perm-allow-session">Allow for session</button>
           <button
             onClick={() => setShowScopes(!showScopes())}
             data-testid="perm-scopes-toggle"

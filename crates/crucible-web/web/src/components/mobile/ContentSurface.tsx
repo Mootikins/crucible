@@ -61,5 +61,5 @@ export const ContentSurface: Component<{
     return content;
   };
 
-  return <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-shell-bg">{view()}</div>;
+  return <div class="flex-1 min-h-0 flex flex-col overflow-hidden">{view()}</div>;
 };

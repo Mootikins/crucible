@@ -19,33 +19,31 @@ describe('defaultLayout default seed', () => {
     }
   });
 
-  // One centre group, one on the left rail, and two on the right rail: the
-  // file tree and the terminal under it.
-  it('seeds 4 tab groups: 1 in the centre and 3 on the rails', () => {
+  // One document group, two navigation panes, and conversations above Terminal.
+  it('seeds 5 tab groups: documents, navigation, conversations and terminal', () => {
     const state = defaultLayout();
-    expect(Object.keys(state.tabGroups)).toHaveLength(4);
+    expect(Object.keys(state.tabGroups)).toHaveLength(5);
     expect(collectLeafGroupIds(state.layout)).toHaveLength(1);
     const railGroups = (['left', 'right'] as const).flatMap((pos) =>
       collectLeafGroupIds(state.edgePanels[pos].layout),
     );
-    expect(railGroups).toHaveLength(3);
+    expect(railGroups).toHaveLength(4);
   });
 
-  it('the right edge panel opens to Files', () => {
+  it('the right edge panel reserves a conversation pane', () => {
     const state = defaultLayout();
     const rightGroupId = primaryEdgeGroupId(state, 'right')!;
-    expect(state.tabGroups[rightGroupId].activeTabId).toBe('files-tab');
+    expect(state.tabGroups[rightGroupId].activeTabId).toBeNull();
   });
 
-  // The two must be on OPPOSITE rails, both visible at once. A seed that put
-  // them in one panel would restore the Navigator's defect under new names.
-  it('seeds Sessions on the left and Files on the right', () => {
+  // The navigation panes remain simultaneously visible.
+  it('stacks Sessions and Files in separate panes on the left', () => {
     const state = defaultLayout();
     const left = state.tabGroups[primaryEdgeGroupId(state, 'left')!];
-    const right = state.tabGroups[primaryEdgeGroupId(state, 'right')!];
+    const files = state.tabGroups[collectLeafGroupIds(state.edgePanels.left.layout)[1]];
     expect(left.tabs.map((t) => t.contentType)).toEqual(['sessions']);
     expect(left.activeTabId).toBe(left.tabs[0].id);
-    expect(right.tabs.map((t) => t.contentType)).toContain('files');
+    expect(files.tabs.map((t) => t.contentType)).toContain('files');
     expect(left.tabs.map((t) => t.contentType)).not.toContain('files');
   });
 

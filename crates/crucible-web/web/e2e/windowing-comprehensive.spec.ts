@@ -53,16 +53,16 @@ test.describe('Windowing in the app', () => {
     const sessionItem = page.getByTestId('session-item-test-session-001');
     await expect(sessionItem).toBeVisible({ timeout: 5000 });
     await sessionItem.click();
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]')).toBeVisible({ timeout: 5000 });
   });
 
   test('opening multiple sessions creates two unique chat tabs without duplicates', async ({ page }) => {
     await page.getByTestId('session-item-test-session-002').click();
-    await expect(page.locator('[data-tab-id="tab-chat-test-session-001"]')).toBeVisible({ timeout: 3000 });
-    await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('[data-testid="rail-tab-tab-chat-test-session-001"]')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('[data-testid="rail-tab-tab-chat-test-session-002"]')).toBeVisible({ timeout: 3000 });
 
     await page.getByTestId('session-item-test-session-001').click();
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toHaveCount(2, { timeout: 3000 });
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]')).toHaveCount(2, { timeout: 3000 });
   });
 
   test('shows center empty state after all center tabs are removed', async ({ page }) => {

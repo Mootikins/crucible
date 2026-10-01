@@ -111,7 +111,7 @@ overwrites.
 (`windowing/components/context.tsx`), and every member of it is optional:
 
 - `railHead(position)` — above the tab icons on a rail (the layout menu, left rail only).
-- `railTail(position)` — pinned to the far end of a rail (the offline badge, the theme and settings buttons, the notification bell).
+- `railTail(position)` — replaces the default side-swap control at the far end of a rail (the offline badge, the theme and settings buttons, the notification bell).
 - `corner()` — the floating cluster at the bottom-right of the centre (`CornerBar`).
 - `emptyPaneHints()` — the rows an empty pane prints under its label.
 - `attachDropTarget(el, groupId)` — attaches a native HTML5 drop target to a pane body or ribbon, for the group `groupId` names; returns the cleanup.
@@ -198,7 +198,8 @@ chord, and a policy can bind another one.
   `releaseExpandOnCentreFocus` (`model/tree.ts`) holds that rule for both
   `setActiveTab` and `setActivePane`.
 - **What else ends it.** A rail that leaves `docked` (toggle, collapse or
-  `setEdgeMode`) cannot cover the centre, so it ends the expand. A reset and a
+  `setEdgeMode`) cannot cover the centre, so it ends the expand. Closing, moving
+  or popping out the last tab of that rail also clears the expand. A reset and a
   restore end it and keep `expandExit`. A swap carries it to the rail's new side.
 - **Not stored.** The serializer does not write `expandedEdge`, so a reload
   opens the plain layout.
@@ -373,7 +374,7 @@ with the theme as it looked with the old utility classes.
   shadows read the `--cru-*` contract directly, because Tailwind writes an
   alias only when a utility uses it.
 - **Where it loads.** `src/index.tsx`, `windowing-harness.tsx`,
-  `editor-harness.tsx` and the shell mockup import the theme after
+  `editor-harness.tsx` import the theme after
   `index.css`.
 
 ### Parts
@@ -548,65 +549,70 @@ of the parts, so the check cannot pass on an empty tree.
 - [[Meta/Web User Stories#WS-324]] — the fixed-rail policy the app layers on top.
 
 
-## Shell mockup review design
+## Shell presentation and review
 
-### Integration target (planned)
+### Production integration
 
-The mockup is the presentation target; its Look toolbox remains a mockup-only
-experiment. The selected adjustable controls belong in the existing
+`src/shell-theme.css` owns the production palette and chrome. It extends the core theme without putting app decisions in the core.
+`components/DiffRows.tsx` owns the numbered, syntax-highlighted permission
+preview rows and inline changes.
+The review editor continues to use `lib/merge-view.ts` and the existing comment
+owner. Its file Comment action sends a whole-file range through the same
+mutation, with root, source, side and path preserved. Whole-file comments render
+below the file so collapsed context cannot hide them.
+
+The default layout stacks Sessions above Files on the left. Conversations open
+on the opposite rail above the folded terminal, leaving documents in the centre.
+`lib/session-actions.ts` chooses that rail by role, including after a side swap.
+Reopening an existing conversation activates it where the user placed it.
+The session header can expand its rail; the centre stays mounted throughout.
+`stores/fixedRails.ts` migrates the former two-pane Files/Terminal skeleton,
+keeping tab identities and centre content; other saved arrangements remain.
+Missing navigation panels are restored together on the navigation rail.
+App tab activation also reveals a folded owning pane, including when selecting
+an existing or new session from navigation.
+Selecting a ribbon tab unfolds both its rail and its pane in one click,
+including the default folded terminal. `TabContextMenu` also exposes Fold pane
+and Unfold pane for rail tabs, so pane folding stays accessible when the theme
+hides pane markers. `layoutActions.canCollapsePane` shares the last-expanded-pane
+guard with `setPaneCollapsed`; folding never closes tabs or stows the rail.
+
+Appearance changes update CSS variables, then notify the theme owner's palette
+revision so canvas terminals and graphs repaint. Editors keep their buffers and
+undo history. Dark/light continues through `lib/theme.ts`, including OS choice
+and the existing rail toggle. This is browser presentation; the TUI and daemon
+continue to use the same session and transcript protocols.
+
+The agreed design is integrated into the production components. The selected
+adjustable controls live in the existing
 `AppearanceSettingsSection` (`components/settings/AppearanceSettings.tsx`),
 rendered by `SettingsModal`, with persistence through `SettingsContext` and
-`lib/settings.ts`. Integration adds no Look panel or parallel settings store.
+`lib/settings.ts`. The integration adds no Look panel or parallel settings store.
 
 The chosen fixed style uses leaf tabs and a right-hand card, with no optional
 edges, inner lines or shadows. Theme, true black, contrast, navigation tint,
 an RGB accent, pane gap and radius, note text size and file-label presentation
-remain configurable. The toolbox's other experiments are not production
-settings. These controls are planned; the fixture's localStorage choices do
-not establish a production settings contract.
+remain configurable. Production preferences persist through the existing browser settings. The
+temporary shell mockup, its fixture store and experimental Look toolbox are
+retired. Optional visual comparisons use a frozen reference in a separate
+worktree; production harnesses mount production components.
 
-The full existing editor remains in place. Source mode retains source line
-numbers for every note, and live preview retains its rendering and cursor
-motion. The mockup's static note article is a visual reference, not an editor
-replacement. Integration preserves the existing query owners for daemon
+The full existing editor remains in place. Source mode shows line numbers;
+live preview hides them and retains paragraph joining, readable-width wrapping
+and cursor motion. Integration preserves the existing query owners for daemon
 entities, the transcript store for daemon-folded transcript operations, and
-the editor's buffers, saves, selection and undo history. It replaces fixture
-reads with those owners rather than migrating the mockup's data store into
-the app.
+the editor's buffers, saves, selection and undo history. The app reads those owners directly.
 
-The dev-only `/shell-mockup.html?review` entry opens Changes and a proposal
-in the real windowing core. Changes shows the read-only session diff directly, in one tab. File headers
-open the note; there is no intermediate file-list or separate Session diff tab. The Inbox lists open proposals separately from
-permission requests. A proposal opens a diff tab named for its subject, with Accept/Reject
-for the whole proposal or one file; rejecting never changes the note. Notes
-with a pending proposal show a Review bar rather than inline decision hunks.
-Comments in the diff attach to the chat composer, and can be resolved.
-File diffs fold through a caret beside the filename, without unified-diff
-range headers. Review and permission previews share numbered monospace rows
-with addition/removal markers; review rows use quiet tints with brighter
-word-change backgrounds. Syntax colors remain visible for code.
-The mockup numbers use full-note file positions, excluding fixture marker
-metadata and accounting for earlier edits independently on each side.
-Accepted proposals retain their original review rows and numbering.
+Production review and permission previews share numbered monospace rows with
+addition/removal markers and word-change emphasis. Syntax colors remain visible
+for code. The review editor owns stale proposals, conflict settlement and
+line-range comments. Its file comment action preserves root, source, side and
+path through the existing mutation.
 
-This surface uses local design fixtures, not daemon writes. It illustrates the
-current record/proposal split; stale proposals, conflict settlement and
-line-range comment selection remain represented by the real app's diff pane,
-not this preview. The former Session/Turn, Unreviewed only, per-hunk decision
-and undo variants have been removed from the mockup and its Look toolbox.
-
-
-The mockup's permission prompt uses a raised surface with a faint attention
-tint and no border, including the glass material. Its inset diff uses the
-same base surface, row typography, gutters, and inline change highlights as
-the file buffers, preserving contrast against the raised prompt. The preview
-shows up to 24rem of rows before scrolling, capped at 40% of viewport height.
-Its six-line minimum shrinks with short viewports, keeping space for actions.
-The mockup's comment editor uses a soft control background with no surrounding
-card border; saved comments sit directly below the diff. Transcript copy and
-regenerate controls appear once at the end of a completed assistant turn.
-Interim text before a tool or permission request reserves no action row. Copy
-collects the assistant text of that turn, stopping at the user-message boundary.
+Permission prompts use a raised surface with an inset base-surface diff.
+Transcript copy and regenerate controls appear once at the end of a completed
+assistant turn. Interim text before a tool or permission request reserves no
+action row. Copy collects assistant text up to the user-message boundary.
 
 The dev-only `/review-harness.html` mounts the production `DiffPanel` with
 local RPC replies. It shares a two-hunk Rust fixture with the browser tests.
@@ -615,17 +621,59 @@ The production merge theme uses stronger row tints, caret headers without
 The preview supports unified/split layouts, folding, and local comments; it
 does not send requests to the daemon.
 
-The mockup separates its title from a summary toolbar with whole-proposal
-Accept all/Reject all controls. Per-file controls stay above the rows.
-`/shell-mockup.html?review&code` shows the same two-hunk Rust example adapted
-to this style, including syntax highlighting and independent hunk folding.
-
 The tab strip reveals the active tab after its own width changes as well as
 after selection changes. It measures after the overflow controls lay out and
 scrolls only the strip, keeping the selected tab clear of those controls.
-The mockup uses an 8px tab left inset and aligns file/hunk carets on one axis.
+The production theme aligns file and hunk carets on one axis.
 
 The tab strip measures its clipped edges on scrolling, resizing, tab changes,
 and font loading. Overflow data attributes drive the theme's gradient mask,
 which fades tabs without covering neighboring controls and disappears when
 the tabs fit.
+
+The desktop note toolbar uses `components/editor/NoteViewSwitch.tsx` to drive the existing `EditorWithPreview` mode owner.
+Controls occupy a separate row above the document. Controlled compact editors
+use their app-bar Read/Write controls instead.
+
+Document history lives in file-tab metadata and is changed by `lib/file-actions.ts`
+through the tab host. `EditorContext` retains buffers owned by history and tracks
+their dirty state for tab-close confirmation; CodeMirror retains per-file editor
+state so undo cannot cross files. `HistoryNav`, `Breadcrumb` and `NoteViewSwitch`
+are production-owned views. File and wikilink gestures use
+one file-open intent mapping for in-place, new-tab and split navigation.
+
+Files uses one lazy filesystem tree and the existing `useListDir` cache for all
+admitted root kinds. Empty directories and non-note assets are filesystem entries,
+not synthetic note-index rows. The shared filesystem event route invalidates
+listings once; each pane rebuilds its expanded children from that cache without
+invalidating again. Explicit Refresh covers external files outside the kiln
+watcher's indexable-format filter. Revealing a nested file awaits each ancestor
+listing.
+Centre/rail swapping updates placement through the existing editor and session
+pane selectors, so subsequent opens follow the swapped regions.
+
+Queued prompt actions extend the browser's existing shared transcript queue.
+Removing an unsent prompt removes its optimistic turn; prioritizing it requests
+cancellation and lets the normal idle drain claim it once across mounted panes.
+Session menu actions use the session context; note/tool links use canonical
+resolution/file actions; permission scopes use the interaction response owner.
+
+Navigation controls use the shared control radius (pane radius capped at 12px),
+and menus use the pane radius. `menu-style.ts` and `ChipSelect` share the
+`shell-popup` tonal surface without borders or shadows; menu groups use spacing.
+Files and Sessions rows use these same corners in desktop rails and phone drawers.
+
+The app exposes one swap button: centre with right rail. The left navigation
+rail stays in place. The generic core side-swap button remains the fallback
+when no application `railTail` slot is provided.
+
+Ribbon tab sorting uses the same insertion-index and pending-drop owner as
+horizontal tab bars, with a vertical axis and per-group rows. The ribbon paints
+a horizontal insertion marker at the committed drop position. Each drag surface
+clears only its own pending placement, so a hidden bar cannot cancel a ribbon
+drop. The shell centers rail resize handles in the existing pane gutter.
+
+Session selection reuses a conversation tab group even when the user groups
+Backlinks, Activity or other supporting tabs with it. It activates the selected
+conversation without adding a split, preferring an existing conversation over
+an empty group. Navigation groups containing Sessions or Files remain excluded.

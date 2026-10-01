@@ -36,11 +36,7 @@ async function openDiff(page: Page): Promise<Locator> {
 
 /** A press and a release on one line number: the comment box opens. */
 async function commentBox(page: Page, file: Locator, line: number): Promise<Locator> {
-  const at = await file.locator(`[data-testid="diff-line-${line}"]`).boundingBox();
-  if (!at) throw new Error(`no line number ${line}`);
-  await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
-  await page.mouse.down();
-  await page.mouse.up();
+  await file.getByTestId(`diff-line-${line}`).click();
   const box = file.getByTestId('diff-comment-box');
   await expect(box).toBeVisible();
   return box;
@@ -104,4 +100,43 @@ test('the comment box puts its range label in the row of its buttons', async ({ 
   // The label is under the text field, level with the buttons.
   expect(label.y).toBeGreaterThan(input.y + input.height);
   expect(Math.abs(label.y + label.height / 2 - (submit.y + submit.height / 2))).toBeLessThan(2);
+});
+
+
+test('the file Comment action keeps the source, path and full-file anchor', async ({ page }) => {
+  const file = await openDiff(page);
+  await file.getByTestId('diff-file-comment').click();
+  await file.getByTestId('diff-comment-input').fill('Review this file as a whole.');
+  const sent = page.waitForRequest((request) => request.url().endsWith('/api/rpc/diff.comment'));
+  await file.getByTestId('diff-comment-submit').click();
+  expect((await sent).postDataJSON()).toMatchObject({
+    source: { kind: 'branch', root: ROOT },
+    path: 'src/server.rs', side: 'current', line_start: 1,
+    body: 'Review this file as a whole.',
+  });
+  await expect(file.getByTestId('diff-comment-input')).toHaveCount(0);
+  await expect(file.getByText('Review this file as a whole.', { exact: true })).toBeVisible();
+});
+
+test('changed review rows retain explicit plus and minus markers', async ({ page }) => {
+  const file = await openDiff(page);
+  const marker = (selector: string) => file.locator(selector).first().evaluate(
+    (el) => getComputedStyle(el, '::before').content,
+  );
+  await expect.poll(() => marker('.cm-changedLine')).toBe('"+"');
+  await expect.poll(() => marker('.cm-deletedChunk > .cm-deletedLine')).toBe('"−"');
+});
+
+
+test('file titles open the editor while caret folding stays in the review', async ({ page }) => {
+  const file = await openDiff(page);
+  const toggle = file.getByTestId('diff-file-toggle');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await file.getByRole('button', { name: 'Open src/server.rs', exact: true }).click();
+  const tab = page.locator(`[data-tab-id="tab-file-${ROOT}/src/server.rs"]`);
+  await expect(tab).toBeVisible();
+  await expect(tab).toHaveAttribute('data-active', '');
+  await openBranchDiff(page);
+  await expect(file.getByTestId('diff-file-editor')).toBeVisible();
 });

@@ -402,6 +402,12 @@ describe('PermissionInteraction', () => {
 
   // The daemon checks a grant against the canonical call. A Claude `Edit` is
   // a file edit, so its grant is the path, not the tool name on the wire.
+  it('answers with the session grant directly from the shortcut', () => {
+    render(() => <PermissionInteraction request={{ kind: 'permission', id: 'session-scope', action: { type: 'tool', name: 'Edit', args: {} }, pattern: '/w/a.rs' }} onRespond={mockOnRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Allow for session$/ }));
+    expect(mockOnRespond).toHaveBeenCalledWith({ kind: 'permission', allowed: true, pattern: '/w/a.rs', scope: 'session' });
+  });
+
   it('sends the grant that the daemon suggested, not a token of the request', async () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',

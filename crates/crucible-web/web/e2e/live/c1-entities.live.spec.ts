@@ -35,16 +35,19 @@ const ALPHA = 'alpha';
 const BETA = 'beta';
 
 /**
- * `list_notes` for one kiln, as a predicate over the recorded body.
+ * `fs.list_dir` for one kiln, as a predicate over the recorded body.
  *
- * `list_notes` reaches the browser through `POST /api/rpc/{method}` now
+ * `fs.list_dir` reaches the browser through `POST /api/rpc/{method}` now
  * (Simplification Plan step 19 item 3), so its params ride the body rather
  * than the query string.
  */
-function notesFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
+function listingFor(log: ReturnType<typeof captureApiRequests>, kilnDir: string): number {
   return log
-    .matching('/api/rpc/list_notes')
-    .filter((r) => r.method === 'POST' && (JSON.parse(r.body ?? '{}') as { kiln?: string }).kiln === kilnDir)
+    .matching('/api/rpc/fs.list_dir')
+    .filter((r) => {
+      const params = JSON.parse(r.body ?? '{}') as { root?: string; rel_path?: string };
+      return r.method === 'POST' && params.root === kilnDir && !params.rel_path;
+    })
     .length;
 }
 
@@ -113,7 +116,7 @@ test.describe('live C1 entities', () => {
       { id: 'files-left', title: 'Files', contentType: 'files' },
     ]) {
       await mountTab(page, 'left', tab);
-      await expect(page.getByTestId(`edge-tab-left-${tab.id}`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId(`rail-tab-${tab.id}`)).toBeVisible({ timeout: 15_000 });
     }
     await apiQuiet(log);
 
@@ -130,19 +133,19 @@ test.describe('live C1 entities', () => {
     await openFileTree(page);
     await apiQuiet(log);
 
-    // The first kiln. One read of ITS notes, and no second read of the roster
+    // The first kiln. One read of ITS directory, and no second read of the roster
     // that named it.
     await selectRoot(page, ALPHA);
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
     expect(log.count('POST', '/api/rpc/kiln.list'), describeRequests(log, '/api/rpc/kiln.list')).toBe(1);
 
     // The second kiln. A different key, so a read; the first kiln's answer is
     // untouched.
     await selectRoot(page, BETA);
     await apiQuiet(log);
-    expect(notesFor(log, state.secondKilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
-    expect(notesFor(log, state.kilnDir!)).toBe(1);
+    expect(listingFor(log, state.secondKilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
+    expect(listingFor(log, state.kilnDir!)).toBe(1);
     expect(log.count('POST', '/api/rpc/kiln.list')).toBe(1);
 
     // And BACK. The answer for `alpha` is still held under its own key, so
@@ -150,8 +153,8 @@ test.describe('live C1 entities', () => {
     // because the second kiln overwrote the first.
     await selectRoot(page, ALPHA);
     await apiQuiet(log);
-    expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/list_notes')).toBe(1);
-    expect(notesFor(log, state.secondKilnDir!)).toBe(1);
+    expect(listingFor(log, state.kilnDir!), describeRequests(log, '/api/rpc/fs.list_dir')).toBe(1);
+    expect(listingFor(log, state.secondKilnDir!)).toBe(1);
     expect(log.count('POST', '/api/rpc/kiln.list')).toBe(1);
   });
 

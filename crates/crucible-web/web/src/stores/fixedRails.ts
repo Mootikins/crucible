@@ -2,32 +2,12 @@ import type { EdgePanelPosition, Tab, TabContentType, WindowState } from '@/type
 import { iconForContentType } from '@/lib/tab-icons';
 import { collectLeafGroupIds, findFirstPane, generateId } from '@/windowing';
 
-/**
- * The two panels the shell always keeps, and the rail each one belongs to.
- *
- * Sessions on the left and Files on the right are not tabs like the others:
- * they are the two ways INTO the app. Everything else opens from one of them,
- * or from the palette, so a shell with neither is a shell with no doorway —
- * and that is the state a user reached, because a rail could be emptied and a
- * restore brought it back empty. `swapSidePanels` still moves them as a pair,
- * so the rule names a DEFAULT side, not a fixed one.
- *
- * The title travels with the rule rather than being read from the panel
- * registry: this store must be able to repair a layout during boot, before
- * anything registers a panel, and `Sessions` / `Files` are the registry's
- * titles anyway (see lib/register-panels.tsx).
- */
-const FIXED_RAIL_PANELS: Record<
-  EdgePanelPosition,
-  { contentType: TabContentType; title: string }
-> = {
-  left: { contentType: 'sessions', title: 'Sessions' },
-  right: { contentType: 'files', title: 'Files' },
-};
-
-const FIXED_RAIL_TYPES: TabContentType[] = Object.values(FIXED_RAIL_PANELS).map(
-  (p) => p.contentType,
-);
+/** Navigation panels are always present, including after layout repair. */
+const FIXED_RAIL_PANELS = [
+  { contentType: 'sessions', title: 'Sessions' },
+  { contentType: 'files', title: 'Files' },
+] as const;
+const FIXED_RAIL_TYPES: readonly TabContentType[] = FIXED_RAIL_PANELS.map((panel) => panel.contentType);
 
 /** Every tab of one content type, in every group, wherever it is docked. */
 function tabsOfType(s: WindowState, contentType: TabContentType): Tab[] {
@@ -88,6 +68,16 @@ function addFixedRailTab(
     if (pane) pane.tabGroupId = groupId;
     else s.edgePanels[pos].layout = { id: `${pos}-pane`, type: 'pane', tabGroupId: groupId };
   }
+  if (s.tabGroups[groupId].tabs.length > 0) {
+    const nextGroup = generateId();
+    s.tabGroups[nextGroup] = { id: nextGroup, tabs: [], activeTabId: null };
+    s.edgePanels[pos].layout = {
+      id: generateId(), type: 'split', direction: 'vertical', splitRatio: 0.4,
+      first: s.edgePanels[pos].layout,
+      second: { id: generateId(), type: 'pane', tabGroupId: nextGroup },
+    };
+    groupId = nextGroup;
+  }
   const group = s.tabGroups[groupId];
   // Leading, and active: the rail's own panel reads first on its tab strip,
   // and a repair the user cannot see is not a repair.
@@ -105,13 +95,36 @@ function addFixedRailTab(
  * the centre keeps one Sessions panel, not two.
  */
 export function ensureFixedRails(s: WindowState): void {
-  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
-    const panel = FIXED_RAIL_PANELS[pos];
+  migrateNavigationLayout(s);
+  for (const panel of FIXED_RAIL_PANELS) {
     if (tabsOfType(s, panel.contentType).length > 0) continue;
-    const other: EdgePanelPosition = pos === 'left' ? 'right' : 'left';
-    // A swapped layout holds the other fixed panel on this side. Re-add on
-    // the free rail rather than stacking both on one.
-    const target = railHolding(s, FIXED_RAIL_PANELS[other].contentType) === pos ? other : pos;
+    const target = railHolding(s, 'sessions') ?? railHolding(s, 'files') ?? 'left';
     addFixedRailTab(s, target, panel);
   }
+}
+
+/** Stored pre-migration default layouts put Files above Terminal. Move that
+ * known skeleton as a whole; custom trees and all tab identities stay intact. */
+function migrateNavigationLayout(s: WindowState): void {
+  const nav = railHolding(s, 'sessions');
+  if (!nav) return;
+  const conversation = nav === 'left' ? 'right' : 'left';
+  const navTree = s.edgePanels[nav].layout;
+  const old = s.edgePanels[conversation].layout;
+  if (navTree.type !== 'pane' || old.type !== 'split' || old.direction !== 'vertical') return;
+  if (old.first.type !== 'pane' || old.second.type !== 'pane') return;
+  const files = old.first.tabGroupId && s.tabGroups[old.first.tabGroupId];
+  const terminal = old.second.tabGroupId && s.tabGroups[old.second.tabGroupId];
+  if (!files || !terminal || !files.tabs.some((tab) => tab.contentType === 'files') ||
+      !terminal.tabs.every((tab) => tab.contentType === 'terminal')) return;
+  const groupId = generateId();
+  s.tabGroups[groupId] = { id: groupId, tabs: [], activeTabId: null };
+  s.edgePanels[nav].layout = {
+    id: generateId(), type: 'split', direction: 'vertical', splitRatio: 0.4,
+    first: navTree, second: old.first,
+  };
+  s.edgePanels[conversation].layout = {
+    ...old, first: { id: generateId(), type: 'pane', tabGroupId: groupId },
+  };
+  s.edgePanels[conversation].width = Math.max(s.edgePanels[conversation].width ?? 0, 400);
 }

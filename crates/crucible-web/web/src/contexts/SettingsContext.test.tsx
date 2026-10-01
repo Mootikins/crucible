@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRoot } from 'solid-js';
 import { render } from '@solidjs/testing-library';
 import { SettingsProvider, useSettings, type SettingsContextValue } from './SettingsContext';
-import { SETTINGS_STORAGE_KEY } from '@/lib/settings';
+import { SETTINGS_STORAGE_KEY, defaultSettings } from '@/lib/settings';
 
 describe('SettingsContext', () => {
   beforeEach(() => {
@@ -80,6 +80,9 @@ describe('SettingsContext', () => {
         updateSetting('transcription', 'provider', 'server');
         expect(settings.transcription.provider).toBe('server');
 
+        updateSetting('appearance', 'gap', 20);
+        updateSetting('editor', 'maxLineWidth', 500);
+        updateSetting('terminal', 'fontSize', 18);
         // Call resetSettings and check the store and localStorage
         resetSettings();
 
@@ -89,6 +92,9 @@ describe('SettingsContext', () => {
 
         // Then check the reactive store
         expect(settings.transcription.provider).toBe('local');
+        expect(settings.appearance.gap).toBe(defaultSettings.appearance.gap);
+        expect(settings.editor.maxLineWidth).toBe(defaultSettings.editor.maxLineWidth);
+        expect(settings.terminal.fontSize).toBe(defaultSettings.terminal.fontSize);
         return null;
       };
 

@@ -1,4 +1,4 @@
-import { createSignal, untrack, type Accessor, type Setter } from 'solid-js';
+import { batch, createSignal, untrack, type Accessor, type Setter } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import type {
   ChatMode,
@@ -658,6 +658,24 @@ export function queueTurn(
     ...prev,
     { tempId, content, ...(comments?.length ? { comments } : {}) },
   ]);
+}
+
+/** Withdraw a browser-local prompt that has not been admitted by the daemon. */
+export function removeQueuedTurn(sessionId: string, tempId: string): void {
+  if (!stateOf(sessionId).queuedTurns.some((entry) => entry.tempId === tempId)) return;
+  batch(() => {
+    setTranscripts(sessionId, 'queuedTurns', (entries) => entries.filter((entry) => entry.tempId !== tempId));
+    dropOptimisticTurn(sessionId, tempId);
+  });
+}
+
+/** Select the next prompt without bypassing the daemon's single-turn admission. */
+export function prioritizeQueuedTurn(sessionId: string, tempId: string): boolean {
+  const queue = stateOf(sessionId).queuedTurns;
+  const selected = queue.find((entry) => entry.tempId === tempId);
+  if (!selected) return false;
+  setTranscripts(sessionId, 'queuedTurns', [selected, ...queue.filter((entry) => entry.tempId !== tempId)]);
+  return true;
 }
 
 /** Marks the entry as queued, or as sent. */

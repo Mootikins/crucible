@@ -78,7 +78,7 @@ test('pane split by drag works after a delayed layout restore', async ({ page })
   await openRestoredApp(page);
 
   const inboxTab = page.locator('[data-tab-id="tab-inbox"]');
-  await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(0);
+  await expect(page.getByTestId('centre-column').getByTestId('resize-splitter')).toHaveCount(0);
 
   const box = (await inboxTab.boundingBox())!;
   await pointerDragUntil(
@@ -90,7 +90,7 @@ test('pane split by drag works after a delayed layout restore', async ({ page })
 
   // A real split creates a resize splitter between the two panes — asserting
   // on DOM ancestry is a false positive (edge-panel moves also change it).
-  await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(1);
+  await expect(page.getByTestId('centre-column').getByTestId('resize-splitter')).toHaveCount(1);
 });
 
 test('drop onto the tab bar of a restored group still moves tabs', async ({ page }) => {
@@ -106,7 +106,7 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
     await centerPaneRightFifth(page),
     '.wm-drop-zone[data-drop-active]',
   );
-  await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(1);
+  await expect(page.getByTestId('centre-column').getByTestId('resize-splitter')).toHaveCount(1);
 
   const homeTab = page.locator('[data-tab-id="tab-search"]');
   const homeBox = (await homeTab.boundingBox())!;
@@ -120,5 +120,5 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
   );
 
   // Tab moved back into the first group; the empty pane is pruned.
-  await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(0);
+  await expect(page.getByTestId('centre-column').getByTestId('resize-splitter')).toHaveCount(0);
 });

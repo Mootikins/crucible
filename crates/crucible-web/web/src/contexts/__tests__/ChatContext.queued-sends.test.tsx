@@ -97,6 +97,41 @@ function daemonTurnEnds(id: string, text: string): void {
 }
 
 describe('ChatContext queues mid-turn sends', () => {
+  it('removes a queued prompt from every pane without sending it', async () => {
+    const ctx = mountProvider();
+    const other = mountProvider();
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBeGreaterThan(0));
+    seq = 0;
+    await ctx.sendMessage('first');
+    daemonTurn('turn-1', 'first', 'working');
+    await ctx.sendMessage('remove me');
+    const queued = ctx.messages().find((m) => m.queued)!;
+    ctx.removeQueuedMessage(queued.id);
+    expect(other.messages().some((m) => m.id === queued.id)).toBe(false);
+    daemonTurnEnds('turn-1', 'working');
+    expect(sentTurns.map((t) => t.content)).toEqual(['first']);
+  });
+
+  it('send now cancels the current turn and prioritizes the selected queued prompt once', async () => {
+    const ctx = mountProvider();
+    mountProvider();
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBeGreaterThan(0));
+    seq = 0;
+    await ctx.sendMessage('first');
+    daemonTurn('turn-1', 'first', 'working');
+    await ctx.sendMessage('second');
+    await ctx.sendMessage('third');
+    const selected = ctx.messages().find((m) => m.content === 'third')!;
+    await ctx.sendQueuedMessageNow(selected.id);
+    expect(env.fetch.calls(CANCEL)).toBe(1);
+    expect(sentTurns.map((t) => t.content)).toEqual(['first']);
+    daemonTurnEnds('turn-1', 'working');
+    await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'third']));
+    daemonTurn('turn-2', 'third', 'answer');
+    daemonTurnEnds('turn-2', 'answer');
+    await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'third', 'second']));
+  });
+
   it('holds a message typed mid-turn at the end of the streaming block and sends it when the turn ends', async () => {
     const ctx = mountProvider();
 

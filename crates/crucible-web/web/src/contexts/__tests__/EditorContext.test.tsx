@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
+import { setStore, windowStore } from '@/stores/windowStore';
+import { EditorState } from '@codemirror/state';
+import { confirmTabClose } from '@/windowing/model/tab-guards';
 import type { FsEvent } from '@/lib/types';
 import { FakeEventSource } from '@/test-utils/sse';
 
@@ -1047,4 +1050,59 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
     expect(fileState(editor).content).toBe('both texts\n');
     expect(fileState(editor).dirty).toBe(false);
   });
+});
+
+
+it('tab history retains dirty buffers and undo state until its confirmed close', async () => {
+  const editor = withEditor(() => {});
+  const path = `${KILN}/a.md`;
+  const id = 'history-test';
+  setStore('tabGroups', id, { id, tabs: [{ id, title: 'b.md', contentType: 'file', metadata: { filePath: `${KILN}/b.md`, fileHistory: { entries: [{ path, title: 'a.md' }, { path: `${KILN}/b.md`, title: 'b.md' }], at: 1 } } }], activeTabId: id });
+  try {
+    await editor.openFile(path);
+    editor.updateFileContent(path, 'unsaved history');
+    editor.editorStates.set(path, EditorState.create({ doc: 'unsaved history' }));
+    editor.closeFile(path, { force: true });
+    await drainPromises();
+    expect(editor.openFiles().find(f => f.path === path)?.content).toBe('unsaved history');
+    const tab = windowStore.tabGroups[id].tabs[0];
+    expect(tab.isModified).toBe(true);
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    expect(confirmTabClose(tab)).toBe(false);
+    expect(editor.editorStates.has(path)).toBe(true);
+    expect(confirmTabClose(tab)).toBe(true);
+    setStore('tabGroups', id, 'tabs', []);
+    await drainPromises();
+    expect(editor.openFiles().find(f => f.path === path)).toBeUndefined();
+    expect(editor.editorStates.has(path)).toBe(false);
+  } finally {
+    setStore('tabGroups', id, 'tabs', []);
+  }
+});
+
+
+it('a pending read shares references and cannot resurrect a closed buffer', async () => {
+  const editor = withEditor(() => {});
+  let answer!: (text: string) => void;
+  getFileContent.mockImplementationOnce(() => new Promise<string>(resolve => { answer = resolve; }));
+  const path = `${KILN}/pending.md`;
+  const first = editor.openFile(path);
+  const second = editor.openFile(path);
+  await waitFor(() => expect(answer).toBeDefined());
+  editor.closeFile(path, { force: true });
+  answer('loaded');
+  await Promise.all([first, second]);
+  expect(editor.openFiles().filter(f => f.path === path)).toHaveLength(1);
+  editor.closeFile(path, { force: true });
+  await drainPromises();
+  expect(editor.openFiles().find(f => f.path === path)).toBeUndefined();
+
+  let late!: (text: string) => void;
+  getFileContent.mockImplementationOnce(() => new Promise<string>(resolve => { late = resolve; }));
+  const pending = editor.openFile(path);
+  await waitFor(() => expect(late).toBeDefined());
+  editor.closeFile(path, { force: true });
+  late('too late');
+  await pending;
+  expect(editor.openFiles().find(f => f.path === path)).toBeUndefined();
 });

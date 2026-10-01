@@ -384,15 +384,15 @@ describe('ChatInput — the prompt carries only the message', () => {
   // PRIORITY produces this order, not the order `liveChips` lists them in:
   // the scope chips come from a hook that states 30 and 40, so a model or a
   // mode without a priority of its own would sort behind both of them.
-  it('draws the shared chip row BELOW the capsule: model, mode, then the scope', () => {
+  it('draws the shared chip row BELOW the capsule: mode, model, then the scope', () => {
     render(() => <ChatInput />);
     const row = screen.getByTestId('composer-chip-row');
     expect(surface().compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const ids = Array.from(row.querySelectorAll('[data-testid]')).map((e) =>
       e.getAttribute('data-testid'),
     );
-    expect(ids.indexOf('model-picker-button')).toBeLessThan(ids.indexOf('chat-mode-control-mock'));
-    expect(ids.indexOf('chat-mode-control-mock')).toBeLessThan(ids.indexOf('scope-project'));
+    expect(ids.indexOf('chat-mode-control-mock')).toBeLessThan(ids.indexOf('model-picker-button'));
+    expect(ids.indexOf('model-picker-button')).toBeLessThan(ids.indexOf('scope-project'));
     expect(ids.indexOf('scope-project')).toBeLessThan(ids.indexOf('scope-kiln'));
   });
 

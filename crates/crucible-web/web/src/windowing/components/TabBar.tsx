@@ -55,6 +55,7 @@ const [, setReorderState] = createSignal<ReorderState>(null);
 
 // Non-reactive pending reorder state (survives reactive cleanup race)
 let pendingReorder: ReorderState = null;
+let pendingReorderOwner: symbol | null = null;
 
 export function getPendingReorder(): ReorderState {
   return pendingReorder;
@@ -70,14 +71,16 @@ function computeInsertIndex(
   containerEl: HTMLElement,
   pointerX: number,
   draggedTabId?: string,
+  axis: 'x' | 'y' = 'x',
+  groupId?: string,
 ): { logical: number; display: number } | null {
-  const tabEls = containerEl.querySelectorAll('[data-tab-id]');
+  const tabEls = Array.from(containerEl.querySelectorAll<HTMLElement>('[data-tab-id], [data-ribbon-tab-id]')).filter(el => !groupId || el.dataset.groupId === groupId);
   let logicalIndex = 0;
   for (let i = 0; i < tabEls.length; i++) {
     const el = tabEls[i] as HTMLElement;
-    if (draggedTabId && el.dataset.tabId === draggedTabId) continue;
+    if (draggedTabId && (el.dataset.tabId ?? el.dataset.ribbonTabId) === draggedTabId) continue;
     const rect = el.getBoundingClientRect();
-    if (pointerX < rect.left + rect.width / 2) return { logical: logicalIndex, display: i };
+    if (pointerX < (axis === 'x' ? rect.left + rect.width / 2 : rect.top + rect.height / 2)) return { logical: logicalIndex, display: i };
     logicalIndex++;
   }
   return { logical: logicalIndex, display: tabEls.length };
@@ -208,10 +211,13 @@ const InsertIndicator: Component = () => (
 
 interface UseTabBarDnDOptions {
   groupId: () => string;
-  tabsContainerRef: () => HTMLDivElement | undefined;
+  tabsContainerRef: () => HTMLElement | undefined;
+  axis?: 'x' | 'y';
 }
 
-function useTabBarDnD(options: UseTabBarDnDOptions) {
+export function useTabBarDnD(options: UseTabBarDnDOptions) {
+  const owner = Symbol();
+  const [insertOffset, setInsertOffset] = createSignal<number | null>(null);
   const [insertIdx, setInsertIdx] = createSignal<number | null>(null);
   const dndCtx = useDragDropContext();
 
@@ -232,6 +238,7 @@ function useTabBarDnD(options: UseTabBarDnDOptions) {
   createEffect(() => {
     const tabsContainerRef = options.tabsContainerRef();
     if (!isSameBarDrag() || !tabsContainerRef) {
+      setInsertOffset(null);
       setInsertIdx(null);
       setReorderState(null);
       return;
@@ -241,35 +248,44 @@ function useTabBarDnD(options: UseTabBarDnDOptions) {
     const y = sensor?.coordinates?.current?.y;
     if (x != null && y != null) {
       const rect = tabsContainerRef.getBoundingClientRect();
+      const vertical = options.axis === 'y';
+      const rows = vertical ? Array.from(tabsContainerRef.querySelectorAll<HTMLElement>('[data-tab-id], [data-ribbon-tab-id]')).filter(el => el.dataset.groupId === options.groupId()) : [];
+      const first = rows[0]?.getBoundingClientRect();
+      const last = rows.at(-1)?.getBoundingClientRect();
       const VERTICAL_TOLERANCE = 8;
       const inBounds = x >= rect.left && x <= rect.right &&
-                       y >= rect.top - VERTICAL_TOLERANCE && y <= rect.bottom + VERTICAL_TOLERANCE;
+                       y >= (first?.top ?? rect.top) - VERTICAL_TOLERANCE && y <= (last?.bottom ?? rect.bottom) + VERTICAL_TOLERANCE;
       if (!inBounds) {
+        setInsertOffset(null);
         setInsertIdx(null);
         setReorderState(null);
         // Also drop the non-reactive copy: leaving it set would apply a stale
         // reorder when the tab is released outside the bar. Safe to clear here
         // (unlike the no-active-draggable path) because this branch only runs
         // mid-drag for this bar's own tab.
-        pendingReorder = null;
+        if (pendingReorderOwner === owner) pendingReorder = null;
         return;
       }
-      const result = computeInsertIndex(tabsContainerRef, x, draggedTabId());
+      const result = computeInsertIndex(tabsContainerRef, vertical ? y : x, draggedTabId(), options.axis, vertical ? options.groupId() : undefined);
       setInsertIdx(result?.display ?? null);
+      setInsertOffset(vertical && result ? (rows[result.display]?.getBoundingClientRect().top ?? last!.bottom) - rect.top : null);
       if (result != null) {
         const nextReorder = { groupId: options.groupId(), insertIndex: result.logical };
         setReorderState(nextReorder);
         pendingReorder = nextReorder;
+        pendingReorderOwner = owner;
       }
     } else {
+      setInsertOffset(null);
       setInsertIdx(null);
       setReorderState(null);
-      pendingReorder = null;
+      if (pendingReorderOwner === owner) pendingReorder = null;
     }
   });
 
   createEffect(() => {
     if (!dndCtx?.[0]?.active?.draggable) {
+      setInsertOffset(null);
       setInsertIdx(null);
       setReorderState(null);
     }
@@ -277,6 +293,7 @@ function useTabBarDnD(options: UseTabBarDnDOptions) {
 
   return {
     insertIdx,
+    insertOffset,
   };
 }
 
@@ -308,7 +325,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
     // including when a pane shrinks without changing its selected tab.
     revealFrame = requestAnimationFrame(() => {
       const strip = tabsContainerRef;
-      const tab = [...(strip?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [])]
+      const tab = [...(strip?.querySelectorAll<HTMLElement>('[data-tab-id], [data-ribbon-tab-id]') ?? [])]
         .find(el => el.dataset.tabId === props.activeTabId());
       if (!strip || !tab) return;
       const bounds = strip.getBoundingClientRect();
@@ -464,12 +481,23 @@ export const TabContextMenu: Component<{
   const floating = () =>
     windowStore.floatingWindows.find((w) => w.tabGroupId === props.groupId());
   const paneId = () => (floating() ? undefined : props.paneId?.() || undefined);
+  const railPane = () => findEdgePanelForGroup(props.groupId()) && paneId()
+    ? windowActions.findPaneById(paneId()!) : undefined;
+  const canToggleFold = () => {
+    const pane = railPane();
+    return pane && (pane.collapsed || windowActions.canCollapsePane(pane.id));
+  };
   const closesAny = (mode: 'close-others' | 'close-right') => {
     const group = windowStore.tabGroups[props.groupId()];
     return !!group && tabsToClose(group.tabs, props.tab.id, mode).some((t) => windowActions.canCloseTab(group.id, t.id));
   };
   const onSelect = (action: TabMenuAction) => {
     switch (action) {
+      case 'toggle-pane-fold': {
+        const pane = railPane();
+        if (pane) windowActions.togglePaneCollapsed(pane.id);
+        return;
+      }
       case 'pop-out': {
         const pane = paneId();
         if (pane) windowActions.popOutPane(pane, props.tab.id);
@@ -530,6 +558,11 @@ export const TabContextMenu: Component<{
               class={menuItem}
             >
               Close to the Right
+            </Menu.Item>
+          </Show>
+          <Show when={canToggleFold()}>
+            <Menu.Item value="toggle-pane-fold" class={menuItem}>
+              {railPane()?.collapsed ? 'Unfold pane' : 'Fold pane'}
             </Menu.Item>
           </Show>
           {/* No Pop out on a tab that the policy keeps, or that the policy

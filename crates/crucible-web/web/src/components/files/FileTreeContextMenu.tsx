@@ -8,8 +8,7 @@ import { Eye, FileText, Target, Copy, RefreshCw, Pencil, Plus, FolderTree, Trash
 
 /**
  * Context menu action model. Read actions plus the Phase-2 mutations, now
- * rendered: `rename` (link-safe via daemon note.rename), `new-note` (kiln
- * folders — the only root kind with a write API), `new-folder` (fs.mkdir),
+ * rendered: `rename` (link-safe via daemon note.rename), `new-note` (the daemon enforces the root write policy), `new-folder` (fs.mkdir),
  * `delete` (fs.trash → `.crucible/trash/`). DnD covers `move`, so it has no
  * menu entry.
  */
@@ -46,7 +45,7 @@ export const CONTEXT_ITEMS: ContextItem[] = [
   // Tree-wide visibility toggle (dotfiles); reachable from any row so it
   // doesn't need a dedicated toolbar slot. Also a palette command.
   { action: 'toggle-hidden', label: 'Show hidden files', icon: Eye, enabledFor: 'both', kinds: 'project' },
-  { action: 'new-note', label: 'New note', icon: Plus, enabledFor: 'dir', kinds: 'kiln', group: true },
+  { action: 'new-note', label: 'New note', icon: Plus, enabledFor: 'dir', group: true },
   { action: 'new-folder', label: 'New folder', icon: FolderTree, enabledFor: 'dir' },
   { action: 'rename', label: 'Rename', icon: Pencil, enabledFor: 'both', group: true },
   { action: 'delete', label: 'Delete', icon: Trash2, enabledFor: 'both', danger: true },
@@ -57,8 +56,8 @@ const matchesKind = (item: ContextItem, isDir: boolean): boolean =>
 
 /**
  * Pure: the menu items to render for a node. `refresh` is project-only (kiln
- * roots are live via SSE); `new-note` is kiln-only (projects have no write
- * API — read-only by design).
+ * roots are live via SSE); note writes are admitted by the daemon
+ * according to the root's write policy.
  */
 export function itemsForNode(node: FileTreeNode, rootKind: TreeRootKind): ContextItem[] {
   return CONTEXT_ITEMS.filter(

@@ -58,9 +58,7 @@ const SettingsNavGroup: Component<{ label?: string; children: Element | unknown 
         {props.label}
       </h3>
     </Show>
-    {/* `divide-y` rather than a border per row: the last row must not draw a
-        rule against the card's own edge. */}
-    <div class="divide-y divide-hairline overflow-hidden rounded-lg border border-hairline bg-surface-elevated">
+    <div class="compact-settings-group overflow-hidden">
       {props.children as Element}
     </div>
   </section>
@@ -121,7 +119,7 @@ export const MobileSettings: Component<{
   return (
     <>
       <header
-        class="flex h-14 flex-none items-center gap-1 border-b border-hairline bg-surface-elevated px-2"
+        class="compact-appbar flex h-14 flex-none items-center gap-1 px-2"
         style={{ 'padding-top': 'var(--inset-top)', 'box-sizing': 'content-box' }}
       >
         <Show
@@ -152,7 +150,7 @@ export const MobileSettings: Component<{
         </button>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div class="compact-settings-body min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {/* Every level stays MOUNTED and all but the top are hidden.
             Rendering only the top unmounted the section that owns the data:
             drilling into a config group disposed `AppConfigSettingsSection`,

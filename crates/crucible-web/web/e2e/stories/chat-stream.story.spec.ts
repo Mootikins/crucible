@@ -119,6 +119,7 @@ async function selectSession(page: Page) {
 // baseline at 458px. A transcript story is about the transcript; it should
 // not fail because a pane beside it was resized.
 async function pinCaptureBox(page: Page) {
+  await page.evaluate(() => (window as any).__windowActions.setEdgePanelSize('right', 560));
   await page.getByTestId('message-list').evaluate((el) => {
     el.style.height = '480px';
     el.style.minHeight = '480px';
@@ -371,4 +372,84 @@ test.describe('WS-101/102/103 streaming chat', () => {
       maxDiffPixelRatio: 0.03,
     });
   });
+});
+
+test('queued controls withdraw or interrupt and send, and the session menu archives its pane', async ({ page }, testInfo) => {
+  const story = createStory(testInfo);
+  await setupBasicMocks(page, { sseEvents: [] });
+  let release: (() => void) | undefined;
+  const cancelled = new Promise<void>((resolve) => { release = resolve; });
+  let delivered = false;
+  await page.route(/\/api\/events\?.*/, async (route) => {
+    const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+    if (!topics.includes('test-session-001') || delivered) return new Promise(() => {});
+    delivered = true;
+    await cancelled;
+    await route.fulfill({ contentType: 'text/event-stream', body: createSSEStream([{ type: 'message_complete', data: { topic: 'test-session-001', event: 'message_complete', data: { message_id: 'msg-1', full_response: 'Interrupted' } } }]) });
+  });
+  const sent: string[] = [];
+  let cancels = 0;
+  let archived: unknown;
+  await page.route('**/api/rpc/session.send_message', async (route) => {
+    sent.push(route.request().postDataJSON().content);
+    await route.fulfill({ json: { outcome: 'turn', message_id: `msg-${sent.length}` } });
+  });
+  await page.route('**/api/rpc/session.cancel', async (route) => {
+    cancels += 1;
+    await route.fulfill({ json: { cancelled: true } });
+    release?.();
+  });
+  await page.route('**/api/session/*/archive', async (route) => {
+    archived = { session_id: route.request().url().split('/').at(-2) };
+    await route.fulfill({ json: {} });
+  });
+  await selectSession(page);
+  const input = page.getByTestId('chat-input');
+  await input.fill('Running turn');
+  await input.press('Enter');
+  await expect(page.getByTestId('cancel-button')).toBeVisible();
+  await input.fill('Discard this prompt');
+  await input.press('Enter');
+  await page.getByRole('button', { name: 'Remove queued message', exact: true }).click();
+  await expect(page.getByText('Discard this prompt')).toHaveCount(0);
+  await input.fill('Send this next');
+  await input.press('Enter');
+  await story.step(page, 'queued prompt has real controls');
+  await page.getByRole('button', { name: 'Send queued message now', exact: true }).click();
+  await expect.poll(() => sent).toEqual(['Running turn', 'Send this next']);
+  expect(cancels).toBe(1);
+  await page.getByRole('button', { name: 'Session actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Archive session', exact: true }).click();
+  await expect.poll(() => archived).toMatchObject({ session_id: 'test-session-001' });
+  await story.step(page, 'selected prompt sent and session archived');
+});
+
+test('recalled notes and tool file targets open real editor tabs', async ({ page }, testInfo) => {
+  const story = createStory(testInfo);
+  await setupBasicMocks(page, { sseEvents: [] });
+  await page.route(/\/api\/events\?.*/, () => new Promise(() => {}));
+  await page.route('**/api/rpc/session.history', (route) => route.fulfill({ json: {
+    session_id: 'test-session-001', history: [], total_events: 0,
+    transcript: { as_of_seq: 3, items: [
+      userTurn('msg-1', 'Recall and inspect', { precognition: { notes_count: 1, notes: [{ title: 'Recalled Note', score: 0.9 }] } as never }),
+      segment('msg-1', 0, 'Inspecting the note.'),
+      toolCard('msg-1', 'read-1', { name: 'Read', display: { kind: 'file_read', tool: 'Read', paths: ['/home/user/notes/Tool Note.md'] } as never }),
+    ] },
+  } }));
+  let resolvedKiln: string | null = null;
+  await page.route('**/api/notes/resolve**', (route) => {
+    resolvedKiln = new URL(route.request().url()).searchParams.get('kiln');
+    return route.fulfill({ json: { path: 'Recalled Note.md', absolutePath: '/home/user/notes/Recalled Note.md', title: 'Recalled Note' } });
+  });
+  await page.route('**/api/kiln/file**', (route) => route.fulfill({ json: { content: '# Opened note\n\nReal CodeMirror buffer.', content_hash: 'sample' } }));
+  await selectSession(page);
+  await page.getByTestId('precognition-badge-toggle').click();
+  await page.getByRole('button', { name: 'Recalled Note', exact: true }).click();
+  await expect(page.locator('[data-tab-id^="tab-file-"]').filter({ hasText: 'Recalled Note' })).toBeVisible();
+  await expect(page.locator('.cm-content').first()).toContainText('Real CodeMirror buffer');
+  await page.getByRole('button', { name: 'Open /home/user/notes/Tool Note.md', exact: true }).click();
+  await expect(page.locator('[data-tab-id^="tab-file-"]').filter({ hasText: 'Tool Note' })).toBeVisible();
+  await expect(page.locator('.cm-content').first()).toContainText('Real CodeMirror buffer');
+  expect(resolvedKiln).toBe('/home/user/notes');
+  await story.step(page, 'tool target opened in the real editor');
 });

@@ -51,6 +51,7 @@ function releaseEdgeGroup<C extends string>(
   } else {
     s.tabGroups[group.id] = { ...group, tabs: [], activeTabId: null };
     panel.mode = 'strip';
+    if (s.expandedEdge === pos) s.expandedEdge = null;
   }
 }
 

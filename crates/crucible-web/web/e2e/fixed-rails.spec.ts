@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
   await appReady(page);
-  await expect(page.getByTestId('edge-tab-left-sessions-tab')).toBeVisible();
+  await expect(page.getByTestId('rail-tab-sessions-tab')).toBeVisible();
 });
 
 /** The left rail's tab ids, in strip order, across its panes. */
@@ -55,8 +55,8 @@ function windowAction(page: Page, name: string, ...args: unknown[]): Promise<unk
 }
 
 test('the last Sessions tab shows no close button', async ({ page }) => {
-  const sessionsTab = page.getByTestId('edge-tab-left-sessions-tab');
-  const closeOf = (tab: typeof sessionsTab) => tab.getByRole('button', { name: 'Close tab' });
+  const sessionsTab = page.getByTestId('rail-tab-sessions-tab');
+  const closeOf = (tab: typeof sessionsTab) => tab.getByRole('button', { name: /^Close / });
   await expect(closeOf(sessionsTab)).toHaveCount(0);
 
   // A second Sessions tab makes the first one closable, which proves that
@@ -64,7 +64,7 @@ test('the last Sessions tab shows no close button', async ({ page }) => {
   const group = (await groupOf(page, 'sessions-tab'))!;
   await windowAction(page, 'addTab', group, { id: 'sessions-tab-2', title: 'Sessions 2', contentType: 'sessions' });
   await windowAction(page, 'setActiveTab', group, 'sessions-tab');
-  const second = page.getByTestId('edge-tab-left-sessions-tab-2');
+  const second = page.getByTestId('rail-tab-sessions-tab-2');
   await expect(second).toBeVisible();
   await expect(closeOf(sessionsTab)).toHaveCount(1);
   await expect(closeOf(second)).toHaveCount(1);
@@ -83,15 +83,15 @@ test('removeTab on the last Sessions tab does nothing', async ({ page }) => {
   await windowAction(page, 'removeTab', group, 'sessions-tab');
 
   expect(await leftTabIds(page)).toEqual(before);
-  await expect(page.getByTestId('edge-tab-left-sessions-tab')).toBeVisible();
+  await expect(page.getByTestId('rail-tab-sessions-tab')).toBeVisible();
   await expect(page.getByTestId('session-list')).toBeAttached();
 });
 
 test('the last Files tab does not close', async ({ page }) => {
   await windowAction(page, 'setEdgePanelCollapsed', 'right', false);
-  const filesTab = page.getByTestId('edge-tab-right-files-tab');
+  const filesTab = page.getByTestId('rail-tab-files-tab');
   await expect(filesTab).toBeVisible();
-  await expect(filesTab.getByRole('button', { name: 'Close tab' })).toHaveCount(0);
+  await expect(filesTab.getByRole('button', { name: /^Close / })).toHaveCount(0);
 
   const group = (await groupOf(page, 'files-tab'))!;
   expect(await windowAction(page, 'canCloseTab', group, 'files-tab')).toBe(false);
@@ -116,7 +116,8 @@ test('the last Sessions tab may move out of its rail', async ({ page }) => {
 
   await expect(page.getByTestId('edge-collapsed-drop-left')).toBeVisible();
   await expect(page.getByTestId('edge-tabbar-left')).not.toBeVisible();
-  expect(await leftTabIds(page)).toEqual([]);
+  expect(await leftTabIds(page)).toContain('files-tab');
+  expect(await leftTabIds(page)).not.toContain('sessions-tab');
   expect(await groupOf(page, 'sessions-tab')).toBe(centreGroup);
   await expect(page.locator('[data-tab-id="sessions-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible();
 });
@@ -124,10 +125,10 @@ test('the last Sessions tab may move out of its rail', async ({ page }) => {
 test('the layout menu re-adds a closed panel', async ({ page }) => {
   // Close Backlinks the way a user does: the close button on its tab.
   await windowAction(page, 'setEdgePanelCollapsed', 'right', false);
-  const backlinksTab = page.getByTestId('edge-tab-right-backlinks-tab');
+  const backlinksTab = page.getByTestId('rail-tab-backlinks-tab');
   await expect(backlinksTab).toBeVisible();
   await backlinksTab.hover();
-  await backlinksTab.getByRole('button', { name: 'Close tab' }).click();
+  await backlinksTab.getByRole('button', { name: /^Close / }).click();
   await expect(backlinksTab).toHaveCount(0);
   expect(await groupOf(page, 'backlinks-tab')).toBeNull();
 
@@ -143,11 +144,24 @@ test('the layout menu re-adds a closed panel', async ({ page }) => {
 
   // The panel opens in its registered zone, the right rail, which expands.
   await expect.poll(() => groupOf(page, 'tab-backlinks')).not.toBeNull();
-  await expect(page.getByTestId('edge-tab-right-tab-backlinks')).toBeVisible();
+  await expect(page.getByTestId('rail-tab-tab-backlinks')).toBeVisible();
 
   // Open again: the menu no longer offers it.
   await page.getByTestId('layout-menu').click();
   await page.getByTestId('layout-readd').click();
   await expect(page.getByTestId('layout-readd-popout')).toBeVisible();
   await expect(page.getByTestId('layout-readd-backlinks')).toHaveCount(0);
+});
+
+test('rail context menu folds the terminal without stowing its conversation rail', async ({ page }) => {
+  const terminal = page.getByTestId('rail-tab-terminal-tab-1').getByTitle('Terminal', { exact: true });
+  const terminalPane = page.locator('[data-pane-id]').filter({ has: page.getByTestId('terminal-panel') });
+  await terminal.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Unfold pane', exact: true }).click();
+  await expect(terminalPane).not.toHaveAttribute('data-pane-collapsed', 'true');
+  await terminal.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Fold pane', exact: true }).click();
+  await expect(terminalPane).toHaveAttribute('data-pane-collapsed', 'true');
+  expect(await page.evaluate(() => (window as any).__windowStore.edgePanels.right.mode)).toBe('docked');
+  await expect(terminal).toBeVisible();
 });

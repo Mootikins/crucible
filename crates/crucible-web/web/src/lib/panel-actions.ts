@@ -19,12 +19,7 @@ import {
 /** Content that belongs to a conversation, not to the editor. */
 const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
 
-/**
- * The rail that holds the session list. A session opens in the centre pane
- * NEXT TO this rail, and a file in the pane next to the other rail, so the
- * centre reads as sessions | editor with the two rails outside them. The
- * rule follows the rails, so a swap flips it with them.
- */
+/** Navigation follows its Sessions panel when the rails swap. */
 export function sessionsSide(): EdgePanelPosition {
   const railHolds = (side: EdgePanelPosition, contentType: string) =>
     collectLeafGroupIds(windowStore.edgePanels[side].layout).some((id) =>
@@ -33,9 +28,9 @@ export function sessionsSide(): EdgePanelPosition {
   for (const side of ['left', 'right'] as const) {
     if (railHolds(side, 'sessions')) return side;
   }
-  // No sessions tab (the user closed it): the files rail names the other side.
+  // If Sessions moved to the centre, Files still locates navigation.
   for (const side of ['left', 'right'] as const) {
-    if (railHolds(side, 'files')) return side === 'left' ? 'right' : 'left';
+    if (railHolds(side, 'files')) return side;
   }
   return 'left';
 }
@@ -67,6 +62,22 @@ function groupIsEditorRoom(groupId: string | null): boolean {
  * is nothing but conversations (opening a file there beats not opening it).
  */
 export function editorGroupId(): string | null {
+  // A centre/rail swap moves the editor's actual group. Follow that group
+  // instead of placing a new document beside the conversations it left.
+  const edgeGroups = (['left', 'right'] as const).flatMap((side) =>
+    collectLeafGroupIds(windowStore.edgePanels[side].layout),
+  );
+  const movedEditor = edgeGroups.find((id) => windowStore.tabGroups[id]?.tabs.some(
+    (tab) => ['file', 'canvas', 'base'].includes(tab.contentType),
+  ));
+  if (movedEditor) return movedEditor;
+  const centreGroups = collectLeafGroupIds(windowStore.layout);
+  if (centreGroups.some((id) => windowStore.tabGroups[id]?.tabs.some(
+    (tab) => SESSION_CONTENT.has(tab.contentType) || tab.contentType === 'terminal',
+  ))) {
+    const emptyEditor = edgeGroups.find((id) => windowStore.tabGroups[id]?.tabs.length === 0);
+    if (emptyEditor) return emptyEditor;
+  }
   // The pane next to the files rail first: that is where a file belongs.
   const edge = edgeLeaf(windowStore.layout, filesSide());
   if (edge?.groupId && groupIsEditorRoom(edge.groupId)) return edge.groupId;

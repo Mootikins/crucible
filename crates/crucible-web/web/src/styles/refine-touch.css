@@ -92,9 +92,8 @@
 }
 
 /* Thumb height on the phone, where the card header is a tap target. The phone
-   also drops the right gutter that index.css reserves: the floating mode
-   toggles that the gutter protects belong to the desktop editor, and the
-   phone puts the same controls in its header bar instead. */
+   also drops the document's extra right inset: view controls live in a
+   dedicated toolbar above the document on both shells. */
 [data-density='touch'] .fm-card > .fm-summary {
   min-height: var(--row-touch);
 }

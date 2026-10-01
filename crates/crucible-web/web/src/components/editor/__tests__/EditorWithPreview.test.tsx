@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe('EditorWithPreview', () => {
   it('markdown files get a preview toggle; toggling renders the markdown', async () => {
-    const { getByTestId, queryByTestId, container } = render(() => (
+    const { getByTitle, getByTestId, queryByTestId, container } = render(() => (
       <EditorWithPreview
         content={'# Heading\n\nSee [[Other Note]].'}
         path="/kiln/note.md"
@@ -40,8 +40,11 @@ describe('EditorWithPreview', () => {
     ));
 
     expect(container.querySelector('.cm-editor')).not.toBeNull();
+    expect(container.querySelector('[role=toolbar]')).not.toBeNull();
+    expect(queryByTestId('preview-toggle')).toBeNull();
+    expect(queryByTestId('mode-toggle')).toBeNull();
 
-    fireEvent.click(getByTestId('preview-toggle'));
+    fireEvent.click(getByTitle('Reading view'));
     await waitFor(() => {
       expect(queryByTestId('markdown-preview')).not.toBeNull();
     });
@@ -55,14 +58,14 @@ describe('EditorWithPreview', () => {
     expect(container.querySelector('.cm-editor')).toBeNull();
 
     // Toggle back to the editor.
-    fireEvent.click(getByTestId('preview-toggle'));
+    fireEvent.click(getByTitle('Live preview'));
     await waitFor(() => {
       expect(container.querySelector('.cm-editor')).not.toBeNull();
     });
   });
 
   it('strips frontmatter from the preview', async () => {
-    const { getByTestId } = render(() => (
+    const { getByTitle, getByTestId } = render(() => (
       <EditorWithPreview
         content={'---\ntitle: X\n---\n\nBody only.'}
         path="/kiln/note.md"
@@ -70,7 +73,7 @@ describe('EditorWithPreview', () => {
         onChange={noop}
       />
     ));
-    fireEvent.click(getByTestId('preview-toggle'));
+    fireEvent.click(getByTitle('Reading view'));
     await waitFor(() => {
       const preview = getByTestId('markdown-preview');
       expect(preview.textContent).toContain('Body only.');
@@ -79,10 +82,10 @@ describe('EditorWithPreview', () => {
   });
 
   it('clicking a wikilink in the preview opens the note', async () => {
-    const { getByTestId } = render(() => (
+    const { getByTitle, getByTestId } = render(() => (
       <EditorWithPreview content="Go to [[Other Note]]." path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
-    fireEvent.click(getByTestId('preview-toggle'));
+    fireEvent.click(getByTitle('Reading view'));
     await waitFor(() => {
       expect(getByTestId('markdown-preview').querySelector('[data-note]')).not.toBeNull();
     });
@@ -108,17 +111,17 @@ describe('EditorWithPreview', () => {
   });
 
   it('the mode toggle switches to raw source and back', async () => {
-    const { getByTestId, container } = render(() => (
+    const { getByTitle, container } = render(() => (
       <EditorWithPreview content="Some **bold** text." path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
 
-    fireEvent.click(getByTestId('mode-toggle'));
+    fireEvent.click(getByTitle('Source'));
     await waitFor(() => {
       expect(container.querySelector('.cm-content')?.textContent).toContain('**bold**');
       expect(container.querySelector('.cm-lp-strong')).toBeNull();
     });
 
-    fireEvent.click(getByTestId('mode-toggle'));
+    fireEvent.click(getByTitle('Live preview'));
     await waitFor(() => {
       expect(container.querySelector('.cm-lp-strong')).not.toBeNull();
     });
@@ -134,11 +137,11 @@ describe('EditorWithPreview', () => {
 
   it('switching files drops back to edit mode', async () => {
     const [path, setPath] = createSignal('/kiln/a.md');
-    const { getByTestId, queryByTestId, container } = render(() => (
+    const { getByTitle, queryByTestId, container } = render(() => (
       <EditorWithPreview content="text" path={path()} baseHash="h1" onChange={noop} />
     ));
 
-    fireEvent.click(getByTestId('preview-toggle'));
+    fireEvent.click(getByTitle('Reading view'));
     await waitFor(() => expect(queryByTestId('markdown-preview')).not.toBeNull());
 
     setPath('/kiln/b.md');
@@ -150,13 +153,13 @@ describe('EditorWithPreview', () => {
 });
 
 describe('reading-view parity (live mode)', () => {
-  it('live preview has no line-number gutter; source mode does', async () => {
-    const { getByTestId, container } = render(() => (
+  it('live preview hides line numbers while source mode shows them', async () => {
+    const { getByTitle, container } = render(() => (
       <EditorWithPreview content="text" path="/kiln/note.md" baseHash="h1" onChange={noop} />
     ));
     expect(container.querySelector('.cm-lineNumbers')).toBeNull();
 
-    fireEvent.click(getByTestId('mode-toggle'));
+    fireEvent.click(getByTitle('Source'));
     await waitFor(() => {
       expect(container.querySelector('.cm-lineNumbers')).not.toBeNull();
     });

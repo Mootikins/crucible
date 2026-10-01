@@ -48,6 +48,33 @@ writes remain explicit replacements.
 Ticking a checkbox in the reading view is the anchored edit's first caller —
 the "one or two lines at a time" case section 13 was written for.
 
+## Shared appearance — 2026-10-01
+
+The compact shell uses `web/src/shell-theme.css`, the production sheet also
+used by desktop and the mockup. Its card, drawer, tab, sheet and settings
+surfaces read the same `--mk-main-solid`, `--mk-nav-solid`, `--mk-gap` and
+`--mk-radius` values. Appearance remains one settings owner. Compact layout
+classes add phone geometry without a separate palette or stylesheet.
+
+The app bar holds navigation and the active title. Notes put Read/Write and
+Save in a dedicated row below it, so dirty notes do not squeeze the title out
+at 320px. The content is a rounded card on the navigation ground. Drawers use
+leaf tabs; sheets use the shared card radius and no shadow. Safe-area insets
+remain on the shell/drawers/sheets, and sheets use dynamic viewport height.
+
+`--shell-action-size` is 22px on desktop and 44px within the compact shell;
+composer controls consume it. Transcript actions keep the same 22px visual
+metrics as desktop through the shared `TurnMeta`, `Message` and `AssistantTurn`. Composer input is 16px on
+phones to avoid input-focus zoom. Portalled menu rows use the shell's existing
+767px breakpoint for touch height. The tab stack, drawer gestures, navigation
+history, editor buffers and daemon behavior keep their existing owners.
+
+`e2e/mobile-appearance.spec.ts` checks dirty editor geometry at 320px and 390px,
+Read/Write buffer retention, shared radius changes, flat drawers/sheets and
+chat action sizes. The existing mobile stories cover drawer/back behavior,
+new sessions and settings navigation; live compact conflict tests exercise the
+built editor against a real daemon.
+
 ## 1. What the code holds today
 
 These facts come from the tree at `crates/crucible-web/web`.
@@ -233,7 +260,10 @@ mobile work:
 
 - A swipe from the left edge opens the left drawer. A swipe from the right
   edge opens the right drawer.
-- The edge zone is 20 px wide.
+- The edge zone is 20 px wide. A touch swipe in the main content also pulls
+  the corresponding drawer: rightward opens left, leftward opens right.
+  Editable controls, links/buttons and horizontal code/table surfaces keep
+  their own gestures. Vertical travel remains scrolling.
 - A drawer follows the finger. It does not snap open on touch.
 - Release past 40 % of the drawer width opens it. Release before that point
   closes it.
@@ -482,13 +512,10 @@ keeps each tree short.
   desktop tree keeps 28 px (`--cru-row-sm`). The rules live in plain CSS in
   `styles/refine-touch.css`, not in a utility on the row, because a utility
   pins the value on one element and a nested row then keeps the desktop size.
-- **Hover-only actions are already handled — do not "fix" them.**
-  `SessionTree.tsx` (the row actions and the project row) carries
-  `[@media(hover:none)]:opacity-100`, as does `Message.tsx`, and so do the
-  tab-close and rail rules in `index.css`. A coarse pointer already reveals
-  them. The assistant turn's footer no longer needs the rule at all: since
-  2026-09-15 it is always visible on every pointer, and it shows the turn's
-  duration beside copy and regenerate.
+- Transcript actions use the same hover/focus reveal on both shells. Tapping
+  a turn focuses it and reveals its actions. The final assistant response and
+  queued prompts keep their actions visible. Navigation row actions retain
+  their existing coarse-pointer behavior.
 - A long press opens a bottom sheet with the row's actions. `FileTreeContextMenu`
   supplies the action list.
 - A chevron gets the 22 px slot the touch density sets, inside a 36 px row that
@@ -1913,3 +1940,11 @@ means duplicating it, or extracting it first.
     neither panel. Of the panels that exist, Changes is the likeliest — reviewing
     an agent's edits beside the note — but it is a queue a user visits, not
     context, so it is not added.
+
+Portaled Ark context menus use the shared menu layer above the drawer, so file
+actions remain visible and reachable. Their corners and flat tonal surface come
+from the same navigation styles as desktop menus.
+
+The drawer leaf tabs now use curved concave joins into the content surface.
+The exposed top corner opposite the selected tab is rounded; both Sessions
+and Files states are covered by a browser regression and light/dark captures.

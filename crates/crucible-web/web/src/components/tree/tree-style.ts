@@ -12,7 +12,7 @@ export const treeSectionHeader =
 
 /** Collapsible group header row (chevron + name), one step quieter than rows. */
 export const treeGroupRow =
-  'w-full flex items-center gap-1 px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-muted text-xs font-medium';
+  'w-full flex items-center gap-1 px-2 py-1 rounded-control cursor-pointer hover:bg-hover-wash text-muted text-xs font-medium';
 
 /** Chevron that rotates open — pair with data-[state=open]:rotate-90 stamps
  * or an explicit rotate class toggle. */

@@ -17,6 +17,7 @@ import './index.css';
 // The default look of the window manager. It loads after index.css, which
 // fixes the order of its layer.
 import './windowing/theme.css';
+import './shell-theme.css';
 import { initializeHighlighter } from '@/lib/shiki';
 import { initTheme } from '@/lib/theme';
 import { installSessionEventRoute } from '@/lib/query/routes/session';

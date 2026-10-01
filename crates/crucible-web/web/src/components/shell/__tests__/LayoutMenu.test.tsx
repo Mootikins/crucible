@@ -87,6 +87,16 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
     expect(document.querySelector('[data-testid="layout-reset"]')).toBeTruthy();
   });
 
+  it('sets the existing centre-focus expansion exit policy', async () => {
+    setStore('expandExit', 'toggle');
+    const { getByTestId } = render(() => <LayoutMenu />);
+    await openMenu(getByTestId);
+    const checkbox = document.querySelector<HTMLElement>('[role="menuitemcheckbox"]')!;
+    expect(checkbox).toBeTruthy();
+    fireEvent.pointerDown(checkbox); fireEvent.click(checkbox);
+    await waitFor(() => expect(windowStore.expandExit).toBe('centre-focus'));
+  });
+
   it('lists only the panels that are closed', async () => {
     const { getByTestId } = render(() => <LayoutMenu />);
     await openMenu(getByTestId);
@@ -156,7 +166,7 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
     await waitFor(() => expect(resetCount()).toBe(1));
     await waitFor(() => expect(windowStore.edgePanels.left.mode).toBe('docked'));
     const leftGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'left')!];
-    const rightGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'right')!];
+    const rightGroup = Object.values(windowStore.tabGroups).find((group) => group.tabs.some((tab) => tab.contentType === 'files'))!;
     expect(leftGroup.tabs.map((t) => t.contentType)).toContain('sessions');
     expect(rightGroup.tabs.map((t) => t.contentType)).toContain('files');
   });

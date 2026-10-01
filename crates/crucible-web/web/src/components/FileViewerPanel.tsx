@@ -14,6 +14,7 @@ import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
+import { fileHistory, goFileHistory, type FileOpenOptions } from '@/lib/file-actions';
 import { rawFileUrl } from '@/lib/paths';
 import { tabHost } from '@/lib/tab-host';
 import { isCompact } from '@/stores/deviceStore';
@@ -36,6 +37,7 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 
 interface FileViewerPanelProps {
   filePath?: string;
+  panelTabId?: string;
   /** Mode markdown opens in ('reading' | 'live' | 'source') — hover
    * popovers set this via tab metadata. */
   initialMode?: string;
@@ -54,6 +56,7 @@ interface FileViewerPanelProps {
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const {
     openFile,
+    editorStates,
     closeFile,
     openFiles,
     isLoading,
@@ -186,15 +189,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     // governs what is DRAWN, and cannot stop an effect declared above it.
     if (path && !isImage()) {
       untrack(() => openFile(path, { background: props.background }));
-    }
-  });
-
-  onCleanup(() => {
-    if (props.filePath) {
-      // Force: by unmount time the window tab is already gone, so a prompt
-      // here could not veto anything — the confirm lives at the tab-close
-      // call sites (confirmTabClose).
-      closeFile(props.filePath, { force: true });
+      onCleanup(() => closeFile(path, { force: true }));
     }
   });
 
@@ -219,21 +214,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     onCleanup(() => window.clearTimeout(timer));
   });
 
-  // Sync EditorContext dirty state → windowStore tab isModified.
-  // Depend ONLY on the editor's dirty flag: the tab lookup + updateTab write
-  // must be untracked, otherwise findTabByFilePath reads windowStore.tabGroups
-  // and updateTab writes it back in the same effect — a self-retriggering loop
-  // that overflows the stack (updateTab replaces the whole tabs array).
-  createEffect(() => {
-    if (!props.filePath) return;
-    const file = openFiles().find((f) => f.path === props.filePath);
-    const isModified = file?.dirty ?? false;
-    untrack(() => {
-      const host = tabHost();
-      const tab = host.find((t) => t.metadata?.filePath === props.filePath);
-      if (tab) host.update(tab.id, { isModified });
-    });
-  });
+  const currentTab = () => tabHost().find((tab) => tab.id === props.panelTabId);
+  const history = () => { const tab = currentTab(); return tab ? fileHistory(tab) : undefined; };
 
   // No file path provided — nothing to render
   if (!props.filePath) {
@@ -252,19 +234,9 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   //
   // The load effect above is guarded on the same predicate; a return here
   // decides what is drawn and does nothing about what was already scheduled.
-  if (isImage()) {
-    return (
-      <PanelShell class="overflow-hidden">
-        {/* Keyed on the path: a different image in this pane starts over at
-            fit instead of inheriting the previous image's zoom/pan. */}
-        <Show when={props.filePath} keyed>
-          {(path) => <ImageViewer src={rawFileUrl(path)} alt={path.split('/').pop() ?? path} />}
-        </Show>
-      </PanelShell>
-    );
-  }
 
   return (
+    <Show when={isImage()} fallback={
     <PanelShell class="overflow-hidden relative">
       {/* No save toolbar: saving is Mod-S / Mod-Enter in the editor, the
           (configurable) status-bar save affordance, or autosave. */}
@@ -386,6 +358,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                 >
                   {(file) => (
                     <EditorWithPreview
+                      editorStates={editorStates}
+                      history={props.panelTabId ? { canBack: (history()?.at ?? 0) > 0, canForward: (history()?.at ?? 0) < (history()?.entries.length ?? 1) - 1, onGo: (step) => goFileHistory(props.panelTabId!, step) } : undefined}
                       content={file().content}
                       path={file().path}
                       onChange={(content) => updateFileContent(file().path, content)}
@@ -393,12 +367,14 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                       kiln={owningKiln(file().path)}
                       baseHash={file().baseHash}
                       onBaseChange={(hash) => setBaseHash(file().path, hash)}
-                      onFollowLink={(target) =>
+                      onFollowLink={(target, options?: FileOpenOptions) =>
                         // The file's own kiln, or none. Falling back to the active
                         // kiln let a project file — which belongs to no kiln —
                         // follow links into whichever kiln was showing.
                         void owningKilnAsync(file().path).then((kiln) =>
-                          openNoteInEditor(target, kiln),
+                          openNoteInEditor(target, kiln, props.background
+                            ? (options?.where === 'here' ? undefined : options)
+                            : { where: 'here', ...options, tabId: props.panelTabId }),
                         )
                       }
                       vimMode={effectiveVimMode()}
@@ -455,6 +431,13 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         </Menu.Root>
       </div>
     </PanelShell>
+    }>
+      <PanelShell class="overflow-hidden">
+        <Show when={props.filePath} keyed>
+          {(path) => <ImageViewer src={rawFileUrl(path)} alt={path.split('/').pop() ?? path} />}
+        </Show>
+      </PanelShell>
+    </Show>
   );
 };
 

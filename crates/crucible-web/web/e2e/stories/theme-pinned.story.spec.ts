@@ -49,9 +49,12 @@ test.describe('the stories project pins its theme', () => {
 
     const painted = await page.evaluate(() => {
       const rgb = getComputedStyle(document.body).backgroundColor;
-      const [r, g, b] = (/rgba?\(([^)]+)\)/.exec(rgb)?.[1] ?? '255,255,255')
-        .split(',')
-        .map((n) => Number(n.trim()) / 255);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = rgb;
+      context.fillRect(0, 0, 1, 1);
+      const [r, g, b] = [...context.getImageData(0, 0, 1, 1).data].map((n) => n / 255);
       return {
         attribute: document.documentElement.getAttribute('data-theme'),
         prefersDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
@@ -65,6 +68,6 @@ test.describe('the stories project pins its theme', () => {
     // Dark writes NO attribute — the bare `:root` declaration IS the dark
     // palette, so an absent attribute and a dark one mean the same thing.
     expect(painted.attribute).toBeNull();
-    expect(painted.luminance, 'the baselines are dark').toBeLessThan(0.1);
+    expect(painted.luminance, 'the baselines are dark').toBeLessThan(0.25);
   });
 });

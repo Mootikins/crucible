@@ -220,7 +220,8 @@ test.describe('rich transcript rhythm', () => {
     // over — 520px, the old right rail — so moving the session into the centre
     // tiling reshot this baseline at 458px. The story is about the transcript,
     // not about the width of the pane beside it.
-    await page.getByTestId('message-list').evaluate((el) => {
+    await page.evaluate(() => (window as any).__windowActions.setEdgePanelSize('right', 560));
+  await page.getByTestId('message-list').evaluate((el) => {
       el.style.height = '480px';
       el.style.maxHeight = '480px';
       el.style.width = '520px';

@@ -1,0 +1,90 @@
+/* Shared production palette and chrome for both shells. */
+
+:root {
+  /* Two tones, as in GitLab and Obsidian. MAIN is the high-contrast tone:
+     the documents, the session and every popout. NAV is the low-contrast
+     tone: the ground, the left rail and the ribbons. NAV is MAIN moved
+     toward `--mk-contrast-to` by `--mk-contrast` steps, then tinted toward
+     the accent by `--mk-nav-tint` percent. Appearance sets both. The focus
+     cards are MAIN: the darker tone in dark, the lighter tone in light. */
+  --mk-main-base: #141517;
+  --mk-main-solid: var(--mk-main-base);
+  --mk-contrast-to: #ffffff;
+  --mk-contrast-step: 1.6%;
+  --mk-contrast: 8;
+  --mk-nav-tint: 0;
+  --mk-nav-solid: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--mk-main-base), var(--mk-contrast-to) calc(var(--mk-contrast) * var(--mk-contrast-step))),
+    var(--cru-color-primary) calc(var(--mk-nav-tint) * 1%)
+  );
+  --mk-main: var(--mk-main-solid);
+  --mk-nav: var(--mk-nav-solid);
+  --cru-color-shell-bg: var(--mk-nav);
+  --cru-color-shell-panel: var(--mk-main);
+  --cru-color-surface-base: var(--mk-main);
+  /* One raised step inside MAIN (bubbles, properties, code). */
+  --cru-color-surface-elevated: var(--mk-nav-solid);
+  --cru-color-surface-overlay: var(--mk-main);
+  --cru-color-control: var(--mk-nav-solid);
+  --cru-color-hover-wash: rgba(255, 255, 255, 0.045);
+  --cru-color-ink: #e8e8ec;
+  --cru-color-body: #c5c6cc;
+  --cru-color-muted: #9c9da6;
+  --cru-color-muted-dark: #8a8b94;
+  /* Lines and controls take NAV too: two shades in all. */
+  --cru-color-hairline: var(--mk-nav-solid);
+  --cru-color-hairline-strong: var(--mk-nav-solid);
+  --cru-color-primary: #6e9ef0;
+  --cru-color-primary-hover: #8cb3f5;
+  --cru-color-primary-active: #5687dd;
+  --cru-color-on-primary: #0d1017;
+  --cru-color-error: #ef6f6c;
+  --cru-color-attention: #e0b04a;
+  --cru-color-ok: #7cc68a;
+  --cru-color-precog: #b194ec;
+  --cru-radius-card: var(--mk-radius);
+  --cru-radius-control: min(12px, var(--mk-radius));
+  --cru-radius-composer: 14px;
+  /* Shell-specific palette and reading metrics. */
+  --mk-nav-ink: #e4e5e9;
+  --mk-nav-body: #c3c5cc;
+  --mk-diff-add: rgba(124, 198, 138, 0.13);
+  --mk-diff-del: rgba(239, 111, 108, 0.12);
+  --mk-font-note: 0.9375rem;
+  --mk-measure-note: 40rem;
+  /* Appearance controls shell spacing and corner radii. */
+  --mk-gap: 8px;
+  --mk-radius: 12px;
+}
+:root[data-theme='light'] {
+  --mk-main-base: #ffffff;
+  --mk-main-solid: var(--mk-main-base);
+  --mk-contrast-to: #2a2d36;
+  --mk-contrast-step: 1.1%;
+  --cru-color-control: var(--mk-nav-solid);
+  --cru-color-hover-wash: rgba(20, 22, 28, 0.05);
+  --cru-color-ink: #17181c;
+  --cru-color-body: #34363d;
+  --cru-color-muted: #5b5d66;
+  --cru-color-muted-dark: #686a73;
+  --cru-color-hairline: var(--mk-nav-solid);
+  --cru-color-hairline-strong: var(--mk-nav-solid);
+  --cru-color-primary: #2e62c8;
+  --cru-color-primary-hover: #2452ab;
+  --cru-color-primary-active: #1c438d;
+  --cru-color-on-primary: #ffffff;
+  --cru-color-error: #c42b2b;
+  --cru-color-attention: #8a6200;
+  --cru-color-ok: #2f7a3f;
+  --cru-color-precog: #6a4fb0;
+  --mk-nav-ink: #17181c;
+  --mk-nav-body: #34363d;
+  --mk-diff-add: rgba(47, 122, 63, 0.11);
+  --mk-diff-del: rgba(196, 43, 43, 0.09);
+}
+
+/* True black (dark theme only): MAIN, the documents and the sessions,
+   becomes #000 for OLED. NAV derives from the base tone, so the rails, the
+   strips and the inactive tabs keep their usual lower contrast. */
+:root[data-mk-black]:not([data-theme='light']) { --mk-main-solid: #000000; }

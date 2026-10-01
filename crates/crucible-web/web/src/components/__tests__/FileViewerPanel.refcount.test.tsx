@@ -25,7 +25,7 @@ vi.mock('@/lib/paths', () => ({
 vi.mock('../editor/EditorWithPreview', () => ({
   EditorWithPreview: () => <div data-testid="editor-stub" />,
 }));
-vi.mock('@/lib/file-actions', () => ({ findTabByFilePath: vi.fn(() => null) }));
+vi.mock('@/lib/file-actions', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/file-actions')>(), findTabByFilePath: vi.fn(() => null) }));
 vi.mock('@/lib/note-actions', () => ({
   openNoteInEditor: vi.fn(async () => {}),
   kilnForPath: vi.fn(() => undefined),
@@ -131,4 +131,25 @@ describe('FileViewerPanel — open refcount does not leak', () => {
     expect(editor.openFiles().some((f) => f.path === A)).toBe(false);
     expect(editor.openFiles().some((f) => f.path === B)).toBe(true);
   });
+});
+
+
+it('retargeting a panel releases the old path exactly once', async () => {
+  installFakeEventSource();
+  const env = createTestQueryEnv({
+    'POST /api/rpc/kiln.list': () => [],
+    'GET /api/kiln/file': () => ({ content: 'content', content_hash: 'h' }),
+  });
+  let editor!: ReturnType<typeof useEditor>;
+  const [path, setPath] = createSignal('/k/a.md');
+  const Probe = () => { editor = useEditor(); return null; };
+  const app = render(() => <EditorProvider><Probe /><FileViewerPanel filePath={path()} /></EditorProvider>);
+  try {
+    await waitFor(() => expect(editor.openFiles().map(f => f.path)).toEqual(['/k/a.md']));
+    setPath('/k/b.md');
+    await waitFor(() => expect(editor.openFiles().map(f => f.path)).toEqual(['/k/b.md']));
+    app.unmount();
+    await flush();
+    expect(editor.openFiles()).toEqual([]);
+  } finally { app.unmount(); env.restore(); }
 });

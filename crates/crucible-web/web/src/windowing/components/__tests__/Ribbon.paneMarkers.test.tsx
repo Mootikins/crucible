@@ -319,8 +319,9 @@ describe('the collapsed pane is its own affordance', () => {
 
   // The rail is open and the tab's PANE is what is tucked away. Collapsing
   // the whole rail here would hide the tabs the user can plainly see.
-  it('opens the pane when a ribbon tab of a collapsed pane is clicked', () => {
+  it.each(['docked', 'strip'] as const)('opens the folded pane from a %s rail in one click', (mode) => {
     const { container } = renderRail('right');
+    windowActions.setEdgeMode('right', mode);
     const bottomTab = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '[data-testid="collapsed-tab-button-right"]',

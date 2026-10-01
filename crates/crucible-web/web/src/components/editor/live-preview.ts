@@ -1231,7 +1231,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
 const livePreviewTheme = EditorView.baseTheme({
   '&.cm-lp .cm-content': {
     fontFamily: 'var(--font-sans)',
-    fontSize: 'var(--text-reading)',
+    fontSize: 'var(--mk-font-note, var(--text-reading))',
     lineHeight: '1.6',
   },
   // Ink headings, not oneDark's coral markdown-heading color — the reading
@@ -1318,7 +1318,8 @@ const livePreviewTheme = EditorView.baseTheme({
     width: 'max-content',
     minWidth: '100%',
   },
-  '.cm-lp-table': { cursor: 'text', padding: '2px 0 0' },
+  // Rendered HTML newlines are formatting, not editable document lines.
+  '.cm-lp-table': { cursor: 'text', padding: '2px 0 0', whiteSpace: 'normal' },
   // Rendered callout widget: the fancy .callout markup (icon, colored title,
   // tinted body) comes from index.css; this spaces the block like the
   // surrounding prose lines. whiteSpace reset: .cm-content is pre-wrap, which

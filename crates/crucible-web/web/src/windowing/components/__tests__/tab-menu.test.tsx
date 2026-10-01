@@ -54,6 +54,8 @@ describe('the tab menu of a docked tab', () => {
     fireEvent.contextMenu(container.querySelector('[data-tab-id="tab-one"]')!);
     await waitFor(() => expect(menuLabels()).toContain('Pop out'));
     expect(menuLabels()).not.toContain('Dock');
+    expect(menuLabels()).not.toContain('Fold pane');
+    expect(menuLabels()).not.toContain('Unfold pane');
   });
 
   it('Pop out moves the tab into a floating window, and the pane keeps the rest', async () => {
@@ -140,6 +142,29 @@ describe('the tab menu of a ribbon icon', () => {
     Array.from(
       container.querySelectorAll<HTMLElement>('[data-testid="collapsed-tab-button-right"]'),
     ).find((b) => b.getAttribute('title') === title)!;
+
+  it('unfolds and folds a rail pane without hiding its sibling or closing its tab', async () => {
+    const { container } = mount();
+    fireEvent.contextMenu(ribbonTab(container, 'Omega'));
+    await waitFor(() => expect(menuLabels()).toContain('Unfold pane'));
+    chooseMenuItem('Unfold pane');
+    await waitFor(() => expect(windowActions.findPaneById('right-term-pane')?.collapsed).toBe(false));
+    fireEvent.contextMenu(ribbonTab(container, 'Omega'));
+    await waitFor(() => expect(menuLabels()).toContain('Fold pane'));
+    chooseMenuItem('Fold pane');
+    await waitFor(() => expect(windowActions.findPaneById('right-term-pane')?.collapsed).toBe(true));
+    expect(windowActions.findPaneById('right-pane')?.collapsed).not.toBe(true);
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
+    const group = windowActions.findPaneById('right-term-pane')!.tabGroupId!;
+    expect(windowStore.tabGroups[group].tabs.map((t) => t.id)).toEqual(['omega-tab']);
+  });
+
+  it('does not offer to fold the last expanded pane', async () => {
+    const { container } = mount();
+    fireEvent.contextMenu(ribbonTab(container, 'Gamma'));
+    await waitFor(() => expect(menuLabels()).toContain('Pop out'));
+    expect(menuLabels()).not.toContain('Fold pane');
+  });
 
   it('Pop out moves the rail tab into a floating window', async () => {
     const { container } = mount();

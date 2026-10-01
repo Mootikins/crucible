@@ -78,7 +78,7 @@ export const SessionsTab: Component = () => {
   const Row = (props: { session: Session; showProject?: boolean }) => (
     <button
       type="button"
-      class={`${treeRow} w-full h-11 px-3 flex items-center gap-2 rounded text-left transition-colors focus-ring ${
+      class={`${treeRow} w-full h-11 px-3 flex items-center gap-2 rounded-control text-left transition-colors focus-ring ${
         currentSession()?.session_id === props.session.session_id
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
@@ -98,7 +98,7 @@ export const SessionsTab: Component = () => {
       <Show when={props.showProject && projectOf(props.session)}>
         {(name) => (
           <span
-            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-floor text-muted-dark"
+            class="shrink-0 inline-flex items-center gap-1 px-1 rounded-control bg-surface-elevated text-floor text-muted-dark"
             title={`project · ${name()}`}
           >
             <GitBranch class="w-2.5 h-2.5 shrink-0" />
@@ -114,11 +114,11 @@ export const SessionsTab: Component = () => {
 
   return (
     <div class="flex-1 min-h-0 flex flex-col" data-density="touch">
-      <div class="shrink-0 flex items-center gap-1 px-2 py-1 border-b border-hairline">
+      <div class="shrink-0 flex items-center gap-1 px-2 py-1">
         <button
           type="button"
           aria-label={`Project: ${chosenName()}`}
-          class="flex-1 h-11 px-2 flex items-center gap-1 rounded text-left text-xs font-medium text-muted hover:bg-hover-wash transition-colors focus-ring"
+          class="flex-1 h-11 px-2 flex items-center gap-1 rounded-control text-left text-xs font-medium text-muted hover:bg-hover-wash transition-colors focus-ring"
           onClick={() => setPicking(true)}
         >
           <span class="flex-1 truncate">{chosenName()}</span>
@@ -128,7 +128,7 @@ export const SessionsTab: Component = () => {
           <button
             type="button"
             aria-label={`New session in ${chosenName()}`}
-            class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
+            class="w-11 h-11 flex items-center justify-center shrink-0 rounded-control text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
             onClick={() => getBus().emit('newSession', { workspace: chosen() })}
           >
             <Plus class="w-5 h-5" />

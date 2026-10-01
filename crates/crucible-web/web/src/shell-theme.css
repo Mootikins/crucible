@@ -1,0 +1,5 @@
+/* One production theme entry; desktop and compact share palette and content. */
+@import "./styles/shell/palette.css";
+@import "./styles/shell/window-chrome.css";
+@import "./styles/shell/content.css";
+@import "./styles/shell/compact.css";

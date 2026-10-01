@@ -1082,3 +1082,8 @@ page's file set and are not summarized above.
   account: the shared row-text parser, the 107 types that gained
   `ToSchema`, the two `schema(value_type = ...)` overrides, and the measured
   before/after counts.
+
+The Files tree reads actual directory entries for both project and kiln roots
+through `fs.list_dir` and the existing `useListDir` cache. The daemon admits the
+root and checks containment; the browser does not infer a filesystem tree from
+`list_notes`. Note-index queries remain available to their knowledge consumers.

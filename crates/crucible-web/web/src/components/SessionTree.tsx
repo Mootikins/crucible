@@ -62,7 +62,7 @@ export const SessionRow: Component<{
        */
       class={`group relative flex items-center gap-2 w-full h-(--cru-row-sm) ${
         props.projectLabel === undefined ? 'pl-6' : 'pl-2'
-      } pr-2 rounded transition-colors cursor-pointer ${
+      } pr-2 rounded-control transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
@@ -95,7 +95,7 @@ export const SessionRow: Component<{
       <Show when={props.branch} keyed>
         {(b) => (
           <span
-            class="shrink-0 inline-flex items-center gap-1 px-1 rounded bg-surface-elevated border border-hairline text-floor text-muted-dark"
+            class="shrink-0 inline-flex items-center gap-1 px-1 rounded-control bg-surface-elevated text-floor text-muted-dark"
             title={`branch · ${b}`}
           >
             <GitBranch class="w-2.5 h-2.5 shrink-0" />
@@ -116,7 +116,7 @@ export const SessionRow: Component<{
             explorer keeps it. */}
         <button
           type="button"
-          class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
+          class="rounded-control p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
           title="Archive session"
           aria-label={`Archive ${sessionDisplayTitle(props.session)}`}
           onClick={(e) => { e.stopPropagation(); props.onArchive(); }}
@@ -547,7 +547,7 @@ export const SessionTree: Component<{
                   title={`New session in ${g.name}`}
                   aria-label={`New session in ${g.name}`}
                   onClick={() => props.onNewSession(g.projectPath)}
-                  class="shrink-0 p-1 rounded text-muted-dark opacity-0 group-hover/proj:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 hover:text-shell-ink hover:bg-hover-wash transition-opacity"
+                  class="shrink-0 p-1 rounded-control text-muted-dark opacity-0 group-hover/proj:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 hover:text-shell-ink hover:bg-hover-wash transition-opacity"
                 >
                   <Plus class="w-3 h-3" />
                 </button>

@@ -75,6 +75,10 @@
     opacity: 90%;
   }
 
+  /* Keep a ribbon drag's label clear of its insertion marker. */
+  .wm-drag-overlay[data-rail-side='left'] { transform: translateX(48px); }
+  .wm-drag-overlay[data-rail-side='right'] { transform: translateX(calc(-100% - 8px)); }
+
   .wm-drag-overlay-title {
     font-weight: 500;
   }
@@ -362,6 +366,11 @@
     height: 1.25rem;
     border-radius: calc(infinity * 1px);
     background-color: var(--color-primary);
+  }
+
+  .wm-ribbon-insert {
+    position: absolute; inset-inline: 6px; height: 2px; transform: translateY(-1px);
+    background: var(--color-primary); border-radius: 2px; pointer-events: none; z-index: 40;
   }
 
   /* ── A tab ─────────────────────────────────────────────────────────── */

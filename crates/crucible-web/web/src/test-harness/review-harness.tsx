@@ -7,6 +7,7 @@ import { analyzeDiff } from '@/lib/diff-stats';
 import { theme, applyTheme } from '@/lib/theme';
 import { SERVER_BASE, SERVER_CURRENT } from './review-fixture';
 import '@/index.css';
+import '@/shell-theme.css';
 
 const source = { kind: 'session_record', session: 'review-preview' } as const;
 const root = '/preview/server';

@@ -8,10 +8,10 @@ import { Component, JSX } from 'solid-js';
 
 export const TurnMeta: Component<{ always?: boolean; class?: string; children?: JSX.Element }> = (props) => (
   <div
-    class={`flex items-center gap-2 text-floor leading-none text-muted-dark tabular-nums transition-opacity duration-200 ${
+    class={`turn-meta flex items-center gap-2 text-floor leading-none text-muted-dark tabular-nums transition-opacity duration-200 ${
       props.always
         ? 'opacity-100'
-        : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto'
+        : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto'
     } ${props.class ?? ''}`}
     data-testid="turn-meta"
   >
@@ -23,3 +23,11 @@ export const TurnMeta: Component<{ always?: boolean; class?: string; children?: 
 export const AuthorHeading: Component<{ children: string }> = (props) => (
   <h3 class="sr-only select-none">{props.children}</h3>
 );
+
+/** Touch has no hover: focusing the shared turn reveals the same action row. */
+export function revealTurnActions(event: PointerEvent & { currentTarget: HTMLDivElement }) {
+  if (event.pointerType !== "mouse" && event.target instanceof Element &&
+      !event.target.closest("button, a, input, textarea, [contenteditable]")) {
+    event.currentTarget.focus({ preventScroll: true });
+  }
+}
