@@ -12,6 +12,8 @@ is a Keep a Changelog category.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-01
+
 ### Breaking
 
 - **An ACP profile no longer inherits.** The `extends` key on
@@ -57,6 +59,17 @@ is a Keep a Changelog category.
   precedence no longer hides one of them.
 
 ### Changed
+
+- **The web uses one shared flat shell on desktop and mobile.** Rounded panes,
+  leaf tabs and borderless menus replace the mockup. Appearance settings control
+  theme, true black, contrast, navigation tint, accent, gaps, corner radius,
+  note text size, file labels and fonts while preserving editors and transcripts.
+- **Mobile navigation shares production components.** Transcript spacing and
+  actions match desktop; horizontal swipes reveal the side panels. Session
+  selection reuses and reveals its conversation pane.
+- **The file tree lists admitted kiln directories directly.** Empty folders and
+  non-note files appear alongside notes; toolbar actions use the existing
+  daemon filesystem owner.
 
 - **The daemon has one notification store.** The notification queue on each
   session is gone. `session.add_notification`, `session.list_notifications`,
