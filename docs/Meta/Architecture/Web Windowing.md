@@ -688,7 +688,7 @@ an empty group. Navigation groups containing Sessions or Files remain excluded.
 maintaining separate boxed chrome. `ToolCallRow` presents the daemon's canonical
 tool kind as a compact action/target row. `ToolCard` retains expansion, results,
 permissions and diff navigation. `ThinkingBlock` uses the same row geometry and
-right-hand caret, with a brain icon. Assistant parts share one spacing token.
+adjacent left-aligned caret, with a brain icon. Assistant parts share one spacing token.
 
 `RibbonTabButton` folds its pane when a sibling remains expanded; the final
 expanded pane toggles the rail. `closedPanels` includes individually folded panes,
@@ -726,3 +726,8 @@ Backlinks and Activity are absent from the default layout. Open them through
 The model chip renders the authoritative session model. Native catalogue selection
 uses the configured provider key from the shared session detail query; ACP model
 identifiers remain opaque. This preserves the dropdown checkmark after refresh.
+
+Centre splitter gutters use the shared shell gap in both axes; the resize mark
+is centred in that gutter. Tool filenames use the existing note resolver for
+kiln-relative paths and file actions for absolute paths, preserving transcript
+kiln ownership and the standard tab/split gesture mapping.

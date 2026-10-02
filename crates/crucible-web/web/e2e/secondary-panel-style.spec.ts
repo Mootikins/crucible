@@ -98,3 +98,33 @@ test('swapping a lone session stows the terminal-only rail and files reopen it',
     return windowStore.edgePanels.right.mode;
   })).toBe('docked');
 });
+
+test('centre splitters preserve a symmetric gutter and resize both axes', async ({ page }) => {
+  await setupBasicMocks(page);
+  await page.goto('/');
+  await expect(page.getByTestId('layout-menu')).toBeVisible();
+  for (const direction of ['horizontal', 'vertical']) {
+    await page.evaluate(async direction => {
+      const { windowActions, windowStore } = await import('/src/stores/windowStore.ts');
+      if (windowStore.layout.type !== 'pane') return;
+      windowActions.addTab(windowStore.layout.tabGroupId!, { id: 'split-first', title: 'Search', contentType: 'search' });
+      windowActions.splitPane(windowStore.layout.id, direction as 'horizontal' | 'vertical');
+      if (windowStore.layout.type === 'split') windowActions.addTab(windowStore.layout.second.tabGroupId!, { id: 'split-second', title: 'Search', contentType: 'search' });
+    }, direction);
+    const splitter = page.getByTestId('centre-column').getByTestId('resize-splitter').last();
+    const box = (await splitter.boundingBox())!;
+    const gap = await splitter.evaluate(el => parseFloat(getComputedStyle(el).getPropertyValue('--mk-gap')));
+    expect(direction === 'horizontal' ? box.width : box.height).toBe(gap);
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + (direction === 'horizontal' ? 35 : 0), y + (direction === 'vertical' ? 35 : 0), { steps: 5 });
+    await page.mouse.up();
+    const moved = (await splitter.boundingBox())!;
+    expect(direction === 'horizontal' ? moved.x - box.x : moved.y - box.y).toBeGreaterThan(20);
+    if (direction === 'horizontal') {
+      await page.goto('/');
+      await expect(page.getByTestId('layout-menu')).toBeVisible();
+    }
+  }
+});

@@ -606,7 +606,10 @@ transcript for each session, and every pane of that session reads it.
   keeps the frames since the last snapshot. After a new snapshot, it applies
   the frames above the `as_of_seq` of that snapshot again. When an op still
   does not fit, the store skips it and reads a snapshot again at
-  `turn_finished`.
+  `turn_finished`. A resync snapshot does not advance the control-event
+  watermark or resume cursor: its items cover the transcript, but the
+  reducer still needs replayed events such as `turn_finished` to clear the
+  loading and streaming state.
 - **Draw.** `itemToMessage` maps one item to the `Message` view model of the
   existing components. It is a pure map: the order, the merges and the
   status of each item come from the daemon. `renderTranscript` adds the

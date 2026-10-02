@@ -2,11 +2,12 @@ import { For, Show, type Component } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { fileOpenOptionsForEvent, openFileInEditor } from '@/lib/file-actions';
-import { ChevronRight, FileText, Globe, Pencil, Search, Wrench, Zap } from '@/lib/icons';
+import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
+import { ChevronRight, FileText, Globe, Pencil, Search, Terminal, Wrench } from '@/lib/icons';
 
 // Presentation of the daemon's canonical kind, never classification by tool name.
 const kinds: Record<string, { icon: Component<{ class?: string }>; past: string; now: string }> = {
-  command: { icon: Zap, past: 'Ran', now: 'Run' },
+  command: { icon: Terminal, past: 'Ran', now: 'Run' },
   file_read: { icon: FileText, past: 'Read', now: 'Read' },
   file_edit: { icon: Pencil, past: 'Edited', now: 'Edit' },
   search: { icon: Search, past: 'Searched for', now: 'Search for' },
@@ -27,6 +28,7 @@ export const ToolCallRow: Component<{
   return (
     <div class="tool-call-row" data-expanded={props.expanded || undefined}>
       <button type="button" class="tool-call-toggle" title={name()}
+        aria-label={`${props.expanded ? 'Collapse' : 'Expand'} ${name()}`}
         aria-expanded={props.expanded} onClick={props.onToggle}>
         <Dynamic component={presentation()?.icon ?? Wrench} class="w-3.5 h-3.5 shrink-0" />
         <span>{label()}</span>
@@ -34,10 +36,17 @@ export const ToolCallRow: Component<{
       </button>
       <For each={paths()}>{path => (
         <button type="button" class="tool-call-target tool-call-file" title={`Open ${path}`}
-          aria-label={`Open ${path}`} onClick={event => void openFileInEditor(path, undefined, fileOpenOptionsForEvent(event))}>
+          aria-label={`Open ${path}`} onClick={event => {
+            const options = fileOpenOptionsForEvent(event);
+            if (path.startsWith('/')) void openFileInEditor(path, undefined, options);
+            else void openNoteInEditor(path, kilnForElement(event.currentTarget), options);
+          }}>
           {path.split('/').pop()}
         </button>
       )}</For>
+      <span class="tool-call-chevron" aria-hidden="true">
+        <ChevronRight class={`w-3 h-3 ${props.expanded ? 'rotate-90' : ''}`} />
+      </span>
       <Show when={display()?.render?.summary}>
         <span class="tool-call-result" data-testid="tool-result-summary">→ {display()!.render!.summary}</span>
       </Show>
@@ -49,10 +58,6 @@ export const ToolCallRow: Component<{
       <Show when={props.toolCall.status === 'running'}><span class="tool-call-status animate-pulse" title="Running">Running…</span></Show>
       <Show when={props.toolCall.status === 'error'}><span class="tool-call-status text-error" title="Error">Failed</span></Show>
       <Show when={props.toolCall.status === 'complete'}><span class="sr-only" title="Complete">Complete</span></Show>
-      <button type="button" class="tool-call-chevron" aria-label={`${props.expanded ? 'Collapse' : 'Expand'} ${name()}`}
-        aria-expanded={props.expanded} onClick={props.onToggle}>
-        <ChevronRight class={`w-3 h-3 ${props.expanded ? 'rotate-90' : ''}`} />
-      </button>
     </div>
   );
 };

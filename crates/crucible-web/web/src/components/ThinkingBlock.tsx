@@ -94,7 +94,7 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
         type="button"
         onClick={toggle}
         aria-expanded={isExpanded()}
-        class="thinking-header tool-call-row w-full cursor-pointer select-none group"
+        class="thinking-header tool-call-row cursor-pointer select-none group"
       >
         <Brain class="w-3.5 h-3.5 shrink-0" />
         <span>{headerLabel()}</span>

@@ -293,9 +293,11 @@ function seed(sessionId: string, snapshot: Transcript, fetchedAt: number, force:
   }
   sync.stale = !fitted;
   pruneOptimistic(sessionId, read() ?? snapshot);
-  // The snapshot covers every stored event up to its seq, so a reopened
-  // stream replays only what follows it.
-  if (snapshot.as_of_seq > (lastAppliedSeq.get(sessionId) ?? 0)) {
+  // An idle fresh bind starts at its snapshot. A resync replaces transcript
+  // items only: the reducer still needs replayed control events, especially
+  // turn_finished, even when their seq is covered by the new transcript.
+  const state = stateOf(sessionId);
+  if (!force && !state.isLoading && !state.isStreaming && snapshot.as_of_seq > (lastAppliedSeq.get(sessionId) ?? 0)) {
     lastAppliedSeq.set(sessionId, snapshot.as_of_seq);
     advanceSessionCursor(sessionId, snapshot.as_of_seq);
   }

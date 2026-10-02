@@ -141,7 +141,7 @@ describe('ToolCard — icon selection', () => {
     ['file_read', 'lucide-file-text'],
     ['file_edit', 'lucide-pencil'],
     ['search', 'lucide-search'],
-    ['command', 'lucide-zap'],
+    ['command', 'lucide-terminal'],
     ['fetch', 'lucide-globe'],
     ['mcp_tool', 'lucide-wrench'],
     ['delegate', 'lucide-wrench'],

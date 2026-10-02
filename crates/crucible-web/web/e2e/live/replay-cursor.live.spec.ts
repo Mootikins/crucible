@@ -194,6 +194,18 @@ test.describe('live seq-cursor replay', () => {
       // The outage: the turn keeps running against the daemon while nothing
       // can reach this browser. Its length is the disconnect being measured.
       await outage(OUTAGE_MS);
+      // Finish while this browser is disconnected. The reconnect's history
+      // snapshot can then cover turn_finished before its replay arrives.
+      const recoveryApi = await playwrightRequest.newContext({ baseURL: state.baseURL! });
+      await expect.poll(async () => {
+        const response = await recoveryApi.post('/api/rpc/session.history', {
+          data: { session_id: id, limit: 10000 },
+        });
+        expect(response.ok()).toBe(true);
+        const document = await response.json();
+        return document.history.filter((event: { event?: string }) => event.event === 'turn_finished').length;
+      }, { timeout: 60_000 }).toBe(2);
+      await recoveryApi.dispose();
       await server.start();
 
       // The reconnect delivers the turn's own end: the replayed tail (what
@@ -202,6 +214,7 @@ test.describe('live seq-cursor replay', () => {
       await expect(page.getByTestId('message-assistant').nth(1)).toContainText(SLOW_REPLY_END, {
         timeout: 90_000,
       });
+      await expect(page.getByTestId('working-indicator')).toHaveCount(0);
 
       // The stream that came back named the last seq the store had APPLIED,
       // and the number is the whole assertion. `after=0` is what an unarmed

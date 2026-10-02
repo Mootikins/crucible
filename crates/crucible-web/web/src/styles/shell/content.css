@@ -64,15 +64,20 @@
 .assistant-parts { gap: var(--cru-turn-gap); }
 [data-role='assistant'] > .thinking-block:has(+ *) { margin-bottom: var(--cru-turn-gap); }
 
-.tool-call-row { display: flex; align-items: center; gap: 7px; min-height: 26px; padding: 2px 6px; border-radius: var(--cru-radius-control); color: var(--cru-color-muted); font-size: 12.5px; line-height: 22px; min-width: 0; }
+.tool-call-row { position: relative; display: flex; width: fit-content; align-items: center; gap: 7px; max-width: calc(100% - 6px); min-height: 26px; padding: 2px 6px; border-radius: var(--cru-radius-control); color: var(--cru-color-muted); font-size: 12.5px; line-height: 22px; min-width: 0; }
 .tool-call-row:hover { background: var(--cru-color-hover-wash); }
 .tool-call-toggle { display: flex; align-items: center; gap: 7px; min-width: 0; text-align: left; }
+/* Extend the native toggle over its compact row; file links stay above it. */
+.tool-call-toggle::after { content: ''; position: absolute; inset: 0; border-radius: var(--cru-radius-control); }
+.tool-call-toggle:focus-visible::after { outline: 2px solid var(--cru-color-primary); outline-offset: -2px; }
+.tool-call-row:has(.tool-call-file) .tool-call-toggle { flex-shrink: 0; }
+.tool-call-file { position: relative; z-index: 1; }
 .tool-call-toggle > span:first-of-type { white-space: nowrap; }
 .tool-call-target { color: var(--cru-color-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tool-call-file:hover { color: var(--cru-color-primary); text-decoration: underline; }
 .tool-call-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tool-call-status { flex: none; font-size: 12px; color: var(--cru-color-muted-dark); }
-.tool-call-chevron { margin-left: auto; flex: none; opacity: .35; }
+.tool-call-chevron { flex: none; opacity: .35; }
 .tool-call-row:hover .tool-call-chevron, .tool-call-row:focus-within .tool-call-chevron, .tool-call-row[data-expanded] .tool-call-chevron { opacity: 1; }
 .tool-call-detail { margin: 2px 0 6px 7px; padding: 2px 0 2px 14px; border-left: 1px solid var(--cru-color-hairline-strong); }
 

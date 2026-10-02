@@ -11,6 +11,8 @@ import {
   resetTranscriptsForTests,
   retainTranscript,
   seedTranscript,
+  patchTranscript,
+  setTranscriptStreaming,
   transcriptOf,
 } from '../transcriptStore';
 import type { Transcript } from '@/lib/transcript';
@@ -147,6 +149,37 @@ describe('the transcript store reads a new snapshot', () => {
     stream().open();
 
     await waitFor(() => expect(rows()).toEqual(['user:sent while away']));
+  });
+
+  it('does not let a reconnect snapshot suppress the replayed turn completion', async () => {
+    start(historyOf(ID, [userTurn('t1', 'check tools')], 1).transcript);
+    stream().open();
+    patchTranscript(ID, { isLoading: true });
+    setTranscriptStreaming(ID, true);
+    stream().emit('tool_call', { event: 'tool_call', data: { call_id: 'call', tool: 'get_kiln_info', args: {} } }, { lastEventId: `${ID}:2` });
+    snapshot = historyOf(ID, [userTurn('t1', 'check tools'), segment('t1', 0, 'The tools work.')], 5).transcript;
+
+    // The history request beats the replay of turn_finished on reconnect.
+    stream().open();
+    await waitFor(() => expect(rows()).toEqual(['user:check tools', 'assistant:The tools work.']));
+    expect(transcriptOf(ID).isStreaming).toBe(true);
+    stream().emit('turn_finished', { event: 'turn_finished', data: { status: 'completed', stop_reason: 'end_turn' } }, { lastEventId: `${ID}:5` });
+
+    expect(transcriptOf(ID).isLoading).toBe(false);
+    expect(transcriptOf(ID).isStreaming).toBe(false);
+    expect(sessionCursor(ID)).toBe(5);
+  });
+
+  it('keeps turn completion eligible when a bind snapshot arrives during a send', () => {
+    start(historyOf(ID, [userTurn('t1', 'check tools')], 1).transcript);
+    patchTranscript(ID, { isLoading: true });
+    setTranscriptStreaming(ID, true);
+    seedTranscript(ID, historyOf(ID, [userTurn('t1', 'check tools'), segment('t1', 0, 'Done')], 5).transcript, Date.now());
+
+    stream().emit('turn_finished', { event: 'turn_finished', data: { status: 'completed' } }, { lastEventId: `${ID}:5` });
+
+    expect(transcriptOf(ID).isLoading).toBe(false);
+    expect(transcriptOf(ID).isStreaming).toBe(false);
   });
 
   it('on the first open of a resumed stream, when the snapshot is older than the subscription', async () => {

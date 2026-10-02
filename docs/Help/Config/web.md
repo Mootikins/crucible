@@ -44,6 +44,10 @@ menu to get the default arrangement.
 The mode selector is the first control at the far left below the composer,
 followed by the model selector and the remaining session controls.
 
+Tool and thought headers keep their icon, text and caret together on the
+left. Their compact hover area opens the details; file links within a tool
+header open the file instead.
+
 The full editor remains: source mode shows line numbers; live preview hides them.
 Live preview joins hard-wrapped paragraphs and wraps prose within the readable
 column (768px by default), preserving rendering and cursor movement. Appearance changes
@@ -65,6 +69,10 @@ the recording to the URL you configure; the server must allow this browser's
 origin. A failed request shows an error on the microphone and keeps the draft.
 
 ## Connection recovery
+
+When a reply finishes during a connection outage, reconnecting restores the
+reply and clears the working indicator. The transcript snapshot and the
+replayed turn completion are applied separately so one cannot hide the other.
 
 Read-only requests can reconnect and retry once after a broken connection.
 Commands and writes are submitted once: if their reply is lost, the displayed
@@ -632,7 +640,7 @@ admission.
 Queued prompts offer **Send now** and **Remove**. Send now interrupts the current
 turn and waits for the daemon to become idle before sending the selected prompt;
 Remove withdraws a prompt that has not been sent. Recalled notes and tool file
-paths open their real files. The session menu offers Stop, Archive/Restore and
+paths open their real files. Relative tool filenames resolve within the transcript’s kiln before opening; absolute workspace paths open directly. The session menu offers Stop, Archive/Restore and
 Copy session ID. Permission cards offer Allow once, Allow for session, Deny,
 and the available broader scopes in More options.
 
@@ -666,7 +674,7 @@ keep their space, and clicking the icon again restores the pane. The last expand
 pane toggles the whole rail. **Layout → Re-add pane** also offers folded panes,
 including Terminal, and restores the existing tab rather than duplicating it.
 
-Thoughts and tool calls share a right-hand disclosure caret. Thoughts have a brain
+Thoughts and tool calls place their disclosure caret immediately after the target. Thoughts have a brain
 icon; tool rows show the action and target, with full arguments and results behind
 the disclosure. Supporting panels use the same flat surfaces and rounded rows.
 
@@ -683,7 +691,7 @@ Tree guides blend navigation text and surface colours, retaining contrast as tin
 Opening a file from the tree creates an editor tab or focuses its existing tab; note links
 keep in-place navigation. Right-click a file tab and choose **Show in file tree**
 to open its root and expand its parent folders. Rail widths have no fixed 600px cap;
-dragging preserves room for the centre.
+dragging preserves room for the centre. Centre tiles use the same gutter spacing, with a centred resize mark and drag target in either split direction.
 
 After swapping, a right rail containing only an empty editor and folded Terminal
 collapses automatically. An expanded Terminal keeps it open; opening a file

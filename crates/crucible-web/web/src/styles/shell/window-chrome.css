@@ -95,8 +95,20 @@ body { background: var(--mk-nav); }
   color: color-mix(in oklab, var(--cru-color-muted-dark), var(--cru-color-ink) calc(var(--wm-edge-progress, 1) * 100%));
 }
 
-/* Centre splits retain a line; rail resize marks appear on hover and drag. */
+/* Resize marks appear on hover and drag. */
 .wm-splitter:not(:hover):not([data-dragging]) { background: var(--mk-line); }
+/* Centre cards share the same gutter as rail cards. The line is centred
+   inside the gutter, independently of the pane ratio and split direction. */
+[data-testid='centre-column'] .wm-splitter.w-px { width: var(--mk-gap); }
+[data-testid='centre-column'] .wm-splitter.h-px { height: var(--mk-gap); }
+[data-testid='centre-column'] .wm-splitter { background: transparent; }
+[data-testid='centre-column'] .wm-splitter:not([data-locked])::before {
+  content: ''; position: absolute; background: transparent; pointer-events: none;
+}
+[data-testid='centre-column'] .wm-splitter.w-px::before { width: 1px; inset-block: 0; left: calc(50% - .5px); }
+[data-testid='centre-column'] .wm-splitter.h-px::before { height: 1px; inset-inline: 0; top: calc(50% - .5px); }
+[data-testid='centre-column'] .wm-splitter:hover::before { background: var(--cru-color-muted-dark); }
+[data-testid='centre-column'] .wm-splitter[data-dragging]::before { background: var(--cru-color-primary); }
 .wm-pane-boundary { height: 1px; top: 0; }
 /* The centre owns the gutter; center both the resize mark and its hit target. */
 [data-testid='edge-host-left'] .wm-edge-handle { transform: translateX(calc(var(--mk-gap) / 2)); }
