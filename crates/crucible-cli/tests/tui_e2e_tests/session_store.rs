@@ -180,7 +180,18 @@ fn resume_in_the_tui_moves_the_console_to_the_chosen_session() {
             Err(_) => std::thread::sleep(Duration::from_millis(100)),
         }
     };
-    session.wait_for_ready().expect("the TUI is ready again");
+    // Lua registration precedes the resumed runner's first frame. The old
+    // console also says ASK, so wait_for_ready alone can send :quit before
+    // the new input reader exists. The picker must disappear on a fresh frame.
+    session
+        .wait_until(
+            |screen| {
+                let contents = screen.contents();
+                contents.contains("ASK") && !contents.contains(&other_id)
+            },
+            Duration::from_secs(10),
+        )
+        .expect("the resumed console replaces the session picker");
 
     session.send(":quit\r").expect("quit");
     session.expect_eof().expect("runner exited");

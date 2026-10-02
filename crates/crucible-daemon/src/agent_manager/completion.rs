@@ -31,7 +31,7 @@ impl AgentManager {
     /// One completion against `session_id`'s resolved client, answered as text.
     ///
     /// Fails rather than falling back: a caller that wants a fallback owns it
-    /// (the title path truncates the first user message), and a second
+    /// and a second
     /// fallback here would make which one you got depend on where the failure
     /// happened.
     pub(crate) async fn complete_once(
@@ -43,13 +43,33 @@ impl AgentManager {
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-        let agent_config = session
+        let mut agent_config = session
             .agent
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
         // Off the startup-bound `OnceLock`, not the loader mutex — see
         // `plugin_lua`. Every caller of this is a background nicety and must
         // never queue behind a session start's plugin hooks.
+        // An ACP model ID belongs to the delegated process, not a genai
+        // endpoint. Background completions use the configured default LLM;
+        // they never inject a title prompt into the user's ACP conversation.
+        if agent_config.agent_type == "acp" {
+            let config = self.llm_config().ok_or_else(|| {
+                AgentError::InvalidConfig(
+                    "ACP background completion needs a configured default LLM".into(),
+                )
+            })?;
+            let (key, provider) = config.default_provider().ok_or_else(|| {
+                AgentError::InvalidConfig(
+                    "ACP background completion needs a configured default LLM".into(),
+                )
+            })?;
+            agent_config.provider = provider.provider_type;
+            agent_config.provider_key = Some(key.clone());
+            agent_config.model = provider.model();
+            agent_config.endpoint = provider.endpoint.clone();
+        }
+
         let lua_handle: Option<Lua> = self.plugin_lua().await;
         let configured_key = self.configured_api_key(&agent_config);
         let (client, model) = crate::agent_factory::build_chat_client_for_agent(

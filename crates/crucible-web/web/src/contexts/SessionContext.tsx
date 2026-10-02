@@ -33,6 +33,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { getBus } from '@/lib/bus';
 import { setPendingFirstMessage } from '@/lib/draft-session';
 import { tabHost } from '@/lib/tab-host';
+import { syncSessionTitle } from '@/lib/session-actions';
 import { statusBarStore } from '@/stores/statusBarStore';
 
 
@@ -145,6 +146,14 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   createEffect(() => {
     const list = sessionsQuery.data;
     if (list && includeArchived()) treeRootActions.prune(list.map((s) => s.session_id));
+  });
+
+  // Reconcile after either query hydration or layout restoration. Open labels
+  // are projections; an event missed while disconnected cannot make them stale.
+  createEffect(() => {
+    for (const session of sessions()) {
+      syncSessionTitle(session.session_id, session.title || 'Chat');
+    }
   });
 
   /**
@@ -511,7 +520,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // ever depended on the kiln: the tree groups and filters the global session
   // list on the client, and the provider route takes no kiln at all.
 
-  // Daemon auto-titles sessions on their first completed turn; the chat
+  // The daemon owns session titles; the chat
   // stream's route announces the new title so the selection stays current.
   // The route also invalidates both list keys, so the rows correct themselves;
   // the patch here is what paints before that answer lands.

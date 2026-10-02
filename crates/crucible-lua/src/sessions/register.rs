@@ -44,6 +44,10 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
     ("get", "(session_id: string) -> (any, string?)"),
     ("list", "() -> ({ any }?, string?)"),
     (
+        "generate_title",
+        "(session_id: string) -> (string?, string?)",
+    ),
+    (
         "configure_agent",
         "(session_id: string, config: { [string]: any }) -> (boolean?, string?)",
     ),
@@ -819,6 +823,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("end_session", String);
     stub_async!("set_mode", (String, String));
     stub_async!("set_title", (String, String));
+    stub_async!("generate_title", String);
     stub_async!("interaction_respond", (String, String, Value));
     stub_async!("subscribe", String);
     stub_async!("unsubscribe", String);
@@ -1064,6 +1069,21 @@ fn register_sessions_inner(
         move |lua, (session_id, title): (String, String)| {
             let a = Arc::clone(&a);
             async move { set_title_op(&lua, &a, &session_id, title).await }
+        },
+    )?;
+
+    let a = Arc::clone(&api);
+    ns.async_func(
+        "generate_title",
+        decl("generate_title")?,
+        move |lua, session_id: String| {
+            let a = Arc::clone(&a);
+            async move {
+                match a.generate_title(session_id).await {
+                    Ok(title) => Ok((Value::String(lua.create_string(title)?), Value::Nil)),
+                    Err(error) => err_pair(&lua, error),
+                }
+            }
         },
     )?;
 

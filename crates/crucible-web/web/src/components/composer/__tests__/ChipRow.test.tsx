@@ -9,7 +9,7 @@ vi.mock('@/components/ChatModeControl', () => ({
 const { ChipRow } = await import('../ChipRow');
 type ComposerChip = import('../ChipRow').ComposerChip;
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 /**
  * The one chip row both composers draw under the capsule. It is built from
@@ -212,10 +212,23 @@ describe('ChipRow — the row folds into a +N button', () => {
     expect(onSelect).toHaveBeenCalledWith('delta');
   });
 
-  it('opens on hover as well as on click, and closes on Escape', () => {
+  it('does not open the fold when the pointer crosses it toward another control', () => {
+    vi.useFakeTimers();
     at(300, [120, 90, 100, 80]);
     const button = screen.getByTestId('composer-chip-overflow');
     fireEvent.mouseEnter(button);
+    fireEvent.mouseLeave(button);
+    vi.advanceTimersByTime(500);
+    expect(screen.queryByTestId('composer-chip-overflow-popout')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('opens on hover as well as on click, and closes on Escape', () => {
+    vi.useFakeTimers();
+    at(300, [120, 90, 100, 80]);
+    const button = screen.getByTestId('composer-chip-overflow');
+    fireEvent.mouseEnter(button);
+    vi.advanceTimersByTime(500);
     expect(screen.getByTestId('composer-chip-overflow-popout')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('composer-chip-overflow-popout')).toBeNull();
@@ -228,9 +241,11 @@ describe('ChipRow — the row folds into a +N button', () => {
   // already opened the list by the time the click lands. A toggle would shut
   // it in the same frame it appeared — the list never showed at all.
   it('a click that follows the hover keeps the list open, and the next one shuts it', () => {
+    vi.useFakeTimers();
     at(300, [120, 90, 100, 80]);
     const button = screen.getByTestId('composer-chip-overflow');
     fireEvent.mouseEnter(button);
+    vi.advanceTimersByTime(500);
     fireEvent.click(button);
     expect(screen.getByTestId('composer-chip-overflow-popout')).toBeInTheDocument();
     fireEvent.click(button);

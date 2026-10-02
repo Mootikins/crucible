@@ -38,39 +38,39 @@ impl AgentManager {
 
             // Not per-session, or per-call rather than per-session. Each name
             // here is a decision, not an oversight.
+            title_attempts: _, // terminal memo survives pause, like persisted eligibility
             titles_in_flight: _, // InFlightGuard owns its lifetime (title.rs:13)
-            model_cache: _,      // keyed by provider classification, not session
+            model_cache: _,    // keyed by provider classification, not session
             agent_profiles_cache: _, // unkeyed catalog cache, not session
-            providers_cache: _,  // keyed by call params, not session
-            runtimepath: _,      // daemon config
-            modes: _,            // global mode registry
-            kiln_manager: _,     // shared service
-            session_manager: _,  // shared service
+            providers_cache: _, // keyed by call params, not session
+            runtimepath: _,    // daemon config
+            modes: _,          // global mode registry
+            kiln_manager: _,   // shared service
+            session_manager: _, // shared service
             background_manager: _, // shared service
             delegation_service: _, // shared service; per-session records are its own
-            mcp_gateway: _,      // shared service
-            llm_config: _,       // daemon config
-            acp_config: _,       // daemon config
-            context_config: _,   // daemon config
+            mcp_gateway: _,    // shared service
+            llm_config: _,     // daemon config
+            acp_config: _,     // daemon config
+            context_config: _, // daemon config
             permission_config: _, // daemon config
-            source_roots: _,     // daemon config
-            plugin_loader: _,    // shared service
-            plugin_handlers: _,  // startup-bound OnceLock
-            isolation: _,        // startup-bound OnceLock
-            context_attach: _,   // process-wide buffer, drained per turn
+            source_roots: _,   // daemon config
+            plugin_loader: _,  // shared service
+            plugin_handlers: _, // startup-bound OnceLock
+            isolation: _,      // startup-bound OnceLock
+            context_attach: _, // process-wide buffer, drained per turn
             // Session-keyed, and swept by `SessionLifecycle::stop` rather
             // than here: a pause sweeps it and runs no `cleanup_session`, and
             // the sweep must follow the plugin end hooks. Asserting here would
             // fire for any caller of `cleanup_session` that fired no end hooks.
             statusline_exprs: _,
-            publications: _, // startup-bound OnceLock; describes plugins, not sessions
-            status: _,       // startup-bound OnceLock; the registry releases its own sessions
+            status: _, // startup-bound OnceLock; the registry releases its own sessions
             notifications: _, // startup-bound OnceLock; the hub keeps its own ring
             no_kiln_noticed: _, // daemon-wide, keyed by workspace, not by session
             plugin_tool_registry: _, // startup-bound OnceLock
             external_watch: _, // startup-bound OnceLock; per-session watches are its own
             agent_factory_override: _, // test-support seam, set once
-            activity: _,     // daemon-wide work registry; a turn's guard lives in request_state
+            activity: _, // daemon-wide work registry; a turn's guard lives in request_state
         } = self;
 
         let mut residue = Vec::new();

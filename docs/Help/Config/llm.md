@@ -360,3 +360,19 @@ For cloud providers, check that the model name is correct. Run `cru models` to l
 - `:h config.embedding` — Embedding configuration
 - `:h chat` — Chat command reference
 - [[Help/CLI/chat]] — Chat usage guide
+
+## Session titles
+
+The daemon generates one canonical title after three successfully completed
+user or relay turns. Set `[chat] title_after_turns = 0` to disable automatic
+titling, or choose another positive threshold. Eligibility is reconstructed
+from persisted session events, including after a restart. Plugin, failed,
+and cancelled turns do not count.
+
+The core Luau module `crucible.session_title` formats a bounded conversation
+prompt and sanitizes the answer; the daemon owns generation and persistence.
+ACP sessions use the configured default LLM for this background completion.
+A failed or blank answer leaves the session untitled and allows a later
+successful turn to retry. Existing titles remain unchanged; `/generate`
+explicitly regenerates through the same owner when the compatibility command
+is installed. All clients receive the same persisted `title_changed` event.

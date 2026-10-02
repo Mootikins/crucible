@@ -46,7 +46,9 @@ followed by the model selector and the remaining session controls.
 
 Tool and thought headers keep their icon, text and caret together on the
 left. Their compact hover area opens the details; file links within a tool
-header open the file instead.
+header open the file instead. MCP headers always use the short tool display name,
+with the owning server shown separately. Crucible tools carry a Crucible marker
+and kiln icon, including calls made by ACP agents.
 
 The full editor remains: source mode shows line numbers; live preview hides them.
 Live preview joins hard-wrapped paragraphs and wraps prose within the readable
@@ -699,3 +701,7 @@ reveals the editor rail again.
 
 Backlinks and Activity are absent from the default layout. Open them through
 **Layout → Re-add pane** when needed; saved user layouts retain their chosen tabs.
+
+The composer folds chips into a `+N` menu when its pane is narrow. Click opens
+it immediately; hover opens it after a brief pause, so moving past the chip
+to Send cannot open a menu over the send button.

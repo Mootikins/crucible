@@ -1,11 +1,11 @@
 --!strict
--- Unit tests for the auto-title plugin's pure title logic.
+-- Core title formatter regression cases, also exercised by the compatibility command suite.
 -- Run with: cru plugin test runtime/plugins/auto-title
 --
 -- The four sanitize cases are ported from the Rust tests that shipped with
 -- `provider/title.rs`; each one names a thing a model actually did.
 
-local title = require("auto_title")
+local title = require("crucible.session_title")
 
 describe("sanitize", function()
   it("strips wrapping quotes and a trailing period", function()

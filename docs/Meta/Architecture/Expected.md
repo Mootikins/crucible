@@ -127,7 +127,7 @@ entry but no shipped proof.
 | F56 | Session persistence as append-only JSONL under the daemon data root | P, R, TM |
 | F57 | Session resume with full history; `cru chat --resume <id>` | P, R, T, W |
 | F58 | Sessions are always resumable; a send to an ended session revives it | P |
-| F59 | Auto-title on the first completed turn by the `auto-title` plugin; `title_changed` broadcast | P, W |
+| F59 | Core LLM title after configured successful user/relay turns (default three); canonical `title_changed` broadcast | P, T, W |
 | F60 | Auto-archive of idle sessions after `auto_archive_hours`; restore; delete | P, W |
 | F61 | Segmented turn convergence: `segment_complete` at each text-to-tool boundary | P |
 | F62 | A session-unique scratch workspace when no workspace is given | P |
@@ -351,7 +351,7 @@ review named them as suspects, and the check found them covered.
 | `cru.schedule` interval callbacks | `crates/crucible-daemon/src/daemon_plugins/mod.rs:212` | yes (F193) |
 | `cru.ratelimit` | `crates/crucible-lua/src/ratelimit.rs:117`; registered at `crates/crucible-lua/src/executor.rs:293` | yes (F179) |
 | MCP gateway: upstream servers with prefixed names, reconnect loop, gateway tools on the served MCP surface | `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`; `crates/crucible-daemon/src/tools/extended_mcp_server.rs:123` | yes (F210); the wiring landed in Tier 3 A10 and A11 |
-| Auto-title plugin over the `session_title` publication channel | `crates/crucible-daemon/src/agent_manager/title.rs:42` | yes (F59) |
+| Core event-driven session titling and explicit regeneration | `crates/crucible-daemon/src/agent_manager/title.rs:42` | yes (F59) |
 | Publications: `cru.plugin.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | yes, since 2026-08-23 (Plugin Publications) |
 | Plugin options: `cru.plugin.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options/mod.rs:389`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | yes, since 2026-08-23 (Plugin Options) |
 | Provider auth hooks: `cru.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | yes, since 2026-08-23 (Provider Auth Hooks) |

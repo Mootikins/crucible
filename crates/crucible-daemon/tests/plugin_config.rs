@@ -793,7 +793,7 @@ async fn toml_config_resolves_via_crucible_config_get() {
 }
 
 // ---------------------------------------------------------------------------
-// The shipped auto-title plugin, configured the documented way
+// Core title formatting and the shipped compatibility command
 // ---------------------------------------------------------------------------
 
 /// Copy the shipped `auto-title` plugin into `root` so the loader sees a real
@@ -814,144 +814,51 @@ fn copy_shipped_plugin(root: &Path, plugin: &str) {
     copy_tree(&plugins_root().join(plugin), &root.join(plugin));
 }
 
-/// Record what `auto-title` asks `cru.session.complete` for, and answer.
-const RECORD_COMPLETIONS: &str = r#"
-__completion_opts = nil
-cru.session = cru.session or {}
-cru.session.complete = function(session_id, opts)
-    __completion_opts = opts
-    return "A perfectly good title"
-end
-"#;
+/// Core prompt customization runs on the shared VM independently of plugins.
+#[tokio::test]
+async fn user_init_lua_configures_the_core_title_formatter() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    let (_, loader) = boot_and_activate(tmp.path(), &root, serde_json::Value::Null,
+        r#"local title = require('crucible.session_title'); title.SYSTEM_PROMPT = 'Name it.'; title.CLIP = 4"#).await;
+    assert_eq!(
+        loader
+            .eval("=require('crucible.session_title').SYSTEM_PROMPT")
+            .await
+            .unwrap(),
+        "Name it."
+    );
+    assert_eq!(
+        loader
+            .eval("=require('crucible.session_title').exchange('abcdefgh', '')")
+            .await
+            .unwrap(),
+        "User: abcd"
+    );
+}
 
-/// Run `auto-title:generate` the way the daemon does — through the command
-/// handle the loader captured at load — and answer with the recorded options.
-async fn generate_title(
-    loader: &crucible_daemon::daemon_plugins::DaemonPluginLoader,
-    user: &str,
-) -> (String, String, String) {
-    loader.eval(RECORD_COMPLETIONS).await.unwrap();
-    let result = loader
-        .plugin_registry()
-        .run_command(
-            "auto-title:generate",
-            serde_json::json!({ "session_id": "chat-1", "user": user }),
-        )
+#[tokio::test]
+async fn core_title_defaults_stand_without_the_compatibility_plugin() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    let (_, loader) = boot_and_activate(tmp.path(), &root, serde_json::Value::Null, "").await;
+    assert!(loader
+        .eval("=require('crucible.session_title').SYSTEM_PROMPT")
         .await
         .unwrap()
-        .expect("auto-title must declare the command it publishes");
-    let title = result["title"].as_str().unwrap().to_string();
-    let system = loader.eval("=__completion_opts.system").await.unwrap();
-    let prompt = loader.eval("=__completion_opts.prompt").await.unwrap();
-    (title, system, prompt)
+        .contains("3 to 7 words"));
 }
 
-/// The documented Lua config path, end to end under the boot inversion: the
-/// user's init.lua reaches the shipped plugin by `require` BEFORE activation,
-/// activation reuses that same module instance, and the command the daemon
-/// calls sees what the user set.
 #[tokio::test]
-async fn user_init_lua_configures_the_shipped_auto_title_plugin() {
+async fn compatibility_title_command_does_not_publish_an_automatic_policy() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plugins");
     std::fs::create_dir_all(&root).unwrap();
     copy_shipped_plugin(&root, "auto-title");
-
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        serde_json::Value::Null,
-        r#"require("auto-title").setup({ prompt = "Name it.", clip = 4 })"#,
-    )
-    .await;
-
-    let (title, system, prompt) = generate_title(&loader, "abcdefgh").await;
-    assert_eq!(
-        system, "Name it.",
-        "the configured prompt must be the one asked with"
-    );
-    assert_eq!(
-        prompt, "User: abcd",
-        "the configured clip must bound the exchange"
-    );
-    assert_eq!(title, "A perfectly good title");
-}
-
-/// With no init.lua configuration at all, the shipped defaults stand.
-#[tokio::test]
-async fn the_shipped_auto_title_defaults_stand_without_user_config() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    std::fs::create_dir_all(&root).unwrap();
-    copy_shipped_plugin(&root, "auto-title");
-
-    let (_config, loader) = boot_and_activate(tmp.path(), &root, serde_json::Value::Null, "").await;
-
-    let (_, default_system, _) = generate_title(&loader, "help me fix the auth flow").await;
-    assert!(
-        default_system.contains("3 to 7 words"),
-        "the shipped prompt is the base: {default_system}"
-    );
-}
-
-/// A plugin configured BOTH ways: the entry's `config` owns the setup, so
-/// the `plugins.auto-title` store section is NOT applied. Setup ownership
-/// lives in the spec entry now; a direct `require(...).setup{}` call in
-/// init.lua runs before the host's call and does not own anything.
-#[tokio::test]
-async fn an_entry_config_owns_the_plugin_over_the_store_section() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    std::fs::create_dir_all(&root).unwrap();
-    copy_shipped_plugin(&root, "auto-title");
-
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        serde_json::json!({ "plugins": { "auto-title": { "prompt": "From settings.", "clip": 4 } } }),
-        r#"cru.plugin.setup({ { "auto-title", config = function(m, opts) m.setup({ prompt = "From Lua." }) end } })"#,
-    )
-    .await;
-
-    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
-    assert_eq!(system, "From Lua.", "the entry's config owns the setup");
-    assert_eq!(
-        prompt, "User: abcdefgh",
-        "the store clip is not applied — config replaces the default call"
-    );
-}
-
-/// The channel publishes exactly once, whichever path loads the plugin.
-///
-/// The user's `require` at boot runs the plugin body (which publishes, under
-/// the plugin's own binding via the boot searcher); activation then reuses
-/// the instance and must not run the body — or publish — a second time.
-#[tokio::test]
-async fn configuring_auto_title_does_not_republish_the_channel() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("plugins");
-    std::fs::create_dir_all(&root).unwrap();
-    copy_shipped_plugin(&root, "auto-title");
-
-    let (_config, loader) = boot_and_activate(
-        tmp.path(),
-        &root,
-        serde_json::Value::Null,
-        r#"require("auto-title").setup({ prompt = "Name it." })"#,
-    )
-    .await;
-
-    let titlers: Vec<String> = loader
-        .publications()
-        .get("session_title")
-        .into_iter()
-        .map(|(plugin, _)| plugin)
-        .collect();
-    assert_eq!(
-        titlers,
-        vec!["auto-title".to_string()],
-        "one load, one publication, attributed to the plugin itself"
-    );
+    let (_, loader) = boot_and_activate(tmp.path(), &root, serde_json::Value::Null, "").await;
+    assert!(loader.publications().get("session_title").is_empty());
 }
 
 /// The resolver coverage the spike review demanded, at the level that

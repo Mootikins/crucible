@@ -69,7 +69,7 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 | `crates/crucible-daemon/src/agent_manager/attachments.rs` | 443 | Resolves `@file` mentions (optionally `@file:N`/`@file:N-M` line ranges) into inlined file contents under the session's tool root and its full containment `RootSet`; also extracts `@comment:<id>` review-comment ids (`comment_mentions`) for the send path to resolve. Defines `AttachedContext { kind, source, body }`, the one block a message attaches to its turn — review comments (`diff/context.rs`, which built `ReviewContext` before this merge) and a `/skill` invocation's instructions both build one. |
 | `crates/crucible-daemon/src/agent_manager/commands.rs` | 209 | Builds the session's one command catalog (`AgentManager::session_commands`): built-in commands, declared modes, plugin commands, discovered skills, then the ACP agent's advertised commands, in that order, an earlier source keeping a shared name. `slash_route` reads the same catalog to decide `SlashRoute::Mode`/`Plugin`/`Skill`/`Message` for a `/name` message. |
 | `crates/crucible-daemon/src/agent_manager/context_length.rs` | 336 | Probes an OpenAI-compatible `/v1/models` or Ollama `/api/show` endpoint to discover a model's context window, with SSRF hardening (`redirect::Policy::none()`) — one of two SSRF checks the daemon now runs on a provider endpoint (see `session_config.rs::refuse_internal_endpoint` below for the other, broader one). |
-| `crates/crucible-daemon/src/agent_manager/title.rs` | 294 | The daemon-side contract for session titling: fires once, persists, emits a typed `SettingsPayload::TitleChanged` through `&crate::EventBus`; delegates the "how" to a plugin via `registry.run_command_in(..., Some(session_id))`, which also backs the `/generate` slash command. |
+| `crates/crucible-daemon/src/agent_manager/title.rs` | 294 | Core session titling: consumes successful typed terminal events, derives eligibility from persisted history, formats through the shared core Lua module, and generates through `complete_once`. Automatic and explicit generation share this owner. |
 | `crates/crucible-daemon/src/agent_manager/session_config.rs` | 270 | What a new or reconfigured session starts with: `fork_session` (refuses an ACP parent via `fork_refusal`), `start_hook_scope`/`commit_start_hook_scope`, `configure_agent` (isolation-unenforceable check, then the trust gate, then `refuse_internal_endpoint`'s SSRF check), `apply_session_defaults`. |
 | `crates/crucible-daemon/src/agent_manager/residue.rs` | 183 | Compile-time-enforced leak detector for `cleanup_session`: an exhaustive per-field destructure of `AgentManager`, now taking `&crate::EventBus` and checking `proposals` for per-session residue. |
 | `crates/crucible-daemon/src/agent_manager/stream_config.rs` | 147 | Defines `TurnEnvironment` and `AgentStreamConfig`, the frozen turn-start snapshot of a session's config (no longer carries `daemon_permissions` or `agent_type`, both retired with the deleted review gate). |
@@ -133,7 +133,6 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 | `crates/crucible-daemon/src/agent_manager/tests/lifecycle.rs` | 303 | Configure agent, switch model, cancel, notifications (now through `NotificationHub`/`notify`), broadcast events (`EventBus::emit` returning `bool`). |
 | `crates/crucible-daemon/src/agent_manager/tests/agent_tool_chain.rs` | 295 | An agent that owns its tool calls (ACP) leaves the same conversation-tree shape as a Crucible tool call, runs the same `tool:render`/loop-guard/review-bracket steps, and gets a structured result and its gate-refusal reason attributed correctly. |
 | `crates/crucible-daemon/src/agent_manager/tests/revive_cold.rs` | 299 | Cold revival from a persisted session id after restart; trust-gate re-run on revival; its `manager_over`/`cold_manager` helpers are now shared `pub(super)` infrastructure for `revive_isolation.rs`. |
-| `crates/crucible-daemon/src/agent_manager/tests/title.rs` | 294 | Session titling seam: plugin publication, opening-exchange shape, fallback to truncation, nil handling, `/generate` session targeting. |
 | `crates/crucible-daemon/src/agent_manager/tests/build_race.rs` | 247 | Regression: a `switch_model` landing mid-build must not be overwritten by the stale build (`generation` check); its `GatedStorage` fixture is now `pub(super)`, reused by `lost_update.rs`. |
 | `crates/crucible-daemon/src/agent_manager/tests/workspace.rs` | 261 | Split between workspace tools (`session.workspace`) and kiln-backed note tools (`session.kiln`). |
 | `crates/crucible-daemon/src/agent_manager/tests/lost_update.rs` | 212 | Regression coverage for the session-persistence lost-update bug: seven writers (`persist_variables`, `configure_agent`, `connect_kiln`, `switch_model`, `set_mode`, `set_precognition`, `record_discovered_context_window`, `persist_acp_session_id`) now go through `SessionManager::modify_session` (closure-based read-modify-write) instead of a read-copy-then-save-whole-record pattern, proven by deterministically parking a concurrent `set_title` in the gap. |
@@ -964,3 +963,21 @@ never released mid-turn.
   explicitly load-bearing (scope/admission, turn lifecycle, one shared
   plugin VM, `SessionSlot` for session-scoped state) are each backed by a
   named regression test in `crates/crucible-daemon/src/agent_manager/tests/`.
+
+### Canonical session titles
+
+`title.rs` consumes completed `TurnFinished` boundaries. The transcript fold
+supplies canonical turn identities, including legacy events without IDs.
+The threshold comes from `chat.title_after_turns` (default three, zero off).
+Only successful user and relay turns count. There is no durable title counter
+or first-message truncation fallback. Core `crucible.session_title` owns pure
+prompt formatting and sanitization, independent of installed plugins.
+
+An in-flight guard and terminal-sequence memo prevent duplicate generation.
+Failed attempts can retry on a later successful boundary. A newer boundary
+arriving during a failed attempt is reconsidered from persisted history.
+`SessionManager` serializes compare, durable save, and `TitleChanged` emission
+with manual writes and deletion. A concurrent rename wins. Explicit
+`cru.session.generate_title` and the compatibility `/generate` command use the
+same generation owner. ACP background completions use the default LLM rather
+than adding a title request to the ACP conversation.

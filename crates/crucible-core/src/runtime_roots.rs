@@ -324,7 +324,7 @@ mod tests {
             "themes/opencode.luau",
             "statusline/default.luau",
             "plugins/auto-title/init.luau",
-            "plugins/auto-title/lua/auto_title.luau",
+            "lua/crucible/session_title.luau",
             "plugins/reflection/init.luau",
             "plugins/reflection/lua/config.luau",
             "plugins/oci/init.luau",

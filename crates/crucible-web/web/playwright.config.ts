@@ -157,7 +157,7 @@ export default defineConfig({
     port: PORT,
     // Safe to reuse only because PORT is ours and vite.config.ts sets
     // `strictPort`: anything answering there is this app or nothing.
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !process.env.CRUCIBLE_WEB_TEST_FRESH,
     timeout: 30_000,
   },
 });

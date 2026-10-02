@@ -419,14 +419,6 @@ pub struct AgentManager {
     /// session's slow start. The registry updates in place on reload, so a
     /// cached `Arc` never goes stale.
     plugin_tool_registry: std::sync::OnceLock<Arc<crate::plugin_tools::PluginRegistry>>,
-    /// What plugins published about themselves (`cru.plugin.publish`), bound at
-    /// daemon startup beside the registry above.
-    ///
-    /// Read off a `OnceLock` rather than the loader mutex for the same reason
-    /// `plugin_tool_registry` is: the loader is held across session-start
-    /// hooks, and looking up who titles a session must not queue behind
-    /// another session's container build.
-    publications: std::sync::OnceLock<crucible_lua::PublicationRegistry>,
     /// The status items that plugins published (`cru.statusline.publish`),
     /// bound at daemon startup. The engine adds its plugin-turn items to them
     /// when a client reads the list; see [`status_items`].
@@ -447,6 +439,7 @@ pub struct AgentManager {
     /// Sessions with a title generation currently in flight — the RPC path
     /// and the message_complete auto-trigger can race.
     titles_in_flight: Arc<DashMap<String, ()>>,
+    title_attempts: DashMap<String, u64>,
     /// Per-session, per-turn workspace snapshots indexed by the
     /// conversation-tree node id that was `current` at the moment the
     /// snapshot was captured (i.e. the parent of the soon-to-be-added
@@ -552,12 +545,12 @@ impl AgentManager {
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
             plugin_tool_registry: std::sync::OnceLock::new(),
-            publications: std::sync::OnceLock::new(),
             status: std::sync::OnceLock::new(),
             notifications: std::sync::OnceLock::new(),
             no_kiln_noticed: Default::default(),
             active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
+            title_attempts: DashMap::new(),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             review: Arc::new(crate::review::ReviewLedgers::new(
                 params.review_snapshot_root.clone(),
@@ -706,11 +699,6 @@ impl AgentManager {
     /// Bind the plugin tool/command registry. Idempotent, like the others.
     pub fn set_plugin_tool_registry(&self, registry: Arc<crate::plugin_tools::PluginRegistry>) {
         let _ = self.plugin_tool_registry.set(registry);
-    }
-
-    /// Bind the plugin publication registry. Idempotent, like the others.
-    pub fn set_publications(&self, registry: crucible_lua::PublicationRegistry) {
-        let _ = self.publications.set(registry);
     }
 
     /// The explicit per-session tool sets (`cru.tools.set_active`).
@@ -1487,20 +1475,6 @@ impl AgentManager {
         let loader = self.plugin_loader.as_ref()?;
         let guard = loader.lock().await;
         guard.as_ref().map(|l| l.plugin_registry())
-    }
-
-    /// What plugins published about themselves, or `None` when no plugin
-    /// loader is attached (most tests).
-    ///
-    /// Same `OnceLock`-first, loader-fallback shape as [`Self::plugin_registry`]
-    /// and for the same reason.
-    pub(crate) async fn publications(&self) -> Option<crucible_lua::PublicationRegistry> {
-        if let Some(registry) = self.publications.get() {
-            return Some(registry.clone());
-        }
-        let loader = self.plugin_loader.as_ref()?;
-        let guard = loader.lock().await;
-        guard.as_ref().map(|l| l.publications())
     }
 
     /// The plugin `Lua` handle, preferring the startup-bound `OnceLock` over

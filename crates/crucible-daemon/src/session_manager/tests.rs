@@ -71,47 +71,6 @@ async fn a_stored_session_folds_into_its_golden_transcript() {
 }
 
 #[tokio::test]
-async fn title_sweep_titles_untitled_sessions_with_content() {
-    let _tmp = TempDir::new().unwrap();
-    let kiln = kiln_name("kiln");
-    let manager = temp_session_manager();
-    let session = manager
-        .create_session(SessionType::Chat, vec![kiln.clone()], None, None)
-        .await
-        .unwrap();
-    manager
-        .storage
-        .append_event(
-            &session,
-            r#"{"type":"event","event":"user_message","data":{"content":"how do wikilinks resolve?"},"seq":1}"#,
-        )
-        .await
-        .unwrap();
-    // An empty session in the same kiln must stay untitled.
-    let empty = manager
-        .create_session(SessionType::Chat, vec![kiln.clone()], None, None)
-        .await
-        .unwrap();
-
-    let (tx, mut rx) = crate::EventBus::channel(8);
-    let titled = manager.title_untitled_sessions(&tx).await;
-
-    assert_eq!(titled, 1);
-    let updated = manager.get_session(&session.id).unwrap();
-    assert_eq!(updated.title.as_deref(), Some("how do wikilinks resolve?"));
-    assert!(manager
-        .get_session(&empty.id)
-        .unwrap()
-        .title
-        .as_deref()
-        .unwrap_or("")
-        .is_empty());
-    let event = rx.try_recv().unwrap();
-    assert_eq!(event.event, "title_changed");
-    assert_eq!(event.session_id, session.id);
-}
-
-#[tokio::test]
 async fn test_create_session() {
     let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
@@ -984,4 +943,117 @@ async fn a_running_turn_reads_its_streamed_text_and_the_next_op_fits() {
         assert!(snapshot.apply(op), "the live op does not fit: {op:?}");
     }
     assert_eq!(text(&snapshot).as_deref(), Some("Hello"));
+}
+
+#[tokio::test]
+async fn title_write_persists_before_updating_memory_and_emits_once() {
+    let (bus, mut rx) = crate::EventBus::channel(8);
+    let manager = SessionManager::with_storage(temp_session_storage()).with_event_bus(bus);
+    let session = manager
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    manager
+        .set_title(&session.id, "Canonical".into())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .storage
+            .load(&session.id)
+            .await
+            .unwrap()
+            .title
+            .as_deref(),
+        Some("Canonical")
+    );
+    assert_eq!(rx.try_recv().unwrap().event, "title_changed");
+    manager
+        .set_title(&session.id, "Canonical".into())
+        .await
+        .unwrap();
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn title_write_failure_changes_neither_memory_nor_events() {
+    let tmp = TempDir::new().unwrap();
+    let (bus, mut rx) = crate::EventBus::channel(8);
+    let manager =
+        SessionManager::with_storage(Arc::new(FailingSaveStorage(tmp.path().join("sessions"))))
+            .with_event_bus(bus);
+    let mut session = Session::new(SessionType::Chat, vec![]);
+    session.title = Some("Original".into());
+    manager.sessions.insert(session.id.clone(), session.clone());
+    assert!(manager
+        .set_title(&session.id, "Changed".into())
+        .await
+        .is_err());
+    assert_eq!(
+        manager.get_session(&session.id).unwrap().title,
+        session.title
+    );
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn generated_title_does_not_overwrite_a_concurrent_manual_rename() {
+    let (bus, mut rx) = crate::EventBus::channel(8);
+    let manager = SessionManager::with_storage(temp_session_storage()).with_event_bus(bus.clone());
+    let session = manager
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    manager
+        .set_title(&session.id, "Manual".into())
+        .await
+        .unwrap();
+    let result = manager
+        .commit_generated_title(&session.id, "Automatic".into(), None, &bus)
+        .await
+        .unwrap();
+    assert_eq!(result.as_deref(), Some("Manual"));
+    assert_eq!(rx.try_recv().unwrap().data["title"], "Manual");
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn title_write_cannot_resurrect_a_deleted_session() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(GatedSaveStorage {
+        inner: FileSessionStorage::new(FileSessionStorage::root_for(tmp.path())),
+        order: std::sync::Mutex::new(Vec::new()),
+        gate: std::sync::Mutex::new(None),
+    });
+    let manager = Arc::new(SessionManager::with_storage(storage.clone()));
+    let session = manager
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    manager.end_session(&session.id).await.unwrap();
+    let (release, gate) = tokio::sync::oneshot::channel();
+    *storage.gate.lock().unwrap() = Some(gate);
+    let writing = tokio::spawn({
+        let manager = manager.clone();
+        let id = session.id.clone();
+        async move { manager.set_title(&id, "Late title".into()).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while storage.gate.lock().unwrap().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let deleting = tokio::spawn({
+        let manager = manager.clone();
+        let id = session.id.clone();
+        async move { manager.delete_session(&id).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    release.send(()).unwrap();
+    writing.await.unwrap().unwrap();
+    deleting.await.unwrap().unwrap();
+    assert!(manager.get_session(&session.id).is_none());
+    assert!(!manager.session_dir(&session.id).exists());
 }

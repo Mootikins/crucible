@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import type { LayoutNode, TabGroup } from '@/types/windowTypes';
-import { openSessionInChat, sessionPane } from '../session-actions';
+import { openSessionInChat, sessionPane, syncSessionTitle } from '../session-actions';
 import { collectLeafGroupIds, collectPanes } from '@/windowing/model/tree';
 
 /** Centre tab groups, left to right. */
@@ -155,4 +155,25 @@ it.each(['existing', 'new'])('reveals a folded conversation for an %s session se
   expect(pane.collapsed).toBe(true);
   openSessionInChat(kind === 'existing' ? 'fold-a' : 'fold-b', 'Selected');
   expect(pane.collapsed).toBe(false);
+});
+
+describe('canonical session titles', () => {
+  beforeEach(() => resetLayout());
+
+  it.each([['Renamed while offline', 'Renamed while offline'], ['', 'Chat']])('reconciles a restored tab with canonical title %s', (title, expected) => {
+    openSessionInChat('restored', 'Persisted old title');
+    openSessionInChat('restored', title);
+    expect(groupWithTab('tab-chat-restored')!.tabs[0].title).toBe(expected);
+  });
+
+  it('updates all tabs for a session without changing placement or focus', () => {
+    openSessionInChat('s1', 'Old');
+    openSessionInChat('s2', 'Other');
+    const group = groupWithTab('tab-chat-s1')!;
+    const active = group.activeTabId;
+    syncSessionTitle('s1', 'Canonical title');
+    expect(groupWithTab('tab-chat-s1')!.tabs.find(t => t.id === 'tab-chat-s1')!.title).toBe('Canonical title');
+    expect(groupWithTab('tab-chat-s2')!.tabs.find(t => t.id === 'tab-chat-s2')!.title).toBe('Other');
+    expect(groupWithTab('tab-chat-s1')!.activeTabId).toBe(active);
+  });
 });

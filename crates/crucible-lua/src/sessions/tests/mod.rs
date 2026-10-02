@@ -451,6 +451,13 @@ impl DaemonSessionApi for MockDaemonApi {
         })
     }
 
+    fn generate_title(
+        &self,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+        Box::pin(async { Ok("Generated title".to_string()) })
+    }
+
     fn set_title(
         &self,
         session_id: String,

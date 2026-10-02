@@ -72,6 +72,10 @@ fn default_precognition_results() -> usize {
 /// reply and pays nothing.
 pub const DEFAULT_RESPONSE_TAIL_CHARS: usize = 2000;
 
+fn default_title_after_turns() -> usize {
+    3
+}
+
 fn default_response_tail_chars() -> usize {
     DEFAULT_RESPONSE_TAIL_CHARS
 }
@@ -135,6 +139,9 @@ pub struct ChatConfig {
     /// sends the whole reply.
     #[serde(default = "default_response_tail_chars")]
     pub response_tail_chars: usize,
+    /// Successful user/relay turns before automatic titling. Zero disables it.
+    #[serde(default = "default_title_after_turns")]
+    pub title_after_turns: usize,
     /// The system prompt a new session starts from.
     ///
     /// An agent card's own prompt wins; this fills a card that names none.
@@ -157,6 +164,7 @@ impl Default for ChatConfig {
             precognition_notify_no_kiln: true,
             autocompact_threshold: default_autocompact_threshold(),
             response_tail_chars: default_response_tail_chars(),
+            title_after_turns: default_title_after_turns(),
             system_prompt: default_system_prompt(),
         }
     }

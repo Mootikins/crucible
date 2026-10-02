@@ -7,7 +7,7 @@
 //!
 //! What lives here is only the mechanics: build the request, bound the wait,
 //! hand back the text. The prompt is the caller's, and the caller is Lua —
-//! [`runtime/plugins/auto-title`] is the worked example. A prompt compiled in
+//! `runtime/lua/crucible/session_title.luau` is the worked example. A prompt compiled in
 //! here would be the thing this module exists to have removed.
 //!
 //! Lives behind the provider seam (architecture gate A3: `genai` types stay in

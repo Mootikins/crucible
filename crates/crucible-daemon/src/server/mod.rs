@@ -1018,7 +1018,7 @@ impl Server {
                     _ = title_cancel_clone.cancelled() => break,
                     result = title_rx.recv() => {
                         match result {
-                            Ok(event) if event.event == "message_complete" => {
+                            Ok(event) if matches!(event.payload(), Ok(crucible_core::protocol::SessionEventPayload::Turn(crucible_core::protocol::TurnPayload::TurnFinished { status: crucible_core::turn::TurnStatus::Completed, .. }))) => {
                                 let untitled = title_sm
                                     .get_session(&event.session_id)
                                     .map(|s| s.title.as_deref().is_none_or(|t| t.trim().is_empty()))
@@ -1034,7 +1034,7 @@ impl Server {
                                     tokio::spawn(async move {
                                         let _titling = titling;
                                         if let Err(e) =
-                                            am.generate_session_title(&session_id, &tx).await
+                                            am.auto_title_after_turn(&event, &tx).await
                                         {
                                             debug!(
                                                 session_id = %session_id,
@@ -1062,13 +1062,10 @@ impl Server {
         // daemon's OPEN-kiln set (find_enclosing_kiln); with an empty set
         // every note-open 404s ("File not within any open kiln"), and a
         // restart empties it. `startup_kiln_roots` decides the set and states
-        // why each source is in it. The same list then feeds the title
-        // catch-up sweep (persisted sessions with content but no title).
+        // why each source is in it.
         {
-            let sm = self.session_manager.clone();
             let km = self.kiln_manager.clone();
             let pm = self.project_manager.clone();
-            let tx = self.rpc_context.event_tx.clone();
             let starting = self.activity.start(WorkKind::Maintenance);
 
             let already_open: Vec<std::path::PathBuf> = km
@@ -1081,13 +1078,10 @@ impl Server {
                 startup_kiln_roots(already_open, pm.list(), &self.rpc_context.kiln_registry);
 
             tokio::spawn(async move {
-                // Held for the whole catch-up: opening the kilns and titling
-                // the untitled sessions are both real work, and a daemon that
-                // exits during them starts the next one from nothing.
+                // Opening registered kilns must finish before idle shutdown.
                 let _starting = starting;
                 // Open registered project kilns (idempotent) so note-open can
-                // resolve them; a failure to open one must not block the others
-                // or the title sweep.
+                // resolve them; a failure to open one must not block the others.
                 let mut opened = 0;
                 for kiln in &open_kilns {
                     match km.open(kiln).await {
@@ -1099,11 +1093,6 @@ impl Server {
                 }
                 if opened > 0 {
                     info!(opened, "Opened registered kilns on startup");
-                }
-
-                let titled = sm.title_untitled_sessions(&tx).await;
-                if titled > 0 {
-                    info!(titled, "Startup title catch-up completed");
                 }
             });
         }
@@ -1360,11 +1349,6 @@ impl Server {
             // mutex while a session-start hook builds a container.
             self.agent_manager
                 .set_plugin_tool_registry(loader.plugin_registry());
-            // Cached for the same reason, and read on the same kind of path:
-            // titling looks up who publishes `session_title` off the turn
-            // loop, and must not queue behind another session's start.
-            self.agent_manager.set_publications(loader.publications());
-
             // A surface change reaches clients through the daemon's own
             // emitter, so sequence stamping stays in one place — an unstamped
             // event breaks a client's gap detection. The registry therefore

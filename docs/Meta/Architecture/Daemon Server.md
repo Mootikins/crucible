@@ -941,3 +941,9 @@ not register or open arbitrary roots. The existing relative-path and containment
 checks still govern each listing. Files uses this same read method for kiln and
 project trees, so an empty folder or non-Markdown asset is visible without
 waiting for note indexing. Mutation ownership and access policies are unchanged.
+
+The core auto-title watcher consumes successful typed `turn_finished` events,
+not text completion chunks. It waits for journal persistence through the
+session history reader before deriving eligibility. Startup does not assign
+truncated titles. History recovers the threshold on the next successful turn;
+a broadcast lag may delay generation until that next boundary.

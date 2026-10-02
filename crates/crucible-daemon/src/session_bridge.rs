@@ -518,6 +518,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// Straight to `SessionManager::set_title`, which is what
     /// `session.set_title` calls, so the title persists with the session
     /// record rather than living in the plugin.
+    fn generate_title(&self, session_id: String) -> BoxFut<String> {
+        bridge_async!(self.agent_manager, self.event_tx, |am, tx| async move {
+            am.generate_session_title(&session_id, &tx)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn set_title(&self, session_id: String, title: String) -> BoxFut<()> {
         bridge_async!(self.session_manager, |sm| async move {
             sm.set_title(&session_id, title)

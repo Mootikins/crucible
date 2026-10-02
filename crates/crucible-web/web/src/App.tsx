@@ -15,7 +15,7 @@ import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 import { isCompact } from '@/stores/deviceStore';
 import { matchShortcut } from '@/windowing';
 import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
-import { openSessionInChat } from '@/lib/session-actions';
+import { openSessionInChat, syncSessionTitle } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openPanelTab } from '@/lib/panel-actions';
@@ -305,6 +305,7 @@ const App: Component = () => {
     // tree's per-project New Session row sends it. Absent means "unset", which
     // the composer leaves for the user to pick.
     getBus().on('newSession', ({ workspace }) => openDraftSession({ workspace }));
+    getBus().on('sessionTitleChanged', ({ sessionId, title }) => syncSessionTitle(sessionId, title));
     getBus().on('openSession', ({ sessionId, title }) => openSessionInChat(sessionId, title));
     // Open a kiln file in the editor programmatically (symmetric with
     // open-session). Lets other panels/commands "reveal in editor" a path

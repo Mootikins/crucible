@@ -762,7 +762,7 @@ impl SessionManager {
     /// that gap: a title set just after create came back as `None`.
     ///
     /// Memory changes only after the save succeeds. The write-back skips an
-    /// entry that is gone, because `delete_session` evicts without the guard.
+    /// entry that is gone, if a session was evicted before this write acquired its guard.
     pub async fn modify_session(
         &self,
         session_id: &str,
@@ -1019,9 +1019,11 @@ impl SessionManager {
             }
         }
 
+        // Acquire after end_session, whose persistence lock is not reentrant.
+        // Retain the lock entry so queued writers cannot acquire a new mutex.
+        let _guard = self.persist_guard(session_id).await;
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
-        self.session_locks.remove(session_id.as_str());
 
         let session_dir = self.session_dir(session_id);
         let persisted_exists = session_dir.exists();
@@ -1152,85 +1154,56 @@ impl SessionManager {
         }
     }
 
-    /// Update session title and persist the change.
+    /// Explicit title replacement through the same transaction as generation.
     pub async fn set_title(&self, session_id: &str, title: String) -> Result<(), SessionError> {
-        let _guard = self.persist_guard(session_id).await;
-        let session = {
-            let mut entry = self
-                .sessions
-                .get_mut(session_id)
-                .ok_or(SessionError::NotFound(session_id.to_string()))?;
-
-            entry.title = Some(title);
-            entry.clone()
-        };
-
-        // Persist updated state
-        self.storage.save(&session).await?;
-        Ok(())
+        self.write_title(session_id, title, None, None)
+            .await
+            .map(|_| ())
     }
 
-    /// Catch-up titling: persisted, non-archived sessions with content but
-    /// no title get the truncation fallback. The LLM title path only fires
-    /// on a live `message_complete`, so a daemon restart, a wedged task, or
-    /// a pre-feature session would otherwise stay "Untitled" forever.
-    ///
-    /// Returns how many sessions were titled. Emits `title_changed` per hit.
-    pub async fn title_untitled_sessions(&self, event_tx: &crate::EventBus) -> usize {
-        let mut titled = 0;
-        for summary in self
-            .list_sessions_filtered_async(KilnFilter::Any, None, None, None, false)
+    pub(crate) async fn commit_generated_title(
+        &self,
+        session_id: &str,
+        title: String,
+        expected: Option<String>,
+        events: &crate::EventBus,
+    ) -> Result<Option<String>, SessionError> {
+        self.write_title(session_id, title, Some(expected), Some(events))
             .await
-        {
-            // Delegated children are titled at creation and hidden from
-            // listings — never re-title them.
-            if summary.parent_session_id.is_some() {
-                continue;
-            }
-            if summary
-                .title
-                .as_deref()
-                .is_some_and(|t| !t.trim().is_empty())
-            {
-                continue;
-            }
-            // First user message from the log; empty sessions stay untitled
-            // (the archive sweep owns those).
-            let Ok(events) = self.storage.load_events(&summary.id, Some(200), None).await else {
-                continue;
-            };
-            let first_user = events.iter().find_map(|e| {
-                if e.get("event").and_then(|v| v.as_str()) != Some("user_message") {
-                    return None;
-                }
-                e.get("data")?.get("content")?.as_str().map(str::to_string)
-            });
-            let Some(first_user) = first_user else {
-                continue;
-            };
-            let title = crate::agent_manager::title::truncate_to_title(&first_user);
+    }
 
-            // In-memory sessions go through set_title (persists too);
-            // cold ones get patched directly in storage.
-            if self.set_title(&summary.id, title.clone()).await.is_err() {
-                let Ok(mut session) = self.storage.load(&summary.id).await else {
-                    continue;
-                };
-                session.title = Some(title.clone());
-                if self.storage.save(&session).await.is_err() {
-                    continue;
-                }
-            }
-            event_tx.emit(SessionEventMessage::typed(
-                &summary.id,
+    async fn write_title(
+        &self,
+        session_id: &str,
+        title: String,
+        expected: Option<Option<String>>,
+        events: Option<&crate::EventBus>,
+    ) -> Result<Option<String>, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
+        let mut session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| SessionError::NotFound(session_id.into()))?
+            .clone();
+        if expected.is_some_and(|expected| expected != session.title)
+            || session.title.as_deref() == Some(title.as_str())
+        {
+            return Ok(session.title);
+        }
+        session.title = Some(title.clone());
+        self.storage.save(&session).await?;
+        self.sessions.insert(session.id.clone(), session);
+        // Keep publication inside the write lock: an older generated title
+        // must not arrive after a newer manual rename.
+        if let Some(events) = self.events.as_ref().or(events) {
+            events.emit(SessionEventMessage::typed(
+                session_id,
                 crucible_core::protocol::SettingsPayload::TitleChanged {
                     title: title.clone(),
                 },
             ));
-            info!(session_id = %summary.id, title = %title, "Catch-up title applied");
-            titled += 1;
         }
-        titled
+        Ok(Some(title))
     }
 
     pub async fn update_last_activity(

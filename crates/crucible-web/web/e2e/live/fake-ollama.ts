@@ -230,6 +230,15 @@ export async function startFakeOllama(opts: FakeOllamaOptions): Promise<FakeOlla
         prompts.push(prompt);
         const rule = pickRule(opts, prompt);
 
+        // One-shot background completions use Ollama's non-streaming wire.
+        if ((JSON.parse(body) as { stream?: boolean }).stream === false) {
+          const reply = rule?.reply ?? opts.fallback;
+          opts.onChat?.(prompt, reply);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ model, message: { role: 'assistant', content: reply }, done: true }));
+          return;
+        }
+
         if (rule?.toolCall) {
           if (hasToolResult(messages)) {
             const reply = rule.replyAfterTool ?? opts.fallback;

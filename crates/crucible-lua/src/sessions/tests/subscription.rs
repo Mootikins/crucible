@@ -236,6 +236,13 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }
+    fn generate_title(
+        &self,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+        Box::pin(async { Ok("Generated title".to_string()) })
+    }
+
     fn set_title(
         &self,
         _: String,

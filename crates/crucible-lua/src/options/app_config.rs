@@ -345,6 +345,13 @@ pub const APP_CONTROLS: &[AppControl] = &[
          session has no kiln to search.",
         11,
     ),
+    AppControl::new(
+        "chat.title_after_turns",
+        Control::Range,
+        "Automatic title after turns",
+        "Successful user or relay turns before the core runtime generates a title. 0 disables automatic titles.",
+        12,
+    ).bounded(0.0, 100.0, 1.0),
     // ---- cli ----
     AppControl::group(
         "cli",

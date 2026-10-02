@@ -149,7 +149,16 @@ impl ModuleRegistry {
 
         let package = lua.create_table()?;
         package.set("loaded", lua.create_table()?)?;
-        package.set("preload", lua.create_table()?)?;
+        let preload = lua.create_table()?;
+        preload.set(
+            "crucible.session_title",
+            lua.load(include_str!(
+                "../../../runtime/lua/crucible/session_title.luau"
+            ))
+            .set_name("@runtime/lua/crucible/session_title.luau")
+            .into_function()?,
+        )?;
+        package.set("preload", preload)?;
         let searchpath_registry = registry.clone();
         package.set(
             "searchpath",
@@ -632,6 +641,29 @@ mod tests {
             fs::create_dir_all(parent).expect("create dir");
         }
         fs::write(path, source).expect("write");
+    }
+
+    #[test]
+    fn core_title_module_is_available_without_plugins_and_bounds_utf8_prompts() {
+        let lua = Lua::new();
+        ModuleRegistry::install(&lua).unwrap();
+        lua.load(
+            r#"
+            local title = require('crucible.session_title')
+            local exchanges = {}
+            for i = 1, 20 do
+                exchanges[i] = { string.rep('猫', 2000), string.rep('犬', 2000) }
+            end
+            local system, prompt = title.format(exchanges)
+            assert(system == title.SYSTEM_PROMPT)
+            assert(utf8.len(prompt) == 10000)
+            assert(not string.find(prompt, string.rep('猫', 1501), 1, true))
+            assert(title.sanitize('"Readable conversation."') == 'Readable conversation')
+            assert(title.sanitize('  \n  ') == '')
+        "#,
+        )
+        .exec()
+        .unwrap();
     }
 
     #[test]

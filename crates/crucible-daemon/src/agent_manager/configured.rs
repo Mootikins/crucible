@@ -94,6 +94,14 @@ pub(crate) fn response_tail_chars() -> usize {
         .unwrap_or_else(|| ChatConfig::default().response_tail_chars)
 }
 
+pub(crate) fn title_after_turns() -> usize {
+    leaf("chat.title_after_turns")
+        .as_ref()
+        .and_then(serde_json::Value::as_u64)
+        .map(|n| n as usize)
+        .unwrap_or_else(|| ChatConfig::default().title_after_turns)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

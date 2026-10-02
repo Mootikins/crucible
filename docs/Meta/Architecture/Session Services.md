@@ -132,7 +132,7 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 | `crates/crucible-daemon/src/session_bridge/tests/review.rs` | 154 | Error text for malformed `cru.diff.comment` params, and an end-to-end test of listing and accepting/rejecting a delegated child's proposal through the bridge. |
 | `crates/crucible-daemon/src/session_bridge/tests/persisted_history.rs` | 49 | Reading an ended session's history after a simulated restart, without reviving it. |
 | `crates/crucible-daemon/src/session_bridge/tests/session_json.rs` | 66 | Unit tests for `session_json` and `session_record_json`, the per-session record shapes (workspace/isolation/plugin, omitted rather than `null` when absent). |
-| `crates/crucible-daemon/src/session_bridge/tests/auto_title.rs` | 199 | End-to-end test of the shipped `auto-title` Luau plugin, driving `cru.session.messages`/`cru.session.set_title` through a real plugin loader via `plugin.run_command`'s `session_id` parameter. |
+| `crates/crucible-daemon/src/session_bridge/tests/auto_title.rs` | 199 | Core title integration tests with a real shared Lua runtime and mocked provider: threshold, retry, ACP provider selection, and compatibility command. |
 
 ### `crates/crucible-daemon/src/session_manager/` and `session_migration/`
 
@@ -764,7 +764,7 @@ for the run to finish.
   `async_session.rs` for fork/collection/subscription plus the persisted
   `isolation_record` fork refusal and the plugin `configure_agent`
   isolation-bypass fix, `auto_title.rs` for the shipped `auto-title` plugin
-  driving `cru.session.messages`/`set_title` through a real plugin loader,
+  and core automatic titling through a shared Lua runtime,
   and four narrower files for message-row shaping (including plugin/relay
   attribution), the session JSON shape (`session_json`/`session_record_json`),
   `cru.diff.comment` error text plus an accept/reject proposal flow, and

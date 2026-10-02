@@ -108,6 +108,8 @@ const GAP = 4;
 const OVERFLOW_SIZE = 28;
 /** Tallest the fold's list gets before it scrolls inside itself. */
 const PANEL_MAX_HEIGHT = 340;
+/** Crossing the fold on the way to Send must not open a panel over Send. */
+const HOVER_OPEN_DELAY_MS = 120;
 /** A chip with no stated priority sorts after every chip that has one. */
 const LAST = Number.MAX_SAFE_INTEGER;
 
@@ -339,7 +341,7 @@ export const ChipRow: Component<{
   // width is now a lie: the cache goes, and the next pass takes them all.
   createEffect(() => {
     ordered()
-      .map((c) => `${c.key} ${c.value} ${c.valueLabel ?? ''} ${c.defaultLabel ?? ''}`)
+      .map((c) => `${c.key}\0${c.value}\0${c.valueLabel ?? ''}\0${c.defaultLabel ?? ''}`)
       .join('');
     widths.clear();
     remeasure();
@@ -401,21 +403,33 @@ const ChipFold: Component<{ keys: string[]; chip: (key: string) => ComposerChip 
   // toggle shut the list in the frame it appeared and the fold looked dead.
   // The click that follows the hover is absorbed; the one after it closes.
   let openedByHover = false;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelHover = () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  };
+  onCleanup(cancelHover);
 
   const show = () => {
     place();
     setOpen(true);
   };
   const close = () => {
+    cancelHover();
     openedByHover = false;
     setOpen(false);
   };
   const onEnter = () => {
     if (open()) return;
-    openedByHover = true;
-    show();
+    cancelHover();
+    hoverTimer = setTimeout(() => {
+      hoverTimer = undefined;
+      openedByHover = true;
+      show();
+    }, HOVER_OPEN_DELAY_MS);
   };
   const onClick = () => {
+    cancelHover();
     if (openedByHover) {
       openedByHover = false;
       return;
@@ -460,6 +474,7 @@ const ChipFold: Component<{ keys: string[]; chip: (key: string) => ComposerChip 
         data-testid="composer-chip-overflow"
         onClick={onClick}
         onMouseEnter={onEnter}
+        onMouseLeave={cancelHover}
         classList={{
           // The mode circle's geometry: the same 28px height as the chips it
           // stands for, drawn as a circle and quiet until it is used.

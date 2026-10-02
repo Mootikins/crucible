@@ -17,6 +17,7 @@
 import type { QueryClient } from '@tanstack/solid-query';
 import type { ChatEvent } from '@/lib/types';
 import { keys } from '../keys';
+import { patchCachedSession } from '../sessions';
 import { isSwitchingModel } from '../models';
 import { diffsetKey } from '@/lib/diffset';
 import { setEventRoute, type SessionRouteContext } from '../sse';
@@ -110,6 +111,7 @@ function routeSessionEvent(event: ChatEvent, { client, bus, sessionId }: Session
     // Both lists, because the archived flag is part of the key and a rename
     // reaches the row under either flag.
     case 'title_changed':
+      patchCachedSession(sessionId, { title: event.data.title ?? '' }, client);
       // Named one at a time: the flag sits in an OBJECT inside the key, so a
       // prefix match on `['sessions']` would not reach either variant.
       void client.invalidateQueries({ queryKey: keys.sessions(false) });

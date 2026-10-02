@@ -608,9 +608,8 @@ local text, err = cru.session.complete(session_id, {
 `(nil, reason)` like every other `cru.session` function; a session with no
 agent configured is one such failure.
 
-The bundled `auto-title` plugin is built on this: it owns the prompt, clips
-the exchange, sanitizes the answer, and the daemon persists whatever comes
-back.
+Core session titling uses this completion path. For ACP sessions it uses the
+configured default LLM without injecting a turn into the ACP conversation.
 
 ### cru.session.subscribe(session_id)
 
@@ -737,13 +736,21 @@ config RPC, so the assignment answers "Session not connected".
 Set the title a human reads for a session, in the sessions list and the web
 Reflections section. Returns `(true, nil)` on success.
 
-A plugin session is one nobody typed into, so the daemon's own titling — which
-reads the first user message — leaves it "Untitled". The plugin is the only
-caller that knows what its pass was about.
+Automatic titling counts completed user and relay turns, excluding plugin
+turns. A plugin can assign a meaningful title to its own session. Manual
+titles survive automatic generation.
 
 ```lua
 local ok, err = s:set_title("Reflection: " .. (info.title or session_id))
 ```
+
+### cru.session.generate_title(session_id)
+
+Regenerate the canonical session title through the daemon's core owner.
+Returns `(title, nil)` or `(nil, reason)`. Uses up to three recent real
+conversation exchanges. A rename made while generation is running wins.
+The optional `auto-title` plugin exposes this as `/generate`; automatic
+titling does not require that plugin.
 
 ### cru.session.interaction_respond(session_id, request_id, response)
 
@@ -1387,16 +1394,6 @@ Some keys the daemon itself reads:
 | Key | Who reads it | Shape |
 |-----|--------------|-------|
 | `targets` | Workspace/runtime target resolution before `session.create` | `{ axis, label, targets_command, resolve_command }` |
-| `session_title` | Session titling, on the first completed turn | `{ command = "<plugin command name>" }` |
-
-`session_title` is how `auto-title` is found — by channel, never by plugin
-name, so publishing the same key replaces it. The command is called with
-`{ session_id, user, assistant }` and answers `{ title = "…" }` (or a bare
-string). Raising, or answering with a blank title, leaves the daemon's
-truncation fallback in place. Name the command by its full name
-(`auto-title:generate`), so that a command of the same bare name in another
-plugin cannot take the call.
-
 ## Options
 
 ### cru.plugin.options(tree)

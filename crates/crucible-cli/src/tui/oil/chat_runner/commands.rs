@@ -168,6 +168,7 @@ fn settings_msgs(settings: SettingsPayload) -> Vec<ChatAppMsg> {
             .unwrap_or_default(),
         // The agent advertised a new command list.
         SettingsPayload::CommandsChanged {} => vec![ChatAppMsg::FetchCommands],
+        SettingsPayload::TitleChanged { .. } => vec![ChatAppMsg::FetchSessions],
         // The rest are acknowledgements of a change this client either made or
         // can re-read from the session record.
         _ => vec![],

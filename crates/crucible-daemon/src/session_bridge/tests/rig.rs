@@ -196,8 +196,14 @@ impl Rig {
 
     /// The shipped `auto-title` plugin, active, with a provider fixture that
     /// answers [`AUTO_TITLE_ANSWER`] for every completion.
-    #[allow(clippy::await_holding_lock)]
     pub(super) async fn auto_title() -> Self {
+        Self::title_runtime(true).await
+    }
+
+    // Same process-wide provider environment guard as reflection: nextest
+    // isolates each test, and the rig retains the guard for its lifetime.
+    #[allow(clippy::await_holding_lock)]
+    pub(super) async fn title_runtime(compatibility_command: bool) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let env_lock = crate::agent_manager::ENV_LOCK
             .lock()
@@ -221,9 +227,14 @@ impl Rig {
         // `auto-title` registers no kiln of its own; the directory is kept
         // only so the field is the one shape [`Rig::reflection`] uses.
         let kiln = TempDir::new().unwrap();
-        let sessions = temp_session_manager();
         let shared_loader = Arc::new(tokio::sync::Mutex::new(None));
         let (events, observed) = crate::EventBus::channel(128);
+        let sessions = Arc::new(
+            crate::session_manager::SessionManager::with_storage(
+                crate::test_support::temp_session_storage(),
+            )
+            .with_event_bus(events.clone()),
+        );
         let kilns = Arc::new(KilnManager::new());
         // A configured provider is what admits a loopback endpoint.
         let mut llm = bridge_llm_config();
@@ -262,7 +273,9 @@ impl Rig {
                 PluginSource::Runtime,
             )])
             .unwrap();
-        loader.activate_plugin("auto-title").await.unwrap();
+        if compatibility_command {
+            loader.activate_plugin("auto-title").await.unwrap();
+        }
         agents.set_plugin_tool_registry(loader.plugin_registry());
         *shared_loader.lock().await = Some(loader);
 

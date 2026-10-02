@@ -1,26 +1,8 @@
 --!strict
---- Pure title logic for the auto-title plugin.
----
---- Named `auto_title`, not `title`: one Lua VM serves every plugin and
---- `package.loaded` is shared, so a generic module name is a collision waiting
---- for the next plugin that picks it (this repo has already had two plugins
---- ship a module called `config`).
----
---- Everything here is a string-in/string-out function, so the tests exercise
---- the code the plugin runs rather than a copy. Nothing in this file calls the
---- daemon; `init.lua` owns the one completion call.
----
---- Ported from `crucible-daemon/src/provider/title.rs`, which this plugin
---- replaces. The rules are the same rules — the point of the port is that the
---- prompt, the clip and the sanitizer stop being compiled in, not that titles
---- start looking different.
-
+-- Core runtime title formatting; the daemon owns timing, completion and writes.
 local M = {}
 
---- What the model is asked to do. The one product opinion this plugin exists
---- to make editable: override it with
---- `require("auto-title").setup{ prompt = "..." }` or `[plugins.auto-title]
---- prompt = "..."`.
+--- What the background model is asked to do.
 M.SYSTEM_PROMPT = "You name conversations. Given an exchange from a "
   .. "session, reply with a short descriptive title (3 to 7 words) capturing its topic. "
   .. "Reply with the title only - no quotes, no trailing punctuation, no explanations."
@@ -82,11 +64,6 @@ local function trim_quotes(s: string): string
   return s
 end
 
---- Normalize a model's reply into a title: first non-empty line, quotes and
---- `Title:` scaffolding stripped, whitespace collapsed, length-capped.
----
---- Every rule here answers something a model actually did. The scaffolding
---- strip is why `Title: Session archiving sweep` does not become a title
 --- Strip leading and trailing whitespace.
 ---
 --- `^%s*(.-)%s*$` matches every string, so `match` never really answers nil.
@@ -97,7 +74,7 @@ local function trim(s: string): string
   return (s:match("^%s*(.-)%s*$")) or s
 end
 
---- beginning with the word "Title".
+--- Normalize the first nonempty line, stripping quotes and Title scaffolding.
 function M.sanitize(raw: any): string
   if type(raw) ~= "string" then return "" end
 
@@ -133,6 +110,15 @@ function M.sanitize(raw: any): string
     return cut .. "..."
   end
   return title
+end
+
+-- One total bound, so a long tool-heavy exchange cannot make titling costly.
+function M.format(exchanges: { { string } }): (string, string)
+  local parts: { string } = {}
+  for _, pair in ipairs(exchanges) do
+    table.insert(parts, M.exchange(pair[1], pair[2], M.CLIP))
+  end
+  return M.SYSTEM_PROMPT, M.clip(table.concat(parts, "\n\n"), 10_000)
 end
 
 return M

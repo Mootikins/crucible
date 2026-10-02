@@ -53,6 +53,7 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
   const existing = host.find((t) => t.metadata?.sessionId === sessionId);
   if (existing) {
     // Activating an existing tab preserves its buffer, scroll and user placement.
+    syncSessionTitle(sessionId, sessionTitle || 'Chat');
     host.activate(existing.id);
     return;
   }
@@ -66,5 +67,23 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
   }, { placement: 'session-rail' });
   if (!opened) {
     console.error('openSessionInChat: no pane available — cannot open chat tab');
+  }
+}
+
+/** Titles on open surfaces are projections of the daemon's session title. */
+export function syncSessionTitle(sessionId: string, title: string): void {
+  for (const group of Object.values(windowStore.tabGroups)) {
+    for (const tab of group.tabs) {
+      if (tab.contentType === 'chat' && tab.metadata?.sessionId === sessionId && tab.title !== title) {
+        windowActions.updateTab(group.id, tab.id, { title });
+      }
+    }
+  }
+  for (const floating of windowStore.floatingWindows) {
+    const group = windowStore.tabGroups[floating.tabGroupId];
+    const active = group?.tabs.find(tab => tab.id === group.activeTabId);
+    if (active?.contentType === 'chat' && active.metadata?.sessionId === sessionId && floating.title !== title) {
+      windowActions.updateFloatingWindow(floating.id, { title });
+    }
   }
 }

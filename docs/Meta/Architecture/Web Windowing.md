@@ -731,3 +731,13 @@ Centre splitter gutters use the shared shell gap in both axes; the resize mark
 is centred in that gutter. Tool filenames use the existing note resolver for
 kiln-relative paths and file actions for absolute paths, preserving transcript
 kiln ownership and the standard tab/split gesture mapping.
+
+Tool rows show MCP `display_name` with the canonical owning server, including
+Crucible's kiln icon and marker. The transcript view retains execution source;
+server ownership and the ACP agent remain separate facts.
+
+`ChipRow` owns overflow hover intent for both composers. A pending hover is
+cancelled on pointer leave, click, close, and cleanup; crossing the fold to
+Send cannot open its portaled menu over Send. The UI test recipe starts a
+fresh Vite module graph on its own port instead of reusing the live preview,
+so dynamic test imports and mounted components share the same store.

@@ -150,7 +150,6 @@ impl Daemon {
                 agents.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
                 agents.set_isolation(loader.isolation());
                 agents.set_plugin_tool_registry(loader.plugin_registry());
-                agents.set_publications(loader.publications());
                 let lua = loader.plugin_lua();
                 *plugin_loader.lock().await = Some(loader);
                 Some(lua)

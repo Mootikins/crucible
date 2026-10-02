@@ -90,7 +90,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### WS-107: Sessions: create, switch, resume, auto-title
 **As a user**, I create sessions, switch between them, resume old ones with full history, and see auto-generated titles I can override.
-**Acceptance:** the daemon auto-titles a session on its first completed turn and broadcasts `title_changed`; the web renders the pushed title everywhere (tab, session list, inbox) and never generates titles client-side (never overwrites manual titles); switching loads `/history` correctly; end/archive states visible.
+**Acceptance:** the daemon auto-titles a session after the configured successful user/relay turn threshold and broadcasts `title_changed`; the web renders the pushed title everywhere (tab, session list, inbox) and never generates titles client-side (never overwrites manual titles); switching loads `/history` correctly; end/archive states visible.
 **Tests:** W2 (partial; `title-generation.spec.ts` — `title_changed` SSE renames tab+list, untitled fallback label, no client calls to the title endpoints — realigned 2026-07-12 after the daemon took ownership of titling), W4 (`session-path.live.spec.ts` — a session read after a daemon restart carries its modes and model; cross-surface resume is WS-HERO).
 
 ### WS-108: Cancel a turn
@@ -337,8 +337,8 @@ The shell surfaces (from the "Crucible Shell Options" design): Inbox → Session
 
 ### WS-307: Sessions name themselves after their topic
 **As a user**, once a session's first turn completes, it gets a short topic-based title everywhere (tab, sessions list, Inbox) — I never see a wall of "Session chat-202…" again.
-**Acceptance:** the daemon generates the title with the session's own LLM provider on the first `message_complete` of an untitled session (truncation of the first user message as fallback) and broadcasts `title_changed`; the open tab, the sessions list and the Inbox update without a refresh; untitled sessions fall back to "Untitled · <date>" instead of colliding id slices.
-**Tests:** daemon `agent_manager::title` unit tests (sanitize/truncate); web route `auto_title_delegates_to_daemon_generate_title`; reducer `title_changed` matrix + SSE parity tests.
+**Acceptance:** the daemon generates the canonical title after successful `turn_finished` events reach the configured threshold, using the session provider or the default LLM for ACP (failure leaves it untitled for retry) and broadcasts `title_changed`; the open tab, the sessions list and the Inbox update without a refresh; untitled sessions fall back to "Untitled · <date>" instead of colliding id slices.
+**Tests:** daemon `agent_manager::title` selection tests and `session_bridge::tests::auto_title` integration tests; live restart/threshold browser test; reducer `title_changed` matrix + SSE parity tests.
 
 ### WS-308: Old sessions archive themselves out of my way
 **As a user**, sessions idle for 3 days disappear from the sessions list and the Inbox into a collapsed ARCHIVED section, where I can restore, delete one, or clear the whole history.

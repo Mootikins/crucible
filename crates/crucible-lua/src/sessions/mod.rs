@@ -266,6 +266,12 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         title: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
+    /// Explicitly regenerate the session title through the daemon's title owner.
+    fn generate_title(
+        &self,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+
     /// End a session permanently.
     fn end_session(
         &self,

@@ -1,3 +1,4 @@
+import { getBus } from '@/lib/bus';
 import type { Accessor } from 'solid-js';
 import {
   useMutation,
@@ -220,8 +221,7 @@ function cachedRow(client: QueryClient, id: string): Session | undefined {
  * does not own — the model, until Task C2.4 moves that write here — and the
  * rail must redraw without waiting for a refetch.
  */
-export function patchCachedSession(id: string, patch: Partial<Session>): void {
-  const client = seededClient();
+export function patchCachedSession(id: string, patch: Partial<Session>, client = seededClient()): void {
   for (const includeArchived of [false, true]) {
     writeList(client, includeArchived, (held) =>
       held.map((session) => (session.session_id === id ? { ...session, ...patch } : session)),
@@ -439,6 +439,7 @@ export function useSetSessionTitle(): UseMutationResult<
       },
       onSuccess: (_result: void, { id, title }: { id: string; title: string }) => {
         patchCachedSession(id, { title });
+        getBus().emit('sessionTitleChanged', { sessionId: id, title });
         return seededClient().invalidateQueries({ queryKey: keys.session(id) });
       },
     }),

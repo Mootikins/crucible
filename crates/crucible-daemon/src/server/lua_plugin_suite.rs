@@ -637,6 +637,7 @@ mod shipped_plugin_tests {
         const PROFILES: &[(&str, VmProfile)] = &[
             // The shipped defaults file: it runs on the daemon VM.
             ("runtime/defaults/", VmProfile::Daemon),
+            ("runtime/lua/", VmProfile::Daemon),
             // A statusline layout evaluates on a VM with `cru.statusline` and
             // NOTHING else; a theme evaluates on a bare VM with no `cru` at
             // all. Both were mapped to the config profile, which is strictly

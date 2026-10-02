@@ -315,6 +315,73 @@ test.describe('the live session path', () => {
     await api.dispose();
   });
 
+  test('core titles count persisted turns across restart and update every client label', async ({ page }) => {
+    const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
+    const id = await createSession(api, []);
+    const readTitle = async () => {
+      const response = await api.post('/api/rpc/session.get', { data: { session_id: id } });
+      expect(response.status(), await response.text()).toBe(200);
+      return ((await response.json()) as { title?: string | null }).title ?? null;
+    };
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await openSessionFromRail(page, id);
+    for (let n = 1; n <= 2; n++) {
+      await page.getByTestId('chat-input').fill(`canonical title restart turn ${n}`);
+      await page.getByTestId('chat-input').press('Enter');
+      await expect(page.getByTestId('message-assistant')).toHaveCount(n, { timeout: 60_000 });
+      await expect(page.getByTestId('message-assistant').last()).toContainText('The live chain answered.', { timeout: 60_000 });
+      await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 15_000 });
+    }
+    expect(await readTitle()).toBeNull();
+    execFileSync(state.cruBin!, ['daemon', 'stop'], {
+      env: state.childEnv, stdio: 'ignore', timeout: 20_000,
+    });
+    await expect.poll(async () => (await api.post('/api/rpc/session.list', { data: {} })).status(), {
+      timeout: 30_000,
+    }).toBe(200);
+    await page.reload();
+    await appReady(page);
+    await openSessionFromRail(page, id);
+    await page.getByTestId('chat-input').fill('canonical title restart turn 3');
+    await page.getByTestId('chat-input').press('Enter');
+    await expect.poll(readTitle, { timeout: 60_000 }).toBe('The live chain answered');
+    await expect(page.getByTestId(`session-item-${id}`)).toContainText('The live chain answered');
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]').getByTitle('The live chain answered', { exact: true })).toBeVisible();
+    // Reload only after the debounced layout save reaches the daemon. The
+    // transcript can finish before that save; reloading then tests an absent
+    // tab rather than reconciling the title of a restored tab.
+    await expect.poll(async () => {
+      const saved = await api.get('/api/layout');
+      return saved.ok() && JSON.stringify(await saved.json()).includes('The live chain answered');
+    }).toBe(true);
+    await page.reload();
+    await appReady(page);
+    await expect(page.getByTestId(`session-item-${id}`)).toContainText('The live chain answered');
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]').getByTitle('The live chain answered', { exact: true })).toBeVisible();
+    await page.goto('about:blank');
+    const renamed = await api.post('/api/rpc/session.set_title', {
+      data: { session_id: id, title: 'Renamed while browser offline' },
+    });
+    expect(renamed.status(), await renamed.text()).toBe(200);
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await expect(page.getByTestId(`session-item-${id}`)).toContainText('Renamed while browser offline');
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]').getByTitle('Renamed while browser offline', { exact: true })).toBeVisible();
+    await expect.poll(async () => {
+      const saved = await api.get('/api/layout');
+      return saved.ok() && JSON.stringify(await saved.json()).includes('Renamed while browser offline');
+    }).toBe(true);
+    await page.goto('about:blank');
+    const cleared = await api.post('/api/rpc/session.set_title', { data: { session_id: id, title: '' } });
+    expect(cleared.status(), await cleared.text()).toBe(200);
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]').getByTitle('Chat', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid^="rail-tab-tab-chat-"]').getByTitle('Renamed while browser offline', { exact: true })).toHaveCount(0);
+    await api.dispose();
+  });
+
   test('the kiln switches on a live session', async ({ page }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const failures = watchApiFailures(page);

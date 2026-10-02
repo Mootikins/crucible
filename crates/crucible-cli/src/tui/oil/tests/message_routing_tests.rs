@@ -450,3 +450,12 @@ fn a_populated_provider_list_sets_the_provider_without_warning() {
         "a healthy provider list must not raise a warning"
     );
 }
+
+#[test]
+fn canonical_title_event_refreshes_the_tui_session_choices() {
+    let messages = crate::tui::oil::chat_runner::session_event_to_chat_msgs(
+        "title_changed",
+        &serde_json::json!({"title":"Canonical title"}),
+    );
+    assert!(matches!(messages.as_slice(), [ChatAppMsg::FetchSessions]));
+}

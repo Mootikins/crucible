@@ -121,7 +121,9 @@ describe('the session event route', () => {
     getBus().on('sessionTitleChanged', (payload) => titles.push(payload));
     const source = openStream();
 
+    env.client.setQueryData(keys.session(SESSION), { session_id: SESSION, title: 'Old' });
     source.emit('title_changed', { event: 'title_changed', data: { title: 'Renamed' } });
+    expect(env.client.getQueryData<{title: string}>(keys.session(SESSION))?.title).toBe('Renamed');
 
     expect(invalidated).toEqual([keys.sessions(false), keys.sessions(true)]);
     expect(titles).toEqual([{ sessionId: SESSION, title: 'Renamed' }]);
