@@ -85,4 +85,3 @@
 .tree-row { border-radius: var(--cru-radius-control); }
 
 /* A quiet tonal step separates portaled menus without an outline or shadow. */
-.shell-popup { background: color-mix(in srgb, var(--mk-nav-solid) 92%, var(--cru-color-ink)); }

@@ -705,3 +705,7 @@ Backlinks and Activity are absent from the default layout. Open them through
 The composer folds chips into a `+N` menu when its pane is narrow. Click opens
 it immediately; hover opens it after a brief pause, so moving past the chip
 to Send cannot open a menu over the send button.
+
+Hover previews and pinned popouts use the same borderless window chrome. Their
+frame, title bar controls, and loading cards follow the Appearance corner
+radius; loading cards share the menu popup surface.

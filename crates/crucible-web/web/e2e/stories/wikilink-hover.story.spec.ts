@@ -58,16 +58,17 @@ const STREAM: Frame[] = [
   },
 ];
 
-async function setupNoteRoutes(page: Page) {
+async function setupNoteRoutes(page: Page, noteReady: Promise<void> = Promise.resolve()) {
   // Link resolution is a path lookup against the kiln, not an index query.
   // `GET /api/notes/resolve` stays a REST route (it walks the filesystem,
   // not a bare RPC forward).
-  await page.route('**/api/notes/resolve**', (route) => {
+  await page.route('**/api/notes/resolve**', async (route) => {
     const url = new URL(route.request().url());
     const target = url.searchParams.get('name') ?? '';
     if (target.toLowerCase() !== 'kiln note') {
       return route.fulfill({ status: 404, body: 'not found' });
     }
+    await noteReady;
     return route.fulfill({
       json: {
         path: 'Kiln Note.md',
@@ -77,25 +78,6 @@ async function setupNoteRoutes(page: Page) {
     });
   });
 
-  // `get_note_by_name` reaches the browser through `POST /api/rpc/{method}`
-  // now (Simplification Plan step 19 item 3); `GET /api/notes/{name}` is
-  // gone.
-  await page.route('**/api/rpc/get_note_by_name', (route) => {
-    const body = JSON.parse(route.request().postData() ?? '{}') as { name?: string };
-    if ((body.name ?? '').toLowerCase() !== 'kiln note') {
-      return route.fulfill({ json: null });
-    }
-    return route.fulfill({
-      json: {
-        path: `${KILN}/Kiln Note.md`,
-        title: 'Kiln Note',
-        tags: [],
-        links_to: [],
-        wikilinks: [],
-        content_hash: '0'.repeat(64),
-      },
-    });
-  });
   await page.route('**/api/kiln/file**', (route) =>
     route.fulfill({ json: { content: NOTE_CONTENT } }),
   );
@@ -137,7 +119,9 @@ test.describe('Chat wikilink hover previews', () => {
   test('anchor renders, previews on hover, dismisses, and opens on click', async ({ page }, testInfo) => {
     const story = createStory(testInfo);
     await setupBasicMocks(page, { sseEvents: [] });
-    await setupNoteRoutes(page);
+    let releaseNote!: () => void;
+    const noteReady = new Promise<void>(resolve => { releaseNote = resolve; });
+    await setupNoteRoutes(page, noteReady);
     await streamTurn(page);
 
     await page.goto('/');
@@ -158,6 +142,12 @@ test.describe('Chat wikilink hover previews', () => {
     // 2. Hover → a transient floating window titled with the note, opening
     // in the configured hover mode (default: rendered reading view).
     await anchor.hover();
+    const loading = page.getByTestId('wikilink-preview');
+    await expect(loading).toBeVisible();
+    await expect(loading).toHaveCSS('border-top-width', '0px');
+    await expect(loading).toHaveCSS('box-shadow', 'none');
+    await expect(loading).toHaveCSS('border-top-left-radius', '12px');
+    releaseNote();
     const popover = page.locator('[data-window-id]');
     await expect(popover).toBeVisible({ timeout: 5000 });
     await expect(popover).toContainText('Kiln Note');
@@ -165,6 +155,17 @@ test.describe('Chat wikilink hover previews', () => {
     await expect(reading.locator('h1')).toHaveText('Kiln Note', { timeout: 5000 });
     await expect(reading).toContainText('Stored knowledge that grounds the agent.');
     await expect(popover.getByTestId('float-pin')).toBeVisible();
+    // Hover editors share the shell's borderless, configurable window chrome.
+    await expect(popover).toHaveCSS('border-top-width', '0px');
+    await expect(popover).toHaveCSS('box-shadow', 'none');
+    await expect(popover.getByTestId('floating-titlebar')).toHaveCSS('border-bottom-width', '0px');
+    await expect(popover.getByTestId('floating-titlebar')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    for (const radius of [0, 24, 12]) {
+      await page.evaluate(radius => document.documentElement.style.setProperty('--mk-radius', `${radius}px`), radius);
+      await expect(popover).toHaveCSS('border-top-left-radius', `${radius}px`);
+      await expect(popover.getByTestId('panel-content-file')).toHaveCSS('border-top-left-radius', `${Math.max(0, radius - 4)}px`);
+      await expect(popover.getByTestId('float-pin')).toHaveCSS('border-top-left-radius', `${radius}px`);
+    }
     await story.step(page, 'hover popover open');
     await expect(popover).toHaveScreenshot('chat-wikilink-hover-preview.png');
 

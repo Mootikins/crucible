@@ -228,12 +228,21 @@ body { background: var(--mk-nav); }
   --mk-float-frame: 4px;
   --mk-float-radius: var(--mk-radius);
   padding: 0 var(--mk-float-frame) var(--mk-float-frame);
+  border: 0;
   border-radius: var(--mk-float-radius);
   background: var(--mk-nav-solid);
   box-shadow: none;
 }
 .wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-float-frame); }
 .wm-floating .wm-tabbar { background: transparent; }
+/* A transparent title bar leaves the frame's rounded top corners visible. */
+.wm-floating-titlebar { border: 0; background: transparent; }
+.wm-floating-btn { border-radius: var(--cru-radius-control); }
+/* Loading cards and menus use the same tonal popup surface in either shell. */
+.shell-popup {
+  border: 0; border-radius: var(--cru-radius-card); box-shadow: none;
+  background: color-mix(in srgb, var(--mk-nav-solid) 92%, var(--cru-color-ink));
+}
 .wm-floating-body { padding: 0; border-radius: max(0px, calc(var(--mk-float-radius) - var(--mk-float-frame))); background: var(--mk-main-solid); }
 
 /* Keep the close target outside the glyph; it remains available on focus. */

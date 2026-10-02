@@ -227,6 +227,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
         <Show when={showTitleBar()}>
           <div
             class="wm-floating-titlebar flex items-center cursor-grab active:cursor-grabbing select-none"
+            data-testid="floating-titlebar"
             data-wm-drag-handle=""
           >
             <WindowPinButton windowId={w().id} />

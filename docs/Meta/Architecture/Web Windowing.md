@@ -741,3 +741,10 @@ cancelled on pointer leave, click, close, and cleanup; crossing the fold to
 Send cannot open its portaled menu over Send. The UI test recipe starts a
 fresh Vite module graph on its own port instead of reusing the live preview,
 so dynamic test imports and mounted components share the same store.
+
+Floating windows, including hover editors, override the neutral window theme
+through `styles/shell/window-chrome.css`. Their transparent, borderless title
+bars preserve the frame corners; controls and loading/missing hover cards read
+the shared configurable radius. `shell-popup` lives in that shared sheet for
+both shells, rather than in compact styling. The wikilink hover story checks
+loading and resolved chrome at zero, default, and enlarged radii.
