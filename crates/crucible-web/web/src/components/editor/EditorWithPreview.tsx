@@ -12,7 +12,7 @@
  */
 import { Component, Show, createSignal, createEffect } from 'solid-js';
 import { HistoryNav, type HistoryNavProps } from './HistoryNav';
-import { Breadcrumb } from './Breadcrumb';
+import { Breadcrumb, fileBreadcrumb, type BreadcrumbProject } from './Breadcrumb';
 import type { FileOpenOptions } from '@/lib/file-actions';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
@@ -38,6 +38,8 @@ export const EditorWithPreview: Component<{
    * another. Absent for files that belong to no kiln.
    */
   kiln?: string;
+  /** Registered display roots; file and link resolution still use kiln. */
+  projects?: readonly BreadcrumbProject[];
   /** The disk hash the buffer was read at. A task tick carries it: a PATCH
    * with a base is refused when the note moved on, even when the anchor still
    * applies, so a tick never lands on text the user did not see. The outbox
@@ -145,7 +147,7 @@ export const EditorWithPreview: Component<{
       <Show when={isMarkdown() && !controlled()}>
         <div class="note-toolbar shrink-0" role="toolbar" aria-label="Note view">
           <Show when={props.history}>{(history) => <HistoryNav {...history()} />}</Show>
-          <Breadcrumb root={props.kiln?.split('/').pop() || ''} path={props.kiln && props.path.startsWith(`${props.kiln}/`) ? props.path.slice(props.kiln.length + 1) : props.path.replace(/^\//, '')} />
+          <Breadcrumb {...fileBreadcrumb(props.path, props.kiln, props.projects)} />
           <NoteViewSwitch mode={mode()} onChange={setMode} />
         </div>
       </Show>

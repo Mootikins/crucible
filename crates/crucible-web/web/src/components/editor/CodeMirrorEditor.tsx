@@ -1,3 +1,4 @@
+import { scrollFade } from '@/lib/scroll-fade';
 import { Component, createEffect, onCleanup } from 'solid-js';
 import {
   EditorView,
@@ -277,6 +278,7 @@ export const CodeMirrorEditor: Component<{
       parent: el,
     });
     view.dispatch({ effects: StateEffect.reconfigure.of(createExtensions()) });
+    scrollFade('y')(view.scrollDOM);
     props.apiRef?.(view);
     vimSaveHandlers.set(view, () => props.onSave?.());
     ensureVimWriteEx();

@@ -852,26 +852,6 @@
      marked user block carries the visual distinction, so agent output needs
      no callout of its own. */
 
-  /* ── The transcript's bottom edge ───────────────────────────────────
-     There is NO rule between the transcript and the composer. A border
-     there draws a box around the composer and cuts the conversation off
-     at a hard line; the reference surfaces (Cursor) draw none.
-
-     What replaces it is a fade, and it is INFORMATION rather than
-     decoration: it appears only while content continues below the fold,
-     so a soft bottom edge means "there is more down there" and a crisp
-     one means "you are at the end". Scrolling back to the bottom removes
-     it. `mask-image` rather than an overlaid gradient because the
-     composer sits on the same canvas — a painted gradient would need to
-     know the canvas colour, and it would be wrong in one of the themes.
-
-     The `-webkit-` half is not redundant: Safari still ships the masked
-     property unprefixed-but-unaliased for `mask-image` on scrollers. */
-  .transcript-fade {
-    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 3rem), transparent);
-    mask-image: linear-gradient(to bottom, black calc(100% - 3rem), transparent);
-  }
-
   /* ── Native selects ─────────────────────────────────────────────────
      A `<select>` with `appearance: auto` is drawn by the PLATFORM, not by
      this stylesheet. Chromium on Linux honours the computed background in

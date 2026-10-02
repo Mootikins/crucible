@@ -247,3 +247,20 @@ test('right rail accepts and restores widths beyond the former 600px cap', async
   await act(page, 'importLayout', saved);
   expect((await readStore(page)).edgePanels.right.width).toBe(900);
 });
+
+test('a rail emptied in the centre still accepts a tab after swapping back', async ({ page }) => {
+  const [railGroup] = await groupIds(page, 'right');
+  await act(page, 'swapCentreWithEdge', 'right');
+  await act(page, 'removeTab', railGroup, 'tab-right');
+  await act(page, 'swapCentreWithEdge', 'right');
+  const before = await readStore(page);
+  const paneId = before.edgePanels.right.layout.id;
+  const target = await page.locator(`[data-pane-id="${paneId}"]`).boundingBox();
+  const source = await centreTab(page, 'tab-alpha').boundingBox();
+  expect(target).not.toBeNull();
+  await pointerDrag(page,
+    { x: source!.x + source!.width / 2, y: source!.y + source!.height / 2 },
+    { x: target!.x + target!.width / 2, y: target!.y + target!.height / 2 }, 40);
+  await expect.poll(() => tabIds(page, 'right')).toEqual(['tab-alpha']);
+  expect(await tabIds(page, 'center')).toEqual(['tab-beta']);
+});

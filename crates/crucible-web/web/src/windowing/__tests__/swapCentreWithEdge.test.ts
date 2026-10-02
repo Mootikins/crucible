@@ -56,3 +56,36 @@ describe('swapCentreWithEdge', () => {
     expect(windowStore.focusedRegion).toBe('right');
   });
 });
+
+
+describe('the last centre pane remains reusable after a tab leaves', () => {
+  beforeEach(() => { configureWindowing(neutralPolicy()); stackRightRail(); });
+
+  it('keeps its empty group through swap, close, swap, reopen and a subsequent tab drop', () => {
+    const rail = windowStore.edgePanels.right.layout;
+    if (rail.type !== 'split') throw new Error('expected stacked rail');
+    const documentPane = rail.first.id;
+    const groupId = rail.first.type === 'pane' ? rail.first.tabGroupId! : '';
+    windowActions.swapCentreWithEdge('right', documentPane);
+    windowActions.removeTab(groupId, 'tab-right');
+    expect(windowStore.tabGroups[groupId]).toMatchObject({ tabs: [], activeTabId: null });
+    windowActions.swapCentreWithEdge('right', windowStore.edgePanels.right.layout.type === 'split'
+      ? windowStore.edgePanels.right.layout.first.id : '');
+    windowActions.addTab(groupId, { id: 'reopened', title: 'Reopened', contentType: 'gamma' });
+    expect(windowStore.edgePanels.right.layout).toMatchObject({ first: { type: 'pane', id: documentPane, tabGroupId: groupId } });
+    const sourceGroup = findFirstPane(windowStore.layout)!.tabGroupId!;
+    windowActions.moveTab(sourceGroup, windowActions.getPaneTabGroupId(documentPane)!, 'tab-alpha');
+    expect(windowStore.tabGroups[groupId].tabs.map(tab => tab.id)).toEqual(['reopened', 'tab-alpha']);
+  });
+
+  it('keeps the final centre group when its last tab is dragged out', () => {
+    const pane = findFirstPane(windowStore.layout)!;
+    const groupId = pane.tabGroupId!;
+    windowActions.removeTab(groupId, 'tab-beta');
+    const railGroup = findFirstPane(windowStore.edgePanels.right.layout)!.tabGroupId!;
+    windowActions.moveTab(groupId, railGroup, 'tab-alpha');
+    expect(windowStore.tabGroups[groupId]).toMatchObject({ tabs: [], activeTabId: null });
+    windowActions.moveTab(railGroup, windowActions.getPaneTabGroupId(pane.id)!, 'tab-alpha');
+    expect(windowStore.tabGroups[groupId].tabs.map(tab => tab.id)).toEqual(['tab-alpha']);
+  });
+});

@@ -709,3 +709,16 @@ to Send cannot open a menu over the send button.
 Hover previews and pinned popouts use the same borderless window chrome. Their
 frame, title bar controls, and loading cards follow the Appearance corner
 radius; loading cards share the menu popup surface.
+
+Session transcripts and notes fade at edges with more content beyond them.
+Scrolling down softens the text below the session header or breadcrumb;
+returning to the top removes that fade. Reading, live preview, and source
+views use the same behavior.
+
+File breadcrumbs show the containing kiln or project and the path relative to
+that root. The most specific registered root wins. Files outside those roots
+show only their filename, including while the root roster is loading.
+
+Closing the final center tab leaves an empty drop target. Swapping that target
+to a side rail still lets you drag files into it or reopen a session there,
+without adding a blank tile beside the reopened content.

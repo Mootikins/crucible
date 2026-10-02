@@ -1,3 +1,4 @@
+import { scrollFade } from '@/lib/scroll-fade';
 import type { FileOpenOptions } from '@/lib/file-actions';
 import { mountBases } from '@/components/bases/mount';
 /**
@@ -163,7 +164,7 @@ export const MarkdownPreview: Component<{
 
   return (
     <div
-      ref={scrollHost}
+      ref={el => { scrollHost = el; scrollFade('y')(el); }}
       class="h-full overflow-y-auto bg-shell-panel px-6 py-4"
       data-testid="markdown-preview"
       // Declares which kiln this content belongs to for the document-level

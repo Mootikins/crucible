@@ -339,7 +339,7 @@ describe('ChatInput', () => {
   it('draws no rule between the transcript and the composer', () => {
     render(() => <ChatInput />);
     const form = screen.getByTestId('chat-input-form');
-    // The transcript fades into this strip (`.transcript-fade`); a border
+    // The transcript fades into this strip (the shared scroll fade); a border
     // here would box the composer in and re-draw the hard edge that fade
     // exists to remove.
     for (const cls of Array.from(form.classList)) {

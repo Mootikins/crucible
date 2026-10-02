@@ -1,3 +1,4 @@
+import { useProjects } from '@/lib/query/projects';
 import { Component, For, Show } from 'solid-js';
 import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
@@ -63,6 +64,7 @@ export const EditorPanel: Component = () => {
   // configured default, which resolved a buffer's links in a kiln that had
   // nothing to do with it.
   const kilnsQuery = useKilns();
+  const projectsQuery = useProjects();
   const owningKiln = (path?: string) =>
     path ? kilnForPath(path, kilnsQuery.data ?? []) : undefined;
 
@@ -151,6 +153,7 @@ export const EditorPanel: Component = () => {
                 // document-level hover controller. Without it this panel's
                 // wikilinks were inert: no popover, no Ctrl+Click.
                 kiln={owningKiln(file().path)}
+                projects={projectsQuery.data}
                 baseHash={file().baseHash}
                 onBaseChange={(hash) => setBaseHash(file().path, hash)}
                 onChange={(content) => updateFileContent(file().path, content)}

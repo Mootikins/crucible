@@ -1,3 +1,4 @@
+import { useProjects } from '@/lib/query/projects';
 import {
   Component,
   For,
@@ -80,6 +81,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // whichever kiln the status bar pointed at, which is one kiln serving
   // another kiln's data.
   const kilnsQuery = useKilns();
+  const projectsQuery = useProjects();
   const kilns = (): { path: string }[] => kilnsQuery.data ?? [];
 
   /** Vim is a desktop default. A phone has no `Escape` and no modifier row,
@@ -365,6 +367,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                       onChange={(content) => updateFileContent(file().path, content)}
                       onSave={handleSave}
                       kiln={owningKiln(file().path)}
+                      projects={projectsQuery.data}
                       baseHash={file().baseHash}
                       onBaseChange={(hash) => setBaseHash(file().path, hash)}
                       onFollowLink={(target, options?: FileOpenOptions) =>

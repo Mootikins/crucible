@@ -748,3 +748,25 @@ bars preserve the frame corners; controls and loading/missing hover cards read
 the shared configurable radius. `shell-popup` lives in that shared sheet for
 both shells, rather than in compact styling. The wikilink hover story checks
 loading and resolved chrome at zero, default, and enlarged radii.
+
+`lib/scroll-fade.ts` owns overflow-edge detection for breadcrumbs, session
+transcripts, and notes in reading, source, and live modes. Each actual scroller
+uses that ref, including CodeMirror’s `scrollDOM`. The shared content theme
+fades only edges with hidden content; headers and breadcrumbs remain outside
+the mask. Transcript scroll pinning owns auto-scroll intent separately from
+this display state. Desktop and compact reuse the same transcript and note
+components. `e2e/scroll-fade.spec.ts` exercises both edges and all note modes.
+
+`editor/Breadcrumb.tsx` owns display-root selection: the most specific
+containing kiln or project, with a kiln winning an equal-root tie. Editor panels
+read the shared project roster and pass it alongside the owning kiln. Unmatched
+absolute paths show only the filename; breadcrumb display never changes the
+absolute file identity or the kiln used to resolve links.
+
+Closing or moving the last center tab keeps its final pane and a live empty
+tab group. Empty panes can then receive drops and be reused after a center/rail
+swap. In a split center, empty groups and panes are removed together.
+
+Layout import repairs dangling panes in the center and both rails, preserving
+valid empty groups and folded panes. A surviving sole pane receives a live empty
+group so saved layouts obey the same drop/reopen invariant.

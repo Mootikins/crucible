@@ -247,11 +247,6 @@ export const ChatInput: Component = () => {
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      // NO `border-t`. A rule here boxed the composer in and cut the
-      // conversation off at a hard line; the transcript now fades into this
-      // strip instead (see `.transcript-fade`), which carries the same
-      // "there is more above" meaning without drawing an edge.
-      //
       // `px-4` OUTSIDE the measure, exactly as MessageList has it. Putting
       // the padding inside instead made the composer 32px narrower than the
       // transcript above it, so the two column edges did not line up.

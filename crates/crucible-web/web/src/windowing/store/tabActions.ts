@@ -55,6 +55,16 @@ function releaseEdgeGroup<C extends string>(
   }
 }
 
+/** A retained centre pane must still own a group that can receive tabs. */
+function releaseCentreGroup<C extends string>(s: WindowState<C>, group: TabGroup<C>): void {
+  if (countPanes(s.layout) === 1) {
+    s.tabGroups[group.id] = { ...group, tabs: [], activeTabId: null };
+  } else {
+    delete s.tabGroups[group.id];
+    s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+  }
+}
+
 export interface TabActions<C extends string = string> {
   addTab(groupId: string, tab: Tab<C>, insertIndex?: number): void;
   removeTab(groupId: string, tabId: string): void;
@@ -137,8 +147,7 @@ export function createTabActions<C extends string>(
           } else if (pos) {
             releaseEdgeGroup(s, pos, group);
           } else {
-            delete s.tabGroups[groupId];
-            s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+            releaseCentreGroup(s, group);
             const firstPane = findFirstPane(s.layout);
             if (
               firstPane &&
@@ -222,8 +231,7 @@ export function createTabActions<C extends string>(
           } else if (sourcePos) {
             releaseEdgeGroup(s, sourcePos, sourceGroup);
           } else {
-            delete s.tabGroups[sourceGroupId];
-            s.layout = collapseEmptyNodes(s.layout, s.tabGroups);
+            releaseCentreGroup(s, sourceGroup);
             const firstPane = findFirstPane(s.layout);
             if (
               firstPane &&

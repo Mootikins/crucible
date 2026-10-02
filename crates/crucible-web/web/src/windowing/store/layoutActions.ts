@@ -23,6 +23,7 @@ import {
   findFirstPane,
   findPaneAnywhere,
   findPaneInLayout,
+  generateId,
   mirrorLayout,
   regionOfPane,
   releaseExpandOnCentreFocus,
@@ -436,28 +437,20 @@ export function createLayoutActions<C extends string>(
   const importLayout = (json: StoredLayout<C>) => {
     const p = policy();
     const restored = deserializeLayout(json, p.layoutHooks, (type) => p.iconFor(type));
-    /**
-     * A restored layout has to satisfy the same invariant every mutation
-     * maintains: no pane may point at a tab group that does not exist.
-     *
-     * It did not. `collapseEmptyNodes` ran on tab close and on window
-     * operations, but never on RESTORE — so a saved layout carrying a pane
-     * whose `tabGroupId` is dangling brought that pane back on every load,
-     * drawing EmptyPane beside the real work. Nothing the user could do
-     * reached it: opening a new tab adds it to some OTHER pane,
-     * and none of those paths collapse anything. The pane was unremovable by
-     * construction, and it came back after a reload even if it was collapsed
-     * away in a previous run.
-     *
-     * Sanitising here rather than at the serializer, or on the server, on
-     * purpose: this is the one place a layout the store did not build enters
-     * the store, so it is the boundary that owes the check. Layouts already
-     * on disk repair themselves on the next load.
-     *
-     * A layout where EVERY pane dangles collapses to a single empty pane
-     * rather than to nothing, which is the legitimate "Nothing open" state.
-     */
-    restored.layout = collapseEmptyNodes(restored.layout, restored.tabGroups);
+    // Prune stale saved panes in every region before restoring the store.
+    // A region that loses every pane retains one usable empty group, just as
+    // closing its last tab does. Valid empty groups remain intentional slots.
+    const repairRoot = (layout: LayoutNode): LayoutNode => {
+      const root = collapseEmptyNodes(layout, restored.tabGroups);
+      if (root.type === 'pane' && (!root.tabGroupId || !restored.tabGroups[root.tabGroupId])) {
+        const id = root.tabGroupId ?? generateId();
+        restored.tabGroups[id] = { id, tabs: [], activeTabId: null };
+        return { ...root, tabGroupId: id };
+      }
+      return root;
+    };
+    restored.layout = repairRoot(restored.layout);
+    for (const panel of Object.values(restored.edgePanels)) panel.layout = repairRoot(panel.layout);
     // Snap-not-tween marker: effects reacting to this store swap (edge-panel
     // collapse states) must apply instantly — see windowing/model/layout-restore.
     markLayoutRestore(() =>

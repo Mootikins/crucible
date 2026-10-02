@@ -1,4 +1,5 @@
-import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo } from 'solid-js';
+import { scrollFade } from '@/lib/scroll-fade';
 import { Message } from './Message';
 import { AssistantTurn, type TurnPartSpec } from './AssistantTurn';
 import { useChatSafe } from '@/contexts/ChatContext';
@@ -90,26 +91,11 @@ export const MessageList: Component = () => {
   // into view.
   let pinned = true;
 
-  /**
-   * Whether the transcript continues below the fold.
-   *
-   * This drives the bottom fade, which is the ONLY thing separating the
-   * transcript from the composer now that the rule between them is gone. It
-   * is a signal rather than the plain `pinned` flag because it paints: a soft
-   * bottom edge means "there is more down there", and it must disappear the
-   * moment you reach the end, or it reads as a permanent decoration and stops
-   * carrying any information at all.
-   */
-  const [hasMoreBelow, setHasMoreBelow] = createSignal(false);
-
   const measure = () => {
     if (!containerRef) return;
     const distance =
       containerRef.scrollHeight - containerRef.scrollTop - containerRef.clientHeight;
     pinned = distance < 40;
-    // A wider threshold than `pinned` uses: the fade is 3rem tall, so it has
-    // to be gone before the last line slides under it, not exactly at zero.
-    setHasMoreBelow(distance > 8);
   };
 
   const handleScroll = () => measure();
@@ -124,8 +110,6 @@ export const MessageList: Component = () => {
     pendingInteraction();
     queueMicrotask(() => {
       scrollToBottom();
-      // Streaming grows the transcript without ever firing a scroll event, so
-      // the fade would otherwise stay stale for a whole turn.
       measure();
     });
   });
@@ -216,17 +200,12 @@ export const MessageList: Component = () => {
 
   return (
     <div
-      ref={containerRef}
+      ref={el => { containerRef = el; scrollFade('y')(el); }}
       onScroll={handleScroll}
       // The SCROLLER is full width so its scrollbar stays on the pane edge;
       // the content inside it centres on `--chat-measure`. Centring the
       // scroller instead pulls the bar inward and reads as a second panel.
-      //
-      // `.transcript-fade` is conditional on purpose — see `hasMoreBelow`.
-      classList={{
-        'flex-1 overflow-y-auto px-4 pt-4 pb-2': true,
-        'transcript-fade': hasMoreBelow(),
-      }}
+      class="flex-1 overflow-y-auto px-4 pt-4 pb-2"
       data-testid="message-list"
     >
       {/* ONE rhythm for the whole transcript. Every row is content + gutter,

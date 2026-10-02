@@ -29,6 +29,27 @@ beforeEach(() => {
 });
 
 describe('EditorWithPreview', () => {
+  it('shows project-relative breadcrumbs without exposing absolute directories', () => {
+    const { container } = render(() => (
+      <EditorWithPreview content="# Heading" path="/home/moot/crucible/docs/Guide.md"
+        projects={[{ path: '/home/moot/crucible', name: 'Crucible' }]}
+        baseHash="h1" onChange={noop} />
+    ));
+    expect(container.querySelector('.note-breadcrumb')?.textContent).toBe('Crucible/docs/Guide.md');
+  });
+
+  it('uses the enclosing kiln over a broader project and hides unknown absolute prefixes', () => {
+    const [path, setPath] = createSignal('/home/moot/crucible/docs/Guide.md');
+    const { container } = render(() => (
+      <EditorWithPreview content="# Heading" path={path()} kiln="/home/moot/crucible/docs"
+        projects={[{ path: '/home/moot/crucible', name: 'Crucible' }]}
+        baseHash="h1" onChange={noop} />
+    ));
+    expect(container.querySelector('.note-breadcrumb')?.textContent).toBe('docs/Guide.md');
+    setPath('/home/moot/crucible-other/Secret.md');
+    expect(container.querySelector('.note-breadcrumb')?.textContent).toBe('Secret.md');
+  });
+
   it('markdown files get a preview toggle; toggling renders the markdown', async () => {
     const { getByTitle, getByTestId, queryByTestId, container } = render(() => (
       <EditorWithPreview

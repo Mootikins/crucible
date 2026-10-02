@@ -145,7 +145,10 @@ describe('restoring a layout that still holds a settings tab', () => {
 
     // "Nothing open" is a legitimate state; a layout with no pane at all is not.
     expect(collectPanes(windowStore.layout).length).toBe(1);
-    expect(collectPanes(windowStore.layout)[0]!.tabGroupId).toBeNull();
+    const groupId = collectPanes(windowStore.layout)[0]!.tabGroupId!;
+    expect(windowStore.tabGroups[groupId]).toMatchObject({ tabs: [], activeTabId: null });
+    windowActions.addTab(groupId, { id: 'recovered-file', title: 'Recovered.md', contentType: 'file', metadata: { path: '/project/Recovered.md' } });
+    expect(windowStore.tabGroups[groupId].activeTabId).toBe('recovered-file');
     expect(windowStore.activePaneId).not.toBeNull();
   });
 });
