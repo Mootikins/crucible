@@ -323,14 +323,19 @@ impl ExtendedMcpService {
     ///
     /// This blocks until the connection is closed.
     pub async fn serve_stdio(self) -> Result<(), anyhow::Error> {
+        self.serve_io(tokio::io::stdin(), tokio::io::stdout()).await
+    }
+
+    async fn serve_io(
+        self,
+        reader: impl tokio::io::AsyncRead + Send + Unpin + 'static,
+        writer: impl tokio::io::AsyncWrite + Send + Unpin + 'static,
+    ) -> Result<(), anyhow::Error> {
+        use rmcp::transport::IntoTransport;
         use rmcp::ServiceExt;
 
-        let _service = self
-            .serve((tokio::io::stdin(), tokio::io::stdout()))
-            .await?;
-
-        // Wait forever - the service will handle requests until EOF or error
-        std::future::pending::<()>().await;
+        let transport = super::stdio_compat::LegacyStdio((reader, writer).into_transport());
+        self.serve(transport).await?.waiting().await?;
         Ok(())
     }
 
@@ -440,6 +445,83 @@ mod tests {
     use super::*;
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn stdio_discovery_probe_falls_back_to_initialize_and_lists_tools() {
+        assert_stdio_handshake(true).await;
+    }
+
+    #[tokio::test]
+    async fn stdio_legacy_initialize_and_preinitialize_ping_still_work() {
+        assert_stdio_handshake(false).await;
+    }
+
+    async fn assert_stdio_handshake(discovery_probe: bool) {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::time::{timeout, Duration};
+
+        let temp = TempDir::new().unwrap();
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository::new()),
+            Arc::new(MockEmbeddingProvider::new()),
+        );
+        let service = ExtendedMcpService::new(server).await;
+        let (client, server) = tokio::io::duplex(65536);
+        let (reader, writer) = tokio::io::split(server);
+        let task = tokio::spawn(service.serve_io(reader, writer));
+        let (reader, mut writer) = tokio::io::split(client);
+        let mut lines = BufReader::new(reader).lines();
+
+        let prelude = if discovery_probe {
+            json!({"jsonrpc":"2.0","id":"probe","method":"server/discover","params":{}})
+        } else {
+            json!({"jsonrpc":"2.0","id":"probe","method":"ping"})
+        };
+        writer
+            .write_all(format!("{prelude}\n").as_bytes())
+            .await
+            .unwrap();
+        let response = timeout(Duration::from_secs(2), lines.next_line())
+            .await
+            .expect("discovery probe must receive a reply")
+            .unwrap()
+            .unwrap();
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["id"], "probe");
+        if discovery_probe {
+            assert_eq!(response["error"]["code"], -32601);
+        } else {
+            assert_eq!(response["result"], json!({}));
+        }
+
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n").await.unwrap();
+        let response = timeout(Duration::from_secs(2), lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["id"], 1);
+        assert!(response["result"]["serverInfo"].is_object());
+
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n").await.unwrap();
+        let response = timeout(Duration::from_secs(2), lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let response: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["id"], 2);
+        assert!(!response["result"]["tools"].as_array().unwrap().is_empty());
+        drop(writer);
+        drop(lines);
+        timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
 
     /// The discovery tools are served as MCP `tools/list`, so their wire
     /// shape is pinned here. Change this literal only with the intent to

@@ -21,6 +21,14 @@ The MCP Gateway allows Crucible to connect to multiple upstream MCP servers, agg
 - Tool filtering with glob patterns
 - Automatic tool prefixing to avoid name collisions
 
+## Connecting an external agent to Crucible
+
+Crucible exposes its own tools with `cru mcp --stdio --standalone`. This
+endpoint uses the MCP `initialize` handshake. If a newer client first probes
+with `server/discover`, Crucible replies with `Method not found` so the client
+can fall back to initialization on the same connection. The probe should not
+leave the server silent until the client times out.
+
 ## Configuration File
 
 Add to `~/.config/crucible/init.lua`:

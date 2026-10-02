@@ -227,6 +227,15 @@ or stdio to outside tool clients — it is not the same server instance as
 `crate::tools::mcp_server::CrucibleMcpServer`/
 `crate::tools::extended_mcp_server::ExtendedMcpServer`.
 
+The stdio surface uses `tools/stdio_compat.rs` to answer `server/discover`
+with JSON-RPC `MethodNotFound` before rmcp's initialization handler. Modern
+clients use that reply to fall back to `initialize` on the same connection.
+This is a compatibility shim for rmcp 2.2's initialize-era protocol, not an
+implementation of the newer stateless protocol. Framing, initialization,
+request dispatch and tool execution remain owned by rmcp and the existing
+`ExtendedMcpService`; the service waits for transport shutdown rather than
+leaving its task pending after EOF.
+
 ## Flows
 
 ### Connecting an ACP agent for a new session
