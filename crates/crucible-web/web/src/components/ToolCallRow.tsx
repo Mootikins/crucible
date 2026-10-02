@@ -3,7 +3,7 @@ import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { fileOpenOptionsForEvent, openFileInEditor } from '@/lib/file-actions';
 import { kilnForElement, openNoteInEditor } from '@/lib/note-actions';
-import { ChevronRight, FileText, Globe, Pencil, Search, Terminal, Wrench } from '@/lib/icons';
+import { ChevronRight, FileText, FlaskConical, Globe, Pencil, Search, Terminal, Wrench } from '@/lib/icons';
 
 // Presentation of the daemon's canonical kind, never classification by tool name.
 const kinds: Record<string, { icon: Component<{ class?: string }>; past: string; now: string }> = {
@@ -21,8 +21,9 @@ export const ToolCallRow: Component<{
 }> = (props) => {
   const display = () => props.toolCall.display;
   const presentation = () => kinds[display()?.kind ?? ''];
-  const name = () => display()?.tool || props.toolCall.name;
-  const label = () => presentation()?.[props.toolCall.status === 'complete' ? 'past' : 'now'] ?? name();
+  const name = () => display()?.display_name || display()?.tool || props.toolCall.name;
+  const origin = () => display()?.mcp_server ?? (props.toolCall.source === 'Crucible' ? 'crucible' : undefined);
+  const label = () => display()?.mcp_server ? name() : (presentation()?.[props.toolCall.status === 'complete' ? 'past' : 'now'] ?? name());
   const line = () => display()?.render?.line?.split('\n')[0] ?? '';
   const paths = () => display()?.paths ?? [];
   return (
@@ -30,9 +31,10 @@ export const ToolCallRow: Component<{
       <button type="button" class="tool-call-toggle" title={name()}
         aria-label={`${props.expanded ? 'Collapse' : 'Expand'} ${name()}`}
         aria-expanded={props.expanded} onClick={props.onToggle}>
-        <Dynamic component={presentation()?.icon ?? Wrench} class="w-3.5 h-3.5 shrink-0" />
+        <Dynamic component={origin() === 'crucible' ? FlaskConical : (presentation()?.icon ?? Wrench)} class="w-3.5 h-3.5 shrink-0" />
+        <Show when={origin()}><span class="tool-call-origin" data-testid="tool-origin">{origin() === 'crucible' ? 'Crucible' : origin()}</span></Show>
         <span>{label()}</span>
-        <Show when={!paths().length}><span class="tool-call-target" title={line()}>{line()}</span></Show>
+        <Show when={!paths().length && line() !== name()}><span class="tool-call-target" title={line()}>{line()}</span></Show>
       </button>
       <For each={paths()}>{path => (
         <button type="button" class="tool-call-target tool-call-file" title={`Open ${path}`}

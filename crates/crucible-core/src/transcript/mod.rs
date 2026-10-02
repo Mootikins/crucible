@@ -458,6 +458,10 @@ impl TranscriptFold {
                 auto_approved,
                 ..
             } => {
+                let mut display = display;
+                if let Some(call) = display.as_mut() {
+                    call.restore_mcp_identity();
+                }
                 self.close_segment(None, ops);
                 let turn_id = self.turn.as_ref().map(|t| t.id.clone());
                 self.emit(
@@ -504,6 +508,10 @@ impl TranscriptFold {
                     }
                     // A display without a render carries only diffs: the card
                     // keeps its render and takes the diffs.
+                    let mut display = display;
+                    if let Some(call) = display.as_mut() {
+                        call.restore_mcp_identity();
+                    }
                     match (display, card_display.as_mut()) {
                         (Some(next), Some(current)) if next.render.is_none() => {
                             current.diffs = next.diffs;
@@ -544,6 +552,7 @@ impl TranscriptFold {
                             if let (Some(render), Some(display)) = (body.render(), display.as_mut())
                             {
                                 display.render = Some(render.clone());
+                                display.restore_mcp_identity();
                             }
                             match body {
                                 ToolResultBody::Ok { result, .. } => {

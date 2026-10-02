@@ -555,3 +555,35 @@ fn the_segments_of_a_turn_join_into_its_whole_answer() {
         assert_eq!(joined, full, "{name}");
     }
 }
+
+#[test]
+fn stored_mcp_calls_restore_display_identity() {
+    let snapshot = TranscriptFold::of_events(&[
+        event(
+            "tool_call",
+            json!({
+                "call_id": "old-mcp", "tool": "read_note", "args": {}, "source": "Acp:claude",
+                "display": {"kind": "file_read", "tool": "read_note", "agent": "claude",
+                    "raw": {"name": "mcp__crucible__read_note"},
+                    "render": {"line": "mcp__crucible__read_note"}}
+            }),
+        ),
+        event(
+            "tool_result",
+            json!({"call_id": "old-mcp", "tool": "read_note", "result": {"result": "contents", "render": {"line": "mcp__crucible__read_note"}}}),
+        ),
+    ]);
+    let ItemBody::ToolCard {
+        display: Some(call),
+        source,
+        ..
+    } = &snapshot.items[0].body
+    else {
+        panic!("missing tool card")
+    };
+    assert_eq!(call.display_name.as_deref(), Some("read_note"));
+    assert_eq!(call.mcp_server.as_deref(), Some("crucible"));
+    assert_eq!(call.agent.as_deref(), Some("claude"));
+    assert_eq!(source.as_deref(), Some("Acp:claude"));
+    assert_eq!(call.render.as_ref().unwrap().line, None);
+}

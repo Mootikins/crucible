@@ -70,6 +70,14 @@ pub struct CanonicalToolCall {
     /// no name, so the default keeps an old transcript readable.
     #[serde(default)]
     pub tool: String,
+    /// The short MCP name shown by clients. The canonical `tool` remains the
+    /// identity used by hooks and permissions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// The MCP server owning this tool, independently of the ACP agent that
+    /// executed the call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_server: Option<String>,
     /// The shell command line, for a `command` call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -177,10 +185,13 @@ impl ToolRender {
         }
         // The line is the title, or else the first plain value of the input,
         // so the one-line form of an unknown tool still says something.
-        let line = raw.and_then(|r| r.title.clone()).or_else(|| match input {
-            Value::Object(map) => map.values().find_map(scalar_to_string),
-            other => scalar_to_string(other),
-        });
+        let line = raw
+            .and_then(|r| r.title.clone())
+            .filter(|title| super::tool_match::mcp_identity(title).is_none())
+            .or_else(|| match input {
+                Value::Object(map) => map.values().find_map(scalar_to_string),
+                other => scalar_to_string(other),
+            });
         Self {
             line,
             fields,
@@ -197,6 +208,41 @@ fn field(label: &str, value: Value) -> RenderField {
 }
 
 impl CanonicalToolCall {
+    pub(crate) fn set_mcp_identity(&mut self, name: &str) {
+        if let Some((server, tool)) = super::tool_match::mcp_identity(name) {
+            self.mcp_server = Some(server.into());
+            self.display_name = Some(tool.into());
+        }
+    }
+
+    /// Stored calls predate explicit MCP identity. Recover it from their
+    /// retained wire name so old transcripts use the same client presentation.
+    pub fn restore_mcp_identity(&mut self) {
+        if self.mcp_server.is_none() || self.display_name.is_none() {
+            let name = std::iter::once(Some(self.tool.as_str()))
+                .chain(
+                    self.raw
+                        .iter()
+                        .flat_map(|raw| [raw.name.as_deref(), raw.title.as_deref()]),
+                )
+                .flatten()
+                .find(|name| super::tool_match::mcp_identity(name).is_some())
+                .map(str::to_owned);
+            if let Some(name) = name {
+                self.set_mcp_identity(&name);
+            }
+        }
+        if let Some(render) = self.render.as_mut() {
+            if render
+                .line
+                .as_deref()
+                .is_some_and(|line| super::tool_match::mcp_identity(line).is_some())
+            {
+                render.line = None;
+            }
+        }
+    }
+
     /// Tool names whose payload is a shell command line.
     ///
     /// Matched exactly, or as the tail of an MCP-prefixed name
@@ -244,6 +290,8 @@ impl CanonicalToolCall {
         let call = |kind: BuiltinKind| Self {
             kind: kind.as_str().to_string(),
             tool: tool_name.to_string(),
+            display_name: None,
+            mcp_server: None,
             command: None,
             paths: Vec::new(),
             url: None,

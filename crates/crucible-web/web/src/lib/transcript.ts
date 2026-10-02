@@ -93,6 +93,7 @@ function toolCard(item: ItemOf<'tool_card'>): ToolCallDisplay {
     id: item.call_id,
     callId: item.call_id,
     name: item.name,
+    ...(item.source ? { source: item.source } : {}),
     args: item.args == null ? '' : JSON.stringify(item.args),
     status: item.status === 'running' ? 'running' : failed ? 'error' : 'complete',
     ...(result != null ? { result } : {}),

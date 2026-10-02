@@ -663,3 +663,11 @@ frontends render.
   It title-cases a raw tool/title string for display and is unrelated to
   `CanonicalToolCall` classification — the ACP client itself no longer
   humanizes a tool's canonical name.
+
+Canonical MCP calls retain `mcp_server` and `display_name` independently of the
+canonical tool identity and the executing ACP `agent`. The matcher recognizes
+both namespace spellings and server/tool keys supplied by agent profiles. The
+transcript fold restores this metadata for stored calls that retain their wire
+name. Web headers use short names with a server marker; the TUI shows the server
+and short name while retaining its ACP execution badge. Fully qualified tool
+identities continue to drive hooks and permissions.

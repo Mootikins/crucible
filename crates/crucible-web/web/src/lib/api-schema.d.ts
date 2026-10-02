@@ -1305,10 +1305,20 @@ export interface components {
              */
             diffs?: components["schemas"]["FileDiff"][];
             /**
+             * @description The short MCP name shown by clients. The canonical `tool` remains the
+             *     identity used by hooks and permissions.
+             */
+            display_name?: string | null;
+            /**
              * @description The open kind name. The default matcher and [`Self::crucible_tool`]
              *     give a [`BuiltinKind`].
              */
             kind: string;
+            /**
+             * @description The MCP server owning this tool, independently of the ACP agent that
+             *     executed the call.
+             */
+            mcp_server?: string | null;
             /** @description The filesystem targets of the call. */
             paths?: string[];
             query?: string | null;

@@ -228,3 +228,22 @@ fn an_old_transcript_shows_its_lines_and_diffs() {
         assert!(frame.contains(diff), "the diff {diff} shows: {frame}");
     }
 }
+
+#[test]
+fn mcp_card_uses_short_name_and_keeps_server_and_agent() {
+    let mut story = StoryRuntime::new(100, 24);
+    send_user_message(&mut story, "read it");
+    relay_session_event(
+        &mut story,
+        "tool_call",
+        json!({
+            "call_id": "mcp1", "tool": "mcp__crucible__read_note", "args": {},
+            "source": "Acp:claude",
+            "display": { "kind": "file_read", "tool": "read_note", "display_name": "read_note", "mcp_server": "crucible", "render": {"line": "Index.md"} }
+        }),
+    );
+    let frame = story.fresh_screen();
+    assert!(frame.contains("Crucible: Read Note"), "{frame}");
+    assert!(frame.contains("acp:claude"), "{frame}");
+    assert!(!frame.contains("mcp__"), "{frame}");
+}

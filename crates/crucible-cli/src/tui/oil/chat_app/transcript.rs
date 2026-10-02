@@ -153,14 +153,20 @@ impl OilChatApp {
                     .as_ref()
                     .map(|d| d.diffs.clone())
                     .unwrap_or_default();
+                // Identity stays in the daemon. The client shows its short
+                // MCP name and server, retaining the execution source badge.
+                let title = display
+                    .as_ref()
+                    .map(|d| match (&d.mcp_server, &d.display_name) {
+                        (Some(server), Some(name)) => format!(
+                            "{server}: {}",
+                            crucible_daemon::acp::streaming::humanize_tool_title(name)
+                        ),
+                        _ => d.tool.clone(),
+                    })
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(name);
                 if self.container_list.item_node(&id).is_none() {
-                    // The card title is the canonical tool name. A recording
-                    // without a display falls back to the name on the call.
-                    let title = display
-                        .as_ref()
-                        .map(|d| d.tool.clone())
-                        .filter(|t| !t.is_empty())
-                        .unwrap_or(name);
                     self.container_list.add_tool_call(CachedToolCall {
                         id: format!("tool-{title}-{call_id}"),
                         name: Arc::from(title.as_str()),
@@ -182,9 +188,13 @@ impl OilChatApp {
                     });
                     self.container_list.mark_tool_item(&id);
                 }
+                let is_mcp = display.as_ref().is_some_and(|d| d.mcp_server.is_some());
                 let finished = !matches!(status, ToolStatus::Running);
                 self.container_list
                     .update_tool_by_call_id(&call_id, |tool| {
+                        if is_mcp {
+                            tool.name = Arc::from(title.as_str());
+                        }
                         if !args.is_empty() {
                             tool.set_args(&args);
                         }

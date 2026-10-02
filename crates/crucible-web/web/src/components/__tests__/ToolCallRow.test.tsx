@@ -19,3 +19,13 @@ describe('tool file navigation', () => {
     }
   });
 });
+
+
+describe('MCP display identity', () => {
+  it.each(['crucible', 'github'])('shows the short name and %s server', server => {
+    render(() => <ToolCallRow expanded={false} onToggle={() => {}} toolCall={{ id: 'mcp', name: `mcp__${server}__read_note`, args: '', status: 'complete', source: 'Acp:claude', display: { kind: 'file_read', tool: server === 'crucible' ? 'read_note' : `mcp__${server}__read_note`, display_name: 'read_note', mcp_server: server, paths: ['/notes/Index.md'] } }} />);
+    expect(screen.getByTestId('tool-origin').textContent).toBe(server === 'crucible' ? 'Crucible' : server);
+    expect(screen.getByRole('button', {name: 'Expand read_note'}).textContent).toContain('read_note');
+    expect(screen.queryByText(`mcp__${server}__read_note`)).toBeNull();
+  });
+});

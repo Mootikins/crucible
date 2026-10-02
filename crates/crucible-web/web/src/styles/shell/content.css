@@ -72,7 +72,8 @@
 .tool-call-toggle:focus-visible::after { outline: 2px solid var(--cru-color-primary); outline-offset: -2px; }
 .tool-call-row:has(.tool-call-file) .tool-call-toggle { flex-shrink: 0; }
 .tool-call-file { position: relative; z-index: 1; }
-.tool-call-toggle > span:first-of-type { white-space: nowrap; }
+.tool-call-toggle > span { white-space: nowrap; }
+.tool-call-origin { color: var(--cru-color-muted-dark); }
 .tool-call-target { color: var(--cru-color-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tool-call-file:hover { color: var(--cru-color-primary); text-decoration: underline; }
 .tool-call-result { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

@@ -52,6 +52,7 @@ pub(crate) async fn render_call(
     let render = lua_render(handlers, session_id, call, args, origin, None).await;
     call.render =
         Some(render.unwrap_or_else(|| crucible_core::types::ToolRender::fallback(call, args)));
+    call.restore_mcp_identity();
 }
 
 impl StreamContext {

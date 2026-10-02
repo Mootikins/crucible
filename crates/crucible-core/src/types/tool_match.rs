@@ -240,14 +240,17 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     });
     // An MCP tool name is also a name when it is only in the title, because
     // the TypeScript codex adapter puts it there.
-    let mcp_name = (raw.name.clone())
-        .or_else(|| raw.title.clone())
+    let mcp_name = raw
+        .name
+        .clone()
         .filter(|n| is_mcp_name(n))
+        .or_else(|| raw.title.clone().filter(|n| is_mcp_name(n)))
         .or_else(|| table_tool.clone().filter(|n| is_mcp_name(n)));
 
     // One hook must match a native call and an MCP call of one Crucible tool.
     if let Some(tool) = mcp_name.as_deref().and_then(crucible_mcp_tool) {
         let mut call = CanonicalToolCall::crucible_tool(tool, &input);
+        call.set_mcp_identity(mcp_name.as_deref().expect("matched MCP name"));
         call.diffs = file_diffs(&raw.content);
         call.raw = Some(raw);
         return call;
@@ -256,6 +259,8 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     let mut call = CanonicalToolCall {
         kind: String::new(),
         tool: String::new(),
+        display_name: None,
+        mcp_server: None,
         command: None,
         paths: Vec::new(),
         url: None,
@@ -265,6 +270,10 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         raw: None,
         render: None,
     };
+
+    if let Some(name) = &mcp_name {
+        call.set_mcp_identity(name);
+    }
 
     // 1. Diff content.
     let diff_paths: Vec<String> = raw
@@ -406,8 +415,20 @@ fn crucible_mcp_tool(name: &str) -> Option<&str> {
         .find_map(|p| name.strip_prefix(p))
 }
 
+pub(crate) fn mcp_identity(name: &str) -> Option<(&str, &str)> {
+    if name.contains(char::is_whitespace) {
+        return None;
+    }
+    let (server, tool) = if let Some(rest) = name.strip_prefix("mcp__") {
+        rest.split_once("__")?
+    } else {
+        name.strip_prefix("mcp.")?.split_once('.')?
+    };
+    (!server.is_empty() && !tool.is_empty()).then_some((server, tool))
+}
+
 fn is_mcp_name(name: &str) -> bool {
-    (name.starts_with("mcp__") || name.starts_with("mcp.")) && !name.contains(char::is_whitespace)
+    mcp_identity(name).is_some()
 }
 
 /// The canonical kind for an ACP kind. `other`, `think` and `switch_mode`
@@ -653,6 +674,25 @@ mod tests {
     }
 
     #[test]
+    fn mcp_display_identity_keeps_server_and_short_name() {
+        for (name, server, short) in [
+            ("mcp__crucible__read_note", "crucible", "read_note"),
+            ("mcp.github.list_issues", "github", "list_issues"),
+        ] {
+            for raw in [
+                raw(json!({"name": name})),
+                raw(json!({"name": "generic", "title": name})),
+            ] {
+                let call = classify_acp(raw, &[]);
+                assert_eq!(call.tool, if server == "crucible" { short } else { name });
+                let value = serde_json::to_value(&call).unwrap();
+                assert_eq!(value["mcp_server"], server);
+                assert_eq!(value["display_name"], short);
+            }
+        }
+    }
+
+    #[test]
     fn a_crucible_mcp_call_classifies_as_the_native_tool() {
         let args = json!({"path": "notes/a.md"});
         let native = CanonicalToolCall::crucible_tool("update_note", &args);
@@ -660,6 +700,8 @@ mod tests {
         for name in ["mcp__crucible__update_note", "mcp.crucible.update_note"] {
             let mut c = classify_acp(raw(json!({"name": name, "rawInput": args})), &[]);
             assert!(c.raw.take().is_some(), "{name}: the raw call stays");
+            assert_eq!(c.mcp_server.take().as_deref(), Some("crucible"));
+            assert_eq!(c.display_name.take().as_deref(), Some("update_note"));
             assert_eq!(c, native, "{name}");
         }
     }
@@ -739,6 +781,8 @@ mod tests {
             (native.kind.as_str(), native.tool.as_str()),
             ("search", "search_notes")
         );
+        assert_eq!(native.mcp_server.as_deref(), Some("crucible"));
+        assert_eq!(native.display_name.as_deref(), Some("search_notes"));
         let other = call("github");
         assert_eq!(
             (other.kind.as_str(), other.tool.as_str()),

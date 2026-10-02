@@ -940,17 +940,17 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "claude",
         20,
-        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool","display_name":"tool","mcp_server":"srv"}"#,
     ),
     (
         "claude",
         21,
-        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool","display_name":"tool","mcp_server":"srv"}"#,
     ),
     (
         "claude",
         22,
-        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool","display_name":"tool","mcp_server":"srv"}"#,
     ),
     ("claude", 23, r#"{"kind":"tool","tool":"tool"}"#),
     ("claude", 24, r#"{"kind":"tool","tool":"tool"}"#),
@@ -1020,7 +1020,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "codex-rust",
         10,
-        r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
+        r#"{"kind":"search","tool":"search_notes","query":"rust","display_name":"search_notes","mcp_server":"crucible"}"#,
     ),
     ("codex-rust", 11, r#"{"kind":"mcp_tool","tool":"mcp_tool"}"#),
     ("codex-rust", 12, r#"{"kind":"tool","tool":"tool"}"#),
@@ -1071,7 +1071,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "codex-ts",
         12,
-        r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
+        r#"{"kind":"search","tool":"search_notes","query":"rust","display_name":"search_notes","mcp_server":"crucible"}"#,
     ),
     ("codex-ts", 13, r#"{"kind":"command","tool":"command"}"#),
     ("codex-ts", 14, r#"{"kind":"tool","tool":"tool"}"#),

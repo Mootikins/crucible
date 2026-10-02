@@ -2874,6 +2874,20 @@
             "type": "string",
             "description": "The canonical tool name. A display object from before this field has\nno name, so the default keeps an old transcript readable."
           },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The short MCP name shown by clients. The canonical `tool` remains the\nidentity used by hooks and permissions."
+          },
+          "mcp_server": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The MCP server owning this tool, independently of the ACP agent that\nexecuted the call."
+          },
           "command": {
             "type": [
               "string",

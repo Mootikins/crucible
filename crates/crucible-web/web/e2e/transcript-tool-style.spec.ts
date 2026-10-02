@@ -75,3 +75,24 @@ test('kiln-relative tool paths resolve before reading the editor file', async ({
   expect(reads).not.toContain('Search & Discovery.md');
   await expect(page.getByText('Failed to read file:', { exact: false })).toHaveCount(0);
 });
+
+
+test('MCP cards show server and short names throughout their lifecycle', async ({ page }) => {
+  await setupBasicMocks(page, { sessionHistory: historyOf(MOCK_SESSION.session_id, [
+    userTurn('mcp-turn', 'Inspect a note and an issue'),
+    toolCard('mcp-turn', 'crucible-mcp', { name: 'read_note', display: { kind: 'file_read', tool: 'read_note', display_name: 'read_note', mcp_server: 'crucible', agent: 'claude', paths: ['/notes/Index.md'] } }),
+    toolCard('mcp-turn', 'github-mcp', { name: 'mcp__github__list_issues', display: { kind: 'mcp_tool', tool: 'mcp__github__list_issues', display_name: 'list_issues', mcp_server: 'github', agent: 'codex' } }),
+  ]) });
+  await page.goto('/');
+  await openSession(page, MOCK_SESSION.session_id);
+  const crucible = page.locator('[data-tool-call-id="crucible-mcp"]');
+  await expect(crucible.getByTestId('tool-origin')).toHaveText('Crucible');
+  await expect(crucible.locator('.lucide-flask-conical')).toBeVisible();
+  await expect(crucible.getByRole('button', { name: 'Expand read_note', exact: true })).toBeVisible();
+  const github = page.locator('[data-tool-call-id="github-mcp"]');
+  await expect(github.getByTestId('tool-origin')).toHaveText('github');
+  await expect(github.getByRole('button', { name: 'Expand list_issues', exact: true })).toBeVisible();
+  await expect(github.locator('.tool-call-row')).not.toContainText('mcp__');
+  await github.getByRole('button', { name: 'Expand list_issues', exact: true }).click();
+  await expect(github.getByRole('button', { name: 'Collapse list_issues', exact: true })).toBeVisible();
+});

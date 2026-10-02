@@ -235,6 +235,8 @@ interface ThinkingBlock {
 /** Tool call display with execution status. Client-local: `itemToMessage`
  * maps a transcript tool card into it, so no route answers this shape. */
 export interface ToolCallDisplay {
+  /** Execution provenance, as supplied by the daemon transcript. */
+  source?: string;
   id: string;
   name: string;
   args: string;

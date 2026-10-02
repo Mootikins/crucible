@@ -617,3 +617,7 @@ No conflict with AGENTS.md's ownership table was found beyond the two
 completeness-gate gaps above; the `:set` Client/Daemon split, the
 daemon-owned permission storage, and the append-only transcript are each
 enforced in code, not just described in comments.
+
+MCP tool titles use the canonical display name and owning server, independently
+of the ACP execution-source badge. Updates refresh the title when a later ACP
+frame supplies the tool identity; clients do not parse MCP prefixes themselves.
