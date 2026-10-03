@@ -78,7 +78,7 @@ tracing = { workspace = true }
 # referenced from library code, so they're optional real deps.
 tempfile = { workspace = true, optional = true }
 proptest = { version = "1.11", optional = true }
-dns-lookup = "3.0.1"
+dns-lookup = "4.0.1"
 
 # Unix-only: process-group signals for the PTY terminal teardown.
 [target.'cfg(unix)'.dependencies]

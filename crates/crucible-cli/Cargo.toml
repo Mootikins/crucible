@@ -158,7 +158,7 @@ crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 # crucible-cli` builds the daemon without it and the tests do not compile.
 crucible-daemon = { path = "../crucible-daemon", features = ["test-utils"] }
 # MCP client for testing examples
-rmcp = { version = "2.2", features = ["client", "transport-child-process"] }
+rmcp = { version = "3.5", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -167,7 +167,7 @@ wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
 blake3 = "1.8"  # For hash verification tests
-serial_test = "3.3"  # For preventing parallel test execution with shared env vars
+serial_test = "4.0"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.47", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
