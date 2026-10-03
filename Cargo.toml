@@ -39,7 +39,7 @@ uuid = { version = "1.23", features = ["v4", "serde"] }
 anyhow = "1.0"
 thiserror = "2.0.18"
 regex = "1.12"
-fancy-regex = "0.16.2"
+fancy-regex = "0.19.2"
 glob = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3.27"
@@ -77,7 +77,7 @@ flume = "0.12"
 # `syntect` plugins stay out of the build.
 markdown-it = { version = "0.6", default-features = false }
 toml = "1.0"
-toml_edit = "0.22"
+toml_edit = "0.23"
 futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
@@ -89,11 +89,11 @@ tower = "0.5"
 # The API contract: the OpenAPI document comes from the router, so the path and
 # the response shape stay together. `preserve_order` keeps the generated
 # `openapi.json` diffable.
-utoipa = { version = "5.5", features = ["axum_extras", "chrono", "preserve_order", "uuid"] }
-utoipa-axum = "0.2"
+utoipa = { version = "6.0", features = ["axum_extras", "chrono", "preserve_order", "uuid"] }
+utoipa-axum = "0.3"
 
 # MCP protocol
-rmcp = { version = "2.2", features = ["macros", "server"] }
+rmcp = { version = "3.5", features = ["macros", "server"] }
 
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
@@ -107,13 +107,13 @@ wiremock = "0.6"
 mockall = "0.15"
 test-case = "3.3"
 
-comfy-table = "7"
+comfy-table = "8"
 
 # Procedural macro dependencies
 syn = { version = "3.0", features = ["full"] }
 
 # Additional utilities for event system
-base64 = "0.22"
+base64 = "0.23"
 
 # Additional dependencies
 clap = { version = "4.6", features = ["derive"] }
@@ -121,7 +121,7 @@ colored = "3.0"
 
 # CLI specific dependencies
 indicatif = "0.18"
-dirs = "6.0"
+dirs = "7.0"
 mlua = { version = "0.12", features = ["vendored", "luau"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 
