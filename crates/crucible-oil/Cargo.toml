@@ -23,7 +23,7 @@ serde = { workspace = true, optional = true, features = ["rc"] }
 utoipa = { workspace = true, optional = true }
 unicode-width = "0.2"
 unicode-segmentation = "1.13"
-taffy = "0.12"
+taffy = "0.14"
 textwrap = "0.16.2"
 html_parser = "0.7"
 proptest = { version = "1.11", optional = true }

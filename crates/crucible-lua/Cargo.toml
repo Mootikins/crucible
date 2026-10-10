@@ -44,7 +44,7 @@ crucible-oil = { path = "../crucible-oil", default-features = false, features = 
 utoipa = { workspace = true }
 
 # XDG config directories
-dirs = "6"
+dirs = "7"
 
 tokio-tungstenite = { workspace = true }
 futures-util = { workspace = true }
