@@ -71,7 +71,7 @@ rust-embed = { version = "8", features = [
 ] }
 
 # Enhanced change detection dependencies
-parking_lot = "0.12"
+parking_lot = "0.13"
 futures = "0.3"
 glob-match = "0.2.1"
 
@@ -111,7 +111,7 @@ crucible-core = { path = ".", features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.27"
-serial_test = "3.3"
+serial_test = "4.0"
 proptest = { workspace = true }
 test-case = { workspace = true }
 
