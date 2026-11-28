@@ -78,11 +78,11 @@ tracing = { workspace = true }
 # referenced from library code, so they're optional real deps.
 tempfile = { workspace = true, optional = true }
 proptest = { version = "1.11", optional = true }
-dns-lookup = "3.0.1"
+dns-lookup = "4.0.2"
 
 # Unix-only: process-group signals for the PTY terminal teardown.
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["signal"] }
+nix = { version = "0.32", features = ["signal"] }
 
 [dev-dependencies]
 # A real WebSocket client for the PTY route: `ServiceExt::oneshot` returns the
